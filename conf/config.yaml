@@ -1,0 +1,15 @@
+defaults:
+  - _self_
+  - experiment: obs
+  - model: claude
+  - source@trial: clinicaltrial
+  - source@reddit: reddit
+  - source@pubmed: pubmed
+
+seed: 10
+experiment_name: test
+save_path: /mfs1/u/nikita/naturalv2/results
+date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}
+restore: False
+
+filter_by_date: False

@@ -1,0 +1,9 @@
+source:
+  _target_: naturalv2.sources.pubmed.PubMedSet
+  data_path: /mfs1/u/nikita/naturalv2/pubmed_data/
+  trial: ${trial.source}
+  match_method: string_match
+  llm: ${model}
+  download: False
+  api_key: 21abb90a946cad9a035d79910df3b36be809 # UofT
+  # api_key: 9128a00b7b37cf696e4ee0117f163a6a8708

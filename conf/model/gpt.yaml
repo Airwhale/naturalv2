@@ -1,0 +1,7 @@
+_target_: naturalv2.models.gpt.GPT
+model_name: gpt-4o
+openai_api_key_path: /h/290/nikita/openai_api_key.txt   
+temperature: 0.7
+top_p: 1
+max_tokens: 512
+seed: ${..seed}
