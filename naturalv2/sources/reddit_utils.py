@@ -113,7 +113,7 @@ def download_from_url(url_str, max_retries=5, retry_delay=120):
                 break
 
 def download_sub_about_info(data_path):
-    if not os.path.exists(data_path + "subs_list.txt"):
+    if not os.path.exists(os.path.join(data_path, 'subs_list.txt')):
         download_subs_list(data_path)
     subs_list = open(data_path + "subs_list.txt", "r").read().splitlines()
     about_csv_path = data_path + "subs_about.csv"
@@ -268,7 +268,7 @@ def get_context_post_df(submissions, comments, treatment_names, outcome_words):
 
 def get_reddit_synonyms(keywords, llm):
     system_prompt = "You are a helpful medical assistant who can translate medical terminology into common terms."
-    user_prompts = [f"What are common names or keywords associated with {str(keywords)} that you would expect to find on reddit?"]
+    user_prompts = [f"What are common brand names or terms that people specifically use when discussing any of {str(keywords)}, especially on platforms like Reddit?"]
     user_prompts = [prompt + " Return only a Python list of at most 10 individual words, without any other text or formatting." for prompt in user_prompts]
     llm_keywords = llm.get_outputs(system_prompt, user_prompts)
     all_keywords = []
@@ -283,25 +283,22 @@ def get_reddit_synonyms(keywords, llm):
     print(all_keywords)
     return [k.lower() for k in all_keywords]
 
-def subreddit_relevance_llm(desc, trial, llm):
+def subreddit_relevance_llm(desc, keywords, llm):
     system_prompt = "You are an expert in analyzing online forums for relevant discussions about clinical trials. "
     system_prompt += "Your task is to determine if a subreddit is likely to contain personal experiences related to a specific clinical trial based on the trial’s details and the subreddit description."
     
-    interventions = [i.title for i in trial.interventions]
-    primary_endpoints = [o.title for o in trial.primary_endpoints]
     user_prompt = f"""Evaluate the subreddit relevance to the clinical trial information provided. Consider if the subreddit likely contains personal experiences about the trial's focus. Answer "Yes" if relevant, "No" if not.
     
 **Clinical Trial Details:**
-- Title: {trial.brief_title}
-- Keywords: {trial.keywords}
-- Conditions: {trial.conditions}
-- Interventions: {interventions}
-- Primary Endpoint(s): {primary_endpoints}
+- Keywords: {keywords[0]}
+- Interventions: {keywords[1]}
+- Primary Endpoint(s): {keywords[2]}
 
 **Subreddit Description:**
 {desc}
 
-Is the subreddit likely to contain relevant personal experiences? Answer "Yes" or "No".
+Is the subreddit likely to contain personal experiences relevant to the effects measured in this trial? Answer with "Yes" or "No".
     """
-    answer = llm.get_outputs(system_prompt, [user_prompt])
-    return answer[0].lower()
+    answer = llm.get_outputs(system_prompt, [user_prompt])[0]
+    return answer
+

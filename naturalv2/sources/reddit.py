@@ -11,9 +11,27 @@ class RedditSet:
         self.subs_about = pd.read_csv(self.data_path + "subs_about.csv", index_col=0)
         self.trial = trial
         self.llm = llm
-        self.treatment_names = get_reddit_synonyms([i.title for i in trial.interventions], llm)
-        self.outcome_words = get_reddit_synonyms([o.title for o in trial.primary_endpoints], llm)
-        self.trial_keywords = get_reddit_synonyms(trial.keywords + trial.conditions, llm)
+
+        self.log_path = os.path.join(self.data_path, f"{trial.nctid}_{match_method}_{llm.model_name}_reddit.log")
+        if os.path.exists(self.log_path):
+            with open(self.log_path, "r") as f:
+                lines = f.readlines()
+                for line in lines:
+                    if line.startswith("treatment_names:"):
+                        self.treatment_names = eval(line.split(": ")[1])
+                    elif line.startswith("outcome_words:"):
+                        self.outcome_words = eval(line.split(": ")[1])
+                    elif line.startswith("keywords:"):
+                        self.trial_keywords = eval(line.split(": ")[1])
+        else:
+            self.treatment_names = get_reddit_synonyms([i.title for i in trial.interventions], llm)
+            self.outcome_words = get_reddit_synonyms([o.title for o in trial.primary_endpoints], llm)
+            self.trial_keywords = get_reddit_synonyms(trial.keywords + trial.conditions, llm)
+            with open(self.log_path, "w") as f:
+                f.write(f"treatment_names: {self.treatment_names}\n")
+                f.write(f"outcome_words: {self.outcome_words}\n")
+                f.write(f"keywords: {self.trial_keywords}\n")
+        
         if download:
             self.subreddits = self.get_subreddits(match_method, trial)
             import pdb; pdb.set_trace()
@@ -21,15 +39,18 @@ class RedditSet:
     
     def get_subreddits(self, method, trial):
         relevant_subs = []
-        trial_keywords = self.trial_keywords + self.treatment_names + self.outcome_words
+        trial_keywords = [self.trial_keywords, self.treatment_names, self.outcome_words]
         for row in self.subs_about.iterrows():
             sub_name, desc, public_desc = row[1].to_list()
             desc = f"Subreddit: r/{sub_name}.\nDescription: {desc}\nPublic description: {public_desc}"            
             if method == "string_match":
-                if any(keyword.lower() in desc.lower() for keyword in trial_keywords) or any(keyword.lower() in sub_name.lower() for keyword in trial_keywords):
+                if any(keyword.lower() in desc.lower() for keyword in self.treatment_names) or any(keyword.lower() in desc.lower() for keyword in self.trial_keywords):
                     relevant_subs.append(sub_name)
             elif method == "llm":
-                if subreddit_relevance_llm(desc, self.treatment_names, self.outcome_words, self.llm) == "yes":
+                answer = subreddit_relevance_llm(desc, trial_keywords, self.llm)
+                if answer.lower().startswith("yes"): 
+                    with open(self.log_path, "a") as f:
+                        f.write(f"subreddit {sub_name} relevance: {answer}\n")
                     relevant_subs.append(sub_name)
         print(len(relevant_subs), "relevant subreddits found!")
         return relevant_subs
