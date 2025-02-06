@@ -1,15 +1,19 @@
 defaults:
   - _self_
-  - experiment: obs
+  - user: ${oc.env:USER}
   - model: claude
-  - source@trial: clinicaltrial
+  - eval: clinicaltrial
   - source@reddit: reddit
   - source@pubmed: pubmed
+  # - estimator: natural_full
+
 
 seed: 10
+train_ratio: 0.6
 indication: diabetes
 experiment_name: test
-save_path: /mfs1/u/nikita/naturalv2/results
+save_path: ${user.save_path}/naturalv2/results
+data_path: ${user.data_path}/naturalv2
 date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}
 restore: False
 

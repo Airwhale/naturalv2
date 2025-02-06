@@ -34,7 +34,6 @@ class RedditSet:
         
         if download:
             self.subreddits = self.get_subreddits(match_method, trial)
-            import pdb; pdb.set_trace()
             self.download_data()
     
     def get_subreddits(self, method, trial):

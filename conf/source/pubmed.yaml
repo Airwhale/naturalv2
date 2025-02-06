@@ -1,7 +1,7 @@
 source:
   _target_: naturalv2.sources.pubmed.PubMedSet
-  data_path: /mfs1/u/nikita/naturalv2/pubmed_data/
-  trial: ${trial.source}
+  data_path: ${user.save_path}/naturalv2/pubmed_data/
+  trial: ${eval}
   match_method: string_match
   llm: ${model}
   download: False

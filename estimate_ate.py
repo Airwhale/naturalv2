@@ -8,11 +8,7 @@ import hydra
 from omegaconf import DictConfig
 from hydra.utils import instantiate
 import nest_asyncio
-
-from causality_llm.models import direct_gpt
-from causality_llm.utils import seed_everything
-
-
+    
 def save_path_fn(cfg, final=False):
     save_path = cfg.save_path + cfg.data.dataset + "/"
     if final:
@@ -41,8 +37,10 @@ def get_model(cfg):
     
     return llm
         
-def extract_subreddits(cfg: DictConfig) -> None:
-    seed_everything(cfg.seed)
+@hydra.main(config_path="conf/", config_name="config.yaml")
+def main(cfg: DictConfig) -> None:
+
+    # TODO: this is a dump from NATURAL and won't run as is. Nikita to edit to structure data and compute ATE.
 
     dataset = instantiate(cfg.data.dataset_class)
     llm = get_model(cfg)
@@ -86,3 +84,6 @@ def extract_subreddits(cfg: DictConfig) -> None:
 
     save_path_final = save_path_fn(cfg, final=True)
     llm_samples_df.to_csv(save_path_final)
+
+if __name__ == "__main__":
+    main()
