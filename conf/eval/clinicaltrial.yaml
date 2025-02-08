@@ -1,4 +1,3 @@
-source:
-  _target_: naturalv2.evals.clinicaltrials.ClinicalTrial
-  data_path: /mfs1/u/nikita/naturalv2/nct_reports
-  nctid: NCT03987919
+_target_: naturalv2.evals.clinicaltrials.ClinicalTrial
+data_path: /mfs1/u/nikita/naturalv2/nct_reports
+nctid: NCT03987919

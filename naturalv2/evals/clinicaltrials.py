@@ -139,14 +139,14 @@ class OutcomeResult:
         denoms = outcome_measure.get("denoms", [])
         self.cohorts = [Cohort(cohort, denoms) for cohort in outcome_measure.get("groups", [])]
 
-    def cohort_stats(self, cohort, title):
+    def cohort_stats(self, cohort, title=''):
         for measure_class in self.measures:
             categories = measure_class.get('categories', [])
-            if measure_class.get('title', '') == title and len(categories) > 0:
-                measurements = categories[0].get('measurements', [])
-                for cohort_measure in measurements:
-                    if cohort.id == cohort_measure["groupId"]:
-                        return cohort_measure
+            # if measure_class.get('title', '') == title and len(categories) > 0:
+            measurements = categories[0].get('measurements', [])
+            for cohort_measure in measurements:
+                if cohort.id == cohort_measure["groupId"]:
+                    return cohort_measure
 
     def __repr__(self):
         return (

@@ -11,7 +11,7 @@ from naturalv2.utils import check_trial
 def main(cfg: DictConfig) -> None:
     
     # find nct_ids of valid retrospective trials
-    valid_nct_path = os.path.join(cfg.data_path, 'nct_reports/valid_nct_ids.txt')
+    valid_nct_path = os.path.join(cfg.data_path, 'nct_reports/valid_binary_nct_ids.txt')
     if not os.path.exists(valid_nct_path):
         nct_list = []
         for filename in os.listdir(cfg.data_path + "/nct_reports"):
@@ -22,12 +22,12 @@ def main(cfg: DictConfig) -> None:
                     nct_list.append(nct_id)
                     with open(valid_nct_path, 'a') as f:
                         f.write(f"{nct_id}\n")
-
+    
     with open(valid_nct_path, 'r') as f:
         nct_list = [line.strip() for line in f.readlines()]
 
     # find nct_ids of retrospective trials related to indication
-    indication_nct_path = os.path.join(cfg.data_path, f'nct_reports/valid_{cfg.indication}_nct_ids.txt')
+    indication_nct_path = os.path.join(cfg.data_path, f'nct_reports/valid_binary_{cfg.indication}_nct_ids.txt')
     if not os.path.exists(indication_nct_path):
         retro_trials = []
         for nct_id in nct_list:
@@ -49,7 +49,7 @@ def main(cfg: DictConfig) -> None:
 
     print(f"{len(train_trials)} training and {len(val_trials)} validation trials found!")
 
-    # TODO: create a Study object with train and validation trials
+    # TODO: create a Study object with train and validation experiments where each valid binary outcome is a separate experiment
 
 if __name__ == "__main__":
     main()
