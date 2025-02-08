@@ -11,7 +11,7 @@ ______________________________________________________________________
 ```bash
 git clone https://github.com/nikitadhawan/naturalv2.git
 cd naturalv2
-python setup.py install
+python setup.py develop
 ```
 
 Create a user file `conf/user/{your_name}.yaml`. See [nikita.yaml](https://github.com/nikitadhawan/naturalv2/tree/main/conf/user/nikita.yaml) for an example.
