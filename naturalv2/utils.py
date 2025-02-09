@@ -32,12 +32,12 @@ def check_binary_endpoint(text):
 
 def check_trial(trial):
     if trial.alloc == "RANDOMIZED":
-        nonplacebo_interventions = [i.title for i in trial.interventions if check_nonplacebo(i.title)]
+        nonplacebo_interventions = [cohort.title for cohort in trial.outcome_results[0].cohorts if check_nonplacebo(cohort.title)]
         if len(nonplacebo_interventions) >= 2:
             if trial.inclusion_criteria.healthy_volunteers != "" and not trial.inclusion_criteria.healthy_volunteers:
                 binary = False
-                for endpoint in trial.primary_endpoints:
-                    if check_binary_endpoint(endpoint.title):
+                for result in trial.outcome_results:
+                    if check_binary_endpoint(result.title):
                         binary = True
                         break
                 if binary:

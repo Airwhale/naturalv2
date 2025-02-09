@@ -165,11 +165,11 @@ class OutcomeResult:
 
 class ClinicalTrial(object):
 
-    def __init__(self, data_path, nctid):
+    def __init__(self, data_path, nct_id):
         self.data_path = data_path
-        self.nctid = nctid 
+        self.nct_id = nct_id 
 
-        file_path = os.path.join(data_path, nctid + ".json")
+        file_path = os.path.join(data_path, nct_id + ".json")
         with open(file_path, "r") as file:
             self.trial = json.load(file)
         
@@ -206,14 +206,11 @@ class ClinicalTrial(object):
         self.bg_cohorts = [Cohort(cohort, denoms) for cohort in self.results.get("baselineCharacteristicsModule", {}).get("groups", [])]
         self.baseline_char = [BaselineChar(measure) for measure in self.results.get("baselineCharacteristicsModule", {}).get("measures", [])]
         self.outcome_results = [OutcomeResult(outcome) for outcome in self.results.get("outcomeMeasuresModule", {}).get("outcomeMeasures", []) if outcome.get("type") == "PRIMARY"]
-
-    def compute_ground_truth(self):
-        return
     
     def __repr__(self):
         return (
             f"ClinicalTrial(\n"
-            f"nctid='{self.nctid}', \n"
+            f"nct_id='{self.nct_id}', \n"
             f"brief_title='{self.brief_title[:50]}...', \n"
             f"study_type='{self.study_type}', \n"
             f"phases={self.phases}, \n"
