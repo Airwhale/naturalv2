@@ -72,5 +72,7 @@ def main(cfg: DictConfig) -> None:
     study = RetroStudy(retro_trials, cfg)
     study.to_yaml(os.path.join(cfg.save_path, cfg.indication + "_study.yaml"))
 
+    # TODO: paths to data dumps
+
 if __name__ == "__main__":
     main()

@@ -11,18 +11,17 @@ class Experiment:
 
         outcome_results = [result for result in trial.outcome_results if check_binary_endpoint(result.title)]
         
-        self.outcomes = [result.title for result in outcome_results]
-        self.treatments, self.ground_truths = {}, {}
+        self.outcome_treatment, self.effect_sizes = [], []
         for result in outcome_results:
             result_cohorts = [cohort for cohort in result.cohorts if check_nonplacebo(cohort.title)]
-            self.treatments[result.title] = [cohort.title for cohort in result_cohorts]
-            gt = []
             for i, cohort1 in enumerate(result_cohorts):
                 for j, cohort2 in enumerate(result_cohorts):
                     if i < j:  
-                        effect_size = literal_eval(result.cohort_stats(cohort1)['value']) - literal_eval(result.cohort_stats(cohort2)['value'])
-                        gt.append(effect_size)
-            self.ground_truths[result.title] = gt
+                        effect_size = literal_eval(result.cohort_stats(cohort2)['value']) - literal_eval(result.cohort_stats(cohort1)['value'])
+                        self.outcome_treatment.append((result.title, (cohort1.title, cohort2.title)))
+                        self.effect_sizes.append(effect_size) # always cohort2 - cohort1
             
         self.covariates = [base.title for base in trial.baseline_char]
         self.inclusion_criteria = trial.inclusion_criteria.criteria
+
+        # TODO: common names, misspellings
