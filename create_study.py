@@ -39,17 +39,18 @@ class RetroStudy:
 
         self.indication = cfg.indication
         self.train_ratio = cfg.train_ratio
-        self.create_exp(cfg.eval.data_path)
+        
+        train_exp = [Experiment(nct_id, cfg.eval.data_path, train=True) for nct_id in self.train_trials]
+        self.num_train_labels = sum([len(exp.effect_sizes) for exp in train_exp])
+        val_exp = [Experiment(nct_id, cfg.eval.data_path, train=False) for nct_id in self.val_trials]
+        self.num_val_labels = sum([len(exp.effect_sizes) for exp in val_exp])
 
-        print(f"Study created for {self.indication} with {len(self.train_trials)} training and {len(self.val_trials)} validation experiments!")
+        print(f"Study created for {self.indication} with {len(self.train_trials)} training ({self.num_train_labels} labels) and {len(self.val_trials)} validation ({self.num_val_labels} labels) experiments!")
 
     def to_yaml(self, filename):
         with open(filename, "w") as file:
             yaml.dump(self.__dict__, file)
 
-    def create_exp(self, data_path):
-        train_exp = [Experiment(nct_id, data_path, train=True) for nct_id in self.train_trials]
-        val_exp = [Experiment(nct_id, data_path, train=False) for nct_id in self.val_trials]
 
 
 @hydra.main(config_path="conf/", config_name="config.yaml")
