@@ -73,6 +73,22 @@ class Endpoint:
             f")"
         )
 
+class ArmGroup:
+    def __init__(self, arm_group_dict):
+        self.type = arm_group_dict.get('type', '')
+        self.title = arm_group_dict.get('label', '')
+        self.description = arm_group_dict.get('description', '')
+        self.intervention_names = arm_group_dict.get('interventionNames', [])
+
+    def __repr__(self):
+        return (
+            f"ArmGroup(\n"
+            f"type='{self.type}', \n"
+            f"title='{self.title}', \n"
+            f"description='{self.description[:50]}...', \n"
+            f"intervention_names={self.intervention_names}, \n"
+            f")"
+        )
 
 class Cohort:
     def __init__(self, group_dict, denoms):
@@ -184,6 +200,7 @@ class ClinicalTrial(object):
         self.detailed_description = self.protocol.get("descriptionModule", {}).get("detailedDescription", "")
   
         self.results_first_posted = self.protocol.get("statusModule", {}).get("resultsFirstPostDateStruct", {}).get("date", "")
+        self.estimated_completion = self.protocol.get("statusModule", {}).get("completionDateStruct", {}).get("date", "")
 
         self.conditions = self.protocol.get("conditionsModule", {}).get("conditions", [])
         self.keywords = self.protocol.get("conditionsModule", {}).get("keywords", [])
@@ -194,6 +211,7 @@ class ClinicalTrial(object):
     
         self.inclusion_criteria = InclusionCriteria(self.protocol.get("eligibilityModule", {}))
         self.interventions = [Intervention(intervention) for intervention in self.protocol.get("armsInterventionsModule", {}).get("interventions", [])]
+        self.arm_groups = [ArmGroup(arm_group) for arm_group in self.protocol.get("armsInterventionsModule", {}).get("armGroups", [])]
         self.primary_endpoints = [Endpoint(endpoint) for endpoint in self.protocol.get("outcomesModule", {}).get("primaryOutcomes", [])]
         self.secondary_endpoints = [Endpoint(endpoint) for endpoint in self.protocol.get("outcomesModule", {}).get("secondaryOutcomes", [])]
         self.locations = [Location(location) for location in self.protocol.get("contactsLocationsModule", {}).get("locations", [])]
@@ -201,7 +219,7 @@ class ClinicalTrial(object):
         self.duration = self.trial.get("duration", None)
 
     def results(self):
-        self.results = self.trial['resultsSection']
+        self.results = self.trial.get('resultsSection', {})
         denoms = self.results.get("baselineCharacteristicsModule", {}).get("denoms", [])
         self.bg_cohorts = [Cohort(cohort, denoms) for cohort in self.results.get("baselineCharacteristicsModule", {}).get("groups", [])]
         self.baseline_char = [BaselineChar(measure) for measure in self.results.get("baselineCharacteristicsModule", {}).get("measures", [])]

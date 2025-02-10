@@ -7,6 +7,11 @@ def check_nonplacebo(title):
         return False
     return True
 
+def check_noncontrol(type):
+    if type == "NO_INTERVENTION":
+        return False
+    return True
+
 def check_binary_endpoint(text):
     BINARY_PATTERNS = [
     r"""
@@ -32,12 +37,13 @@ def check_binary_endpoint(text):
 
 def check_trial(trial):
     if trial.alloc == "RANDOMIZED":
-        nonplacebo_interventions = [cohort.title for cohort in trial.outcome_results[0].cohorts if check_nonplacebo(cohort.title)]
-        if len(nonplacebo_interventions) >= 2:
+        nonplacebo_interventions = [intervention.title for intervention in trial.interventions if check_nonplacebo(intervention.title)]
+        noncontrol_arms = [arm.title for arm in trial.arm_groups if check_noncontrol(arm.type)]
+        if len(nonplacebo_interventions) >= 2 and len(noncontrol_arms) >= 2:
             if trial.inclusion_criteria.healthy_volunteers != "" and not trial.inclusion_criteria.healthy_volunteers:
                 binary = False
-                for result in trial.outcome_results:
-                    if check_binary_endpoint(result.title):
+                for endpoint in trial.primary_endpoints:
+                    if check_binary_endpoint(endpoint.title):
                         binary = True
                         break
                 if binary:
