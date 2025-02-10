@@ -1,11 +1,9 @@
 import ast
 import re
 
-def check_nonplacebo(title):
-    title_lower = title.lower()
-    if "placebo" in title_lower:
-        return False
-    return True
+def check_nonplacebo(intervention_names):
+    nonplacebo_interventions = [name for name in intervention_names if "placebo" not in name.lower()]
+    return len(nonplacebo_interventions) > 0
 
 def check_noncontrol(type):
     if type == "NO_INTERVENTION":
@@ -37,9 +35,9 @@ def check_binary_endpoint(text):
 
 def check_trial(trial):
     if trial.alloc == "RANDOMIZED":
-        nonplacebo_interventions = [intervention.title for intervention in trial.interventions if check_nonplacebo(intervention.title)]
-        noncontrol_arms = [arm.title for arm in trial.arm_groups if check_noncontrol(arm.type)]
-        if len(nonplacebo_interventions) >= 2 and len(noncontrol_arms) >= 2:
+        noncontrol_arms = [arm for arm in trial.arm_groups if check_noncontrol(arm.type)]
+        nonplacebo_arms = [arm for arm in noncontrol_arms if check_nonplacebo(arm.intervention_names)]
+        if len(nonplacebo_arms) >= 2:
             if trial.inclusion_criteria.healthy_volunteers != "" and not trial.inclusion_criteria.healthy_volunteers:
                 binary = False
                 for endpoint in trial.primary_endpoints:

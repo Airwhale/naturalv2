@@ -19,10 +19,10 @@ ______________________________________________________________________
 
 ## Retrospective Study
 
-To create a retrospective study for some `indication` (e.g. "diabetes"), with temporally split training and validation clinical trials, run:
+To create a retrospective study for some `condition` (e.g. "diabetes"), with temporally split training and validation clinical trials, run:
 
 ```bash
-python create_study.py indication={indication}
+python create_study.py condition={condition}
 ```
 
 ______________________________________________________________________

@@ -10,7 +10,7 @@ defaults:
 
 seed: 10
 train_ratio: 0.6
-indication: diabetes
+condition: diabetes
 experiment_name: test
 save_path: ${user.save_path}/naturalv2/results
 data_path: ${user.data_path}/naturalv2
