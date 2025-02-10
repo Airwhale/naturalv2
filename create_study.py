@@ -34,7 +34,8 @@ def find_indication_ncts(nct_list, cfg, test=False):
     for nct_id in nct_list:
         trial = instantiate(cfg.eval, data_path=trial_path, nct_id=nct_id)
         # check if {indication} is mentioned in the trial's list of conditions or keywords
-        if any(cfg.indication.lower() in word.lower() for word in trial.conditions + trial.keywords):
+        indication = cfg.indication.replace("_", " ")
+        if any(indication.lower() in word.lower() for word in trial.conditions + trial.keywords):
             result_date = trial.estimated_completion if test else trial.results_first_posted
             indication_trials.append((nct_id, result_date))
             with open(indication_nct_path, 'a') as f:
