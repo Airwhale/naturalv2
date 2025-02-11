@@ -33,9 +33,15 @@ def find_condition_ncts(nct_list, cfg, test=False):
     condition_trials = []
     for nct_id in nct_list:
         trial = instantiate(cfg.eval, data_path=trial_path, nct_id=nct_id)
-        # check if {condition} is mentioned in the trial's list of conditions or keywords
-        condition = cfg.condition.replace("_", " ")
-        if any(condition.lower() in word.lower() for word in trial.conditions + trial.keywords):
+        # check if any of {conditions} is mentioned in the trial's list of conditions or keywords
+        conditions = [cond.replace("_", " ") for cond in cfg.condition]
+        if any(
+            any(
+                cond.lower() in word.lower() 
+                for word in trial.conditions + trial.keywords
+            ) 
+            for cond in conditions
+        ):
             result_date = trial.estimated_completion if test else trial.results_first_posted
             condition_trials.append((nct_id, result_date))
             with open(condition_nct_path, 'a') as f:
@@ -47,25 +53,35 @@ class Study:
         # order retro_trials by completion date and split into train/val according to train_ratio
         retro_trials.sort(key=lambda x: x[1])
         train_size = int(len(retro_trials) * cfg.train_ratio) 
-        self.train_trials, self.val_trials = retro_trials[:train_size], retro_trials[train_size:]
-        self.test_trials = test_trials
+        train_trials, val_trials = retro_trials[:train_size], retro_trials[train_size:]
+        test_trials = test_trials
 
-        self.condition = cfg.condition
+        self.condition = list(cfg.condition)
         self.train_ratio = cfg.train_ratio
+        self.num_train_trials = len(train_trials)
+        self.num_val_trials = len(val_trials)
+        self.num_test_trials = len(test_trials)
         
-        train_exp = [Experiment(nct_id, cfg.eval.data_path, train=True) for (nct_id, _) in self.train_trials]
+        train_exp = [Experiment(nct_id, cfg.eval.data_path, split='train') for (nct_id, _) in train_trials]
+        self.train_trials = [{exp.nct_id: [exp.title, exp.date] + exp.references} for exp in train_exp]
         self.num_train_labels = sum([len(exp.effect_sizes) for exp in train_exp])
-        val_exp = [Experiment(nct_id, cfg.eval.data_path, train=False) for (nct_id, _) in self.val_trials]
+        
+        val_exp = [Experiment(nct_id, cfg.eval.data_path, split='val') for (nct_id, _) in val_trials]
+        self.val_trials = [{exp.nct_id: [exp.title, exp.date] + exp.references} for exp in val_exp]
         self.num_val_labels = sum([len(exp.effect_sizes) for exp in val_exp])
+
+        test_exp = [Experiment(nct_id, cfg.eval.data_path + '_test', split='test') for (nct_id, _) in test_trials]
+        self.test_trials = [{exp.nct_id: [exp.title, exp.date] + exp.references} for exp in test_exp]
+        self.num_test_to_predict = sum([len(exp.outcome_treatment) for exp in test_exp])
 
         print(f"Study created for {self.condition} with:") 
         print(f"Train: {len(self.train_trials)} trials, {self.num_train_labels} labels")
         print(f"Val: {len(self.val_trials)} trials, {self.num_val_labels} labels")
-        print(f"Test: {len(self.test_trials)} trials")
+        print(f"Test: {len(self.test_trials)} trials, {self.num_test_to_predict} to predict")
 
     def to_yaml(self, filename):
         with open(filename, "w") as file:
-            yaml.dump(self.__dict__, file)
+            yaml.safe_dump(self.__dict__, file)
 
 
 @hydra.main(config_path="conf/", config_name="config.yaml")
@@ -81,7 +97,7 @@ def main(cfg: DictConfig) -> None:
     test_trials = find_condition_ncts(test_nct_list, cfg, test=True)
     
     study = Study(retro_trials, test_trials, cfg)
-    study.to_yaml(os.path.join(cfg.save_path, cfg.condition + "_study.yaml"))
+    study.to_yaml(os.path.join(cfg.save_path, cfg.condition[0] + "_study.yaml"))
 
     # TODO: paths to data dumps
 

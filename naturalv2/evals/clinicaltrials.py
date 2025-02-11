@@ -201,6 +201,7 @@ class ClinicalTrial(object):
   
         self.results_first_posted = self.protocol.get("statusModule", {}).get("resultsFirstPostDateStruct", {}).get("date", "")
         self.estimated_completion = self.protocol.get("statusModule", {}).get("completionDateStruct", {}).get("date", "")
+        self.references = self.protocol.get("referencesModule", {}).get('references', {})
 
         self.conditions = self.protocol.get("conditionsModule", {}).get("conditions", [])
         self.keywords = self.protocol.get("conditionsModule", {}).get("keywords", [])
