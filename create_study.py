@@ -10,6 +10,13 @@ from naturalv2.utils import check_trial
 from naturalv2.evals.experiment import Experiment
 
 def find_valid_ncts(cfg, test=False):
+    stats = {
+        'total': 0,
+        'randomized': 0,
+        'multiple_noncontrol': 0,
+        'nonhealthy': 0,
+        'binary_endpoint': 0
+    }
     trial_path = cfg.data_path + "/nct_reports"
     if test:
         trial_path += "_test"
@@ -19,9 +26,13 @@ def find_valid_ncts(cfg, test=False):
             if filename.endswith('.json'):
                 nct_id = filename[:-5] # ends with .json
                 trial = instantiate(cfg.eval, data_path=trial_path, nct_id=nct_id)
-                if check_trial(trial):
+                trial_stats, check = check_trial(trial)
+                for key, value in trial_stats.items():
+                    stats[key] += value
+                if check:
                     with open(valid_nct_path, 'a') as f:
-                        f.write(f"{nct_id}\n")          
+                        f.write(f"{nct_id}\n") 
+        print("Benchmark Stats", stats)
     with open(valid_nct_path, 'r') as f:
         return [line.strip() for line in f.readlines()]
 
@@ -29,7 +40,7 @@ def find_condition_ncts(nct_list, cfg, test=False):
     trial_path = cfg.data_path + "/nct_reports"
     if test:
         trial_path += "_test"
-    condition_nct_path = trial_path + f'/valid_binary_{cfg.condition}_nct_ids.txt'
+    condition_nct_path = trial_path + f'/valid_binary_{cfg.condition[0]}_nct_ids.txt'
     condition_trials = []
     for nct_id in nct_list:
         trial = instantiate(cfg.eval, data_path=trial_path, nct_id=nct_id)
@@ -99,7 +110,7 @@ def main(cfg: DictConfig) -> None:
     study = Study(retro_trials, test_trials, cfg)
     study.to_yaml(os.path.join(cfg.save_path, cfg.condition[0] + "_study.yaml"))
 
-    # TODO: paths to data dumps
+    # TODO: common names + paths to data dumps 
 
 if __name__ == "__main__":
     main()
