@@ -55,7 +55,7 @@ def find_condition_ncts(nct_list, cfg, test=False):
         ):
             result_date = trial.estimated_completion if test else trial.results_first_posted
             condition_trials.append((nct_id, result_date))
-            with open(condition_nct_path, 'a') as f:
+            with open(condition_nct_path, 'w') as f:
                 f.write(f"{nct_id}\n")
     return condition_trials
 
