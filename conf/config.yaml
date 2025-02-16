@@ -1,7 +1,8 @@
 defaults:
   - _self_
   - user: ${oc.env:USER}
-  - model: claude
+  - model@sample: gpt
+  - model@probs: llama
   - eval: clinicaltrial
   - source@reddit: reddit
   - source@pubmed: pubmed

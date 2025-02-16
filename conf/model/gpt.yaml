@@ -5,3 +5,4 @@ temperature: 0.7
 top_p: 1
 max_tokens: 512
 seed: ${..seed}
+response_format: 

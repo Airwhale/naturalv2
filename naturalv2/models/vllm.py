@@ -6,7 +6,7 @@ import warnings
 class vLLM:
 
     def __init__(self,
-        llm_name: str,
+        model_name: str,
         download_dir: str = ".",
         llm_path: str = "",
         tokenizer_path: str = "",
@@ -23,7 +23,7 @@ class vLLM:
         num_gpus: int = None
         ):
 
-        self.llm_name = llm_name
+        self.model_name = model_name
         self.temperature = temperature
         self.top_p = top_p
         self.max_seq_len = max_seq_len
@@ -34,16 +34,16 @@ class vLLM:
         self.seed = seed
         self.system_prompt = system_prompt
 
-        print(f"Initializing vLLM with {llm_name}...")
+        print(f"Initializing vLLM with {model_name}...")
 
         if not num_gpus:
             num_gpus = torch.cuda.device_count()
             
         if not llm_path or not tokenizer_path: 
-            print(f"Downloading model {llm_name}...")
+            print(f"Downloading model {model_name}...")
             print(f"Download directory: {download_dir}")
             self.llm = LLM(
-                model=self.llm_name, 
+                model=self.model_name, 
                 download_dir=download_dir, 
                 gpu_memory_utilization=gpu_mem_util,
                 tensor_parallel_size=num_gpus
