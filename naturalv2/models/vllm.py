@@ -1,3 +1,5 @@
+import numpy as np
+from scipy.special import softmax
 from vllm import LLM, SamplingParams
 from typing import List, Optional, Union
 import torch
@@ -14,7 +16,7 @@ class vLLM:
         top_p: float = 1.0,
         max_seq_len: int= 8000,
         max_gen_len: int = 1,
-        max_batch_size: int = 16,
+        batch_size: int = 16,
         gpu_mem_util: float = 0.9,
         seed: int = None,
         system_prompt: str = '',
@@ -28,7 +30,7 @@ class vLLM:
         self.top_p = top_p
         self.max_seq_len = max_seq_len
         self.max_gen_len = max_gen_len
-        self.max_batch_size = max_batch_size
+        self.batch_size = batch_size
         self.add_bos = add_bos
         self.length_norm = length_norm
         self.seed = seed
@@ -85,7 +87,7 @@ class vLLM:
         inputs, outputs = [], []
         for p in prompts:
             inputs += [p]
-            if len(inputs) == self.max_batch_size or len(outputs) + len(inputs) == len(prompts):
+            if len(inputs) == self.batch_size or len(outputs) + len(inputs) == len(prompts):
                 outputs += self.llm.generate(inputs, self.sampling_params)
                 inputs = []
         
@@ -104,3 +106,19 @@ class vLLM:
             logprobs.append(logprob)
             
         return logprobs
+
+    def compute_input_probs(self, X, options):
+        logprobs= []
+        X_repeat = [x for x in X for _ in range(len(options))]
+        options_repeat = options * len(X) 
+        inp = []
+        for x, y in zip(X_repeat, options_repeat):
+            inp += [x+y]
+            if len(inp) == self.batch_size or len(inp) == len(X_repeat):
+                logprobs += self.input_logprob(inp)
+                inp = []
+        logprobs = np.array(logprobs).reshape((len(X), len(options)))
+        probs = softmax(logprobs, axis=1)
+        sample_idx = [np.random.choice(len(prob), p=prob) for prob in probs]
+        max_idx = np.argmax(probs, axis=1)
+        return probs, sample_idx, max_idx

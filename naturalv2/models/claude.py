@@ -5,7 +5,7 @@ class Claude:
     def __init__(self,
                  model_name: str,
                  anthropic_api_key_path: str,
-                 system_template: str='',
+                 system_prompt: str='',
                  human_template: str='',
                  temperature: float=0.7,
                  top_p: float=1.0,
@@ -16,7 +16,7 @@ class Claude:
         anthropic_api_key = key_file.read().rstrip('\n')
         self.client = AsyncAnthropic(api_key=anthropic_api_key)
         self.model_name = model_name
-        self.system_template = system_template
+        self.system_prompt = system_template
         self.user_template = human_template
         self.temperature = temperature
         self.top_p = top_p

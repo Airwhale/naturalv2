@@ -1,0 +1,16 @@
+_target_: naturalv2.models.vllm.vLLM
+model_name: meta-llama/Meta-Llama-3-8B-Instruct
+download_dir: /mfs1/u/${oc.env:USER}/cache/
+llm_path: ""
+tokenizer_path: "" 
+temperature: 1
+top_p: 1
+max_seq_len: 8000
+max_gen_len: 512
+batch_size: 4
+gpu_mem_util: 0.9
+seed: ${seed}
+system_prompt: ""
+add_bos: False
+length_norm: False
+num_gpus: 

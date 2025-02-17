@@ -17,7 +17,7 @@ Assume a user shares a post along with related data. Your job will be to create 
 - "weight_change": Document the net change in the user's weight in the form of a float. Use a positive sign to indicate weight gain and a negative sign to denote weight loss. Do not include units.
 - "percentage_weight_change": Document the percentage modification in the user's weight relative to their initial weight. Use a positive sign to indicate weight gain and negative sign to denote weight loss, as a float. Do not include units.
 - "duration_days": Document the total number of days the user undertook the treatment and observed a weight change. Note that each dose or injection corresponds to 1 week, a week consists of 7 days, and a month consists of 30 days. Use the Date Created information provided if needed.
-- "drug_type": Provide the name of the treatment used by the user: among options "Semaglutide", "Tirzepatide", "Ozempic", "Wegovy", "Rybelsus", "Mounjaro", or "Zepbound".
+- "treatment": Provide the name of the treatment used by the user: among options "Semaglutide", "Tirzepatide", "Ozempic", "Wegovy", "Rybelsus", "Mounjaro", or "Zepbound".
 - "dosage": Document the dosage taken by the user as a float, in mg.
 - "target_achieved": Indicate "Yes" if the user showed more than a 5% weight reduction from their starting weight; "No" otherwise.
 

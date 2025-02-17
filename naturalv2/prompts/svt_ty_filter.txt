@@ -7,6 +7,6 @@ I will provide a post along with its subreddit name, title and date of creation.
 "weight_unit": Units in which weight is reported: "kg" or "lb".
 "weight_change": Numerical value for net change in the user's weight. Use a postive sign to indicate weight gain and negative sign for weight loss. Leave blank if it is not possible to infer the change in weight.
 "percentage_weight_change": Numerical value for percentage reduction in user's weight relative to their start weight. Use a postive sign to indicate weight gain and negative sign for weight loss. Leave blank if it is not possible to infer the percentage.
-"drug_type": Treatment taken by the user: "Semaglutide", "Tirzepatide" or "Other". Semaglutide includes Ozempic, Wegovy or Rybelsus. Tirzepatide includes Mounjaro or Zepbound.
+"treatment": Treatment taken by the user: "Semaglutide", "Tirzepatide" or "Other". Semaglutide includes Ozempic, Wegovy or Rybelsus. Tirzepatide includes Mounjaro or Zepbound.
 
 Assign a valid value to each key above. If you can't find the required information in the post, assign the value "Unknown". Remember to ONLY return a valid JSON with ALL of the above keys and their accurate values.
