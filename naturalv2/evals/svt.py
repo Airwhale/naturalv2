@@ -4,8 +4,7 @@ import pandas as pd
 from naturalv2.evals.clinicaltrials import ClinicalTrial
 
 class SvT:
-    # TODO: don't hardcode paths
-    def __init__(self, nct_id="NCT03987919", split="train"):
+    def __init__(self, nct_id="NCT03987919", split="train", path_to_main=""):
         # trial = ClinicalTrial(data_path, nct_id)
         self.split = split
         # self.trial_path = trial.data_path
@@ -25,15 +24,14 @@ class SvT:
         ]
         # self.inclusion_criteria = trial.inclusion_criteria.criteria
 
-        prompt_path = "/h/290/nikita/naturalv2/naturalv2/prompts/" # TODO
         self.prompts = {
-            "ty_filter": open(prompt_path + "svt_ty_filter.txt", "r").read(),
-            "knowns": open(prompt_path + "svt_knowns.txt", "r").read(),
-            "imputations": open(prompt_path + "svt_imputations.txt", "r").read(),
-            "conditionals": open(prompt_path + "svt_conditionals.txt", "r").read(),
+            "ty_filter": open(path_to_main + "naturalv2/prompts/svt_ty_filter.txt", "r").read(),
+            "knowns": open(path_to_main + "naturalv2/prompts/svt_knowns.txt", "r").read(),
+            "imputations": open(path_to_main + "naturalv2/prompts/svt_imputations.txt", "r").read(),
+            "conditionals": open(path_to_main + "naturalv2/prompts/svt_conditionals.txt", "r").read(),
         }
 
-        self.curated_data_path = "/h/290/nikita/naturalv2/naturalv2/evals/svt_relevant.csv" # TODO
+        self.curated_data_path = path_to_main + "naturalv2/evals/svt_relevant.csv" 
         self.outcome_treatment = [("target_achieved", ("semaglutide", "tirzepatide"))]
         self.effect_sizes = [(68.55 - 58.44) / 100]
 

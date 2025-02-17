@@ -108,7 +108,7 @@ def weight_by_inclusion(ites, inclusion_probs):
 @hydra.main(config_path="conf/", config_name="config.yaml")
 def main(cfg: DictConfig) -> None:
 
-    experiment = SvT()
+    experiment = SvT(path_to_main=cfg.user.path_to_main)
     os.makedirs(os.path.join(cfg.save_path, f"{experiment.nct_id}"), exist_ok=True)
 
     cheap_model = instantiate(cfg.cheap_model, response_format={"type": "json_object"})
