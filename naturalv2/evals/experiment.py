@@ -32,7 +32,7 @@ class Experiment:
                         if i < j:  
                             effect_size = literal_eval(result.cohort_stats(cohort2)['value']) - literal_eval(result.cohort_stats(cohort1)['value'])
                             self.outcome_treatment.append((result.title, (cohort1.title, cohort2.title)))
-                            self.effect_sizes.append(effect_size) # always cohort2 - cohort1
+                            self.effect_sizes.append(effect_size / 100) # always cohort2 - cohort1
             
         self.outcome_names = [out.title for out in outcomes]
         self.treatment_names = [arm.title for arm in arms]

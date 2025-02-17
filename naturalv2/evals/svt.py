@@ -5,14 +5,14 @@ from naturalv2.evals.clinicaltrials import ClinicalTrial
 
 class SvT:
     # TODO: don't hardcode paths
-    def __init__(self, nct_id="NCT03987919", data_path="/mfs1/u/nikita/naturalv2/nct_reports", split="train"):
-        trial = ClinicalTrial(data_path, nct_id)
+    def __init__(self, nct_id="NCT03987919", split="train"):
+        # trial = ClinicalTrial(data_path, nct_id)
         self.split = split
-        self.trial_path = trial.data_path
-        self.nct_id = trial.nct_id
-        self.title = trial.official_title
-        self.date = trial.estimated_completion if self.split=='test' else trial.results_first_posted
-        self.references = [ref.get('citation', '') for ref in trial.references]
+        # self.trial_path = trial.data_path
+        self.nct_id = nct_id
+        # self.title = trial.official_title
+        # self.date = trial.estimated_completion if self.split=='test' else trial.results_first_posted
+        # self.references = [ref.get('citation', '') for ref in trial.references]
             
         self.outcome_names = ["target_achieved"]
         self.treatment_names = ["semaglutide", "tirzepatide"]
@@ -23,21 +23,25 @@ class SvT:
             "weight_unit", "weight_change", "percentage_weight_change", 
             "duration_days", "dosage"
         ]
-        self.inclusion_criteria = trial.inclusion_criteria.criteria
+        # self.inclusion_criteria = trial.inclusion_criteria.criteria
 
-        prompt_path = "/h/290/nikita/naturalv2/naturalv2/prompts/"
+        prompt_path = "/h/290/nikita/naturalv2/naturalv2/prompts/" # TODO
         self.prompts = {
             "knowns": open(prompt_path + "svt_knowns.txt", "r").read(),
             "imputations": open(prompt_path + "svt_imputations.txt", "r").read(),
             "conditionals": open(prompt_path + "svt_conditionals.txt", "r").read(),
         }
 
+        self.curated_data_path = "/h/290/nikita/naturalv2/naturalv2/evals/svt_ty_relevant.csv" # TODO
+        self.outcome_treatment = ("target_achieved", ("semaglutide", "tirzepatide"))
+        self.effect_sizes = (68.55 - 58.44) / 100
+
     def hard_filter_inclusion(self, extract):
         extract.loc[:, "inclusion_score"] = 0 
-        t2dm = (extract['t2dm']==1) | (extract['t2dm'].isna()) | ((extract['start_HbA1c'] >= 7) & (10.5 >= extract['start_HbA1c'])) #| (extract['start_HbA1c'].isna())  
+        t2dm = (extract['t2dm']==1) | (extract['t2dm'].isna()) | ((extract['start_HbA1c'] >= 7) & (10.5 >= extract['start_HbA1c'])) | (extract['start_HbA1c'].isna())  
         metformin = (extract['metformin']==1) | (extract['metformin'].isna())
         bmi = (extract['bmi'] >= 25) | (extract['bmi'].isna())
-        dosage = ((extract["drug_type"] == 0) & (extract["dosage"] == 1)) | ((extract["drug_type"] == 1) & (extract["dosage"] == 5)) | (extract['dosage'].isna())
+        dosage = ((extract["treatment"] == 0) & (extract["dosage"] == 1)) | ((extract["treatment"] == 1) & (extract["dosage"] == 5)) | (extract['dosage'].isna())
         for criterion in [t2dm, metformin, bmi, dosage]:
             extract.loc[criterion, "inclusion_score"] += 1
         known_to_unmatch = extract[extract["inclusion_score"]<4].index
@@ -89,7 +93,7 @@ class SvT:
         else: # it must be a pandas df
             all_keys = dct.columns
         for field in all_keys:
-            if field in ["sample_drug_type", "drug_type"]:
+            if field in ["sample_treatment", "treatment"]:
                 binary_map = {"Semaglutide like Ozempic or Wegovy or Rybelsus": 0, "Tirzepatide like Mounjaro or Zepbound": 1}
                 dct[field] = binary_map[dct[field]]
             elif field in ["sample_target_achieved", "sample_age", "sample_bmi", "sample_start_HbA1c", "sample_start_weight", "target_achieved", "age", "bmi", "start_HbA1c", "start_weight"]:
@@ -122,7 +126,7 @@ class SvT:
                            "sample_age", "sample_bmi", "sample_start_HbA1c", "sample_start_weight", "target_achieved", "age", "bmi", "start_HbA1c", "start_weight"]:
                 binary_map = {0: "No", 1: "Yes"}
                 dct[field] = binary_map[dct[field]]
-            elif field in ["sample_drug_type", "drug_type"]:
+            elif field in ["sample_treatment", "treatment"]:
                 drug_map = {0: "Semaglutide like Ozempic or Wegovy or Rybelsus", 1: "Tirzepatide like Mounjaro or Zepbound"}
                 dct[field] = drug_map[dct[field]]
             elif field in ["sample_sex", "sex"]:
@@ -138,8 +142,8 @@ class SvT:
     
     def discretize(self, sample_df, hard_filter=True, inf=True):
         sample_df = sample_df.map(lambda x: np.nan if x in ["Unknown", "unknown"] else x)
-        if hard_filter:
-            sample_df = self.hard_filter_ty(sample_df)
+        # if hard_filter:
+        #     sample_df = self.hard_filter_ty(sample_df)
         sex_map = {"Male": 0, "Female": 1}
         sample_df["sex"] = sample_df["sex"].replace(sex_map)
         country_map = {'United States': 0, 'Mexico': 1, 'Canada': 2, 'Australia': 3, 'United Kingdom': 4, "UK": 4, 'Belgium': 5, 'Greece': 6, 'Germany': 7, "Brazil": 8, "Costa Rica": 9, "Italy": 10}
@@ -169,11 +173,11 @@ class SvT:
         sample_df.loc[~(sample_df["percentage_weight_change"] <= -5), "target_achieved"] = 0
 
         # this covers all datapoints when gpt3.5 returns different treatment names
-        sample_df.loc[sample_df["drug_type"].isin(["Ozempic", "Wegovy", "Rybelsus", "Semaglutide", "Ozempic / Wegovy", "Metformin and Ozempic"]), "drug_type"] = 0 
-        sample_df.loc[sample_df["drug_type"].isin(["Mounjaro", "Zepbound", "Tirzepatide", "Trizepatide", "Munjaro", "Mounjourno"]), "drug_type"] = 1
-        sample_df = sample_df.drop(sample_df[~sample_df["drug_type"].isin([0,1])].index)
+        sample_df.loc[sample_df["treatment"].isin(["Ozempic", "Wegovy", "Rybelsus", "Semaglutide", "Ozempic / Wegovy", "Metformin and Ozempic"]), "treatment"] = 0 
+        sample_df.loc[sample_df["treatment"].isin(["Mounjaro", "Zepbound", "Tirzepatide", "Trizepatide", "Munjaro", "Mounjourno"]), "treatment"] = 1
+        sample_df = sample_df.drop(sample_df[~sample_df["treatment"].isin([0,1])].index)
 
-        sample_df["drug_type"] = sample_df["drug_type"].astype('int8')
+        sample_df["treatment"] = sample_df["treatment"].astype('int8')
         sample_df["target_achieved"] = sample_df["target_achieved"].astype('int8')
 
         if hard_filter:
