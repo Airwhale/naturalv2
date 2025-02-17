@@ -22,7 +22,7 @@ def main(cfg: DictConfig) -> None:
     pubmed = instantiate(cfg.pubmed.source, trial=trial, download=True)
     pubmed_curated = pubmed.curate_data(date_filter=cfg.filter_by_date)
 
-    # TODO: create a save an Experiment object (yaml?) with similar to datasets in NATURAL
+    # TODO: create a save an Experiment object (yaml?) similar to datasets in NATURAL
 
 
 if __name__ == "__main__":

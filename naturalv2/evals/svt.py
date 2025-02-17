@@ -27,15 +27,29 @@ class SvT:
 
         prompt_path = "/h/290/nikita/naturalv2/naturalv2/prompts/" # TODO
         self.prompts = {
+            "ty_filter": open(prompt_path + "svt_ty_filter.txt", "r").read(),
             "knowns": open(prompt_path + "svt_knowns.txt", "r").read(),
             "imputations": open(prompt_path + "svt_imputations.txt", "r").read(),
             "conditionals": open(prompt_path + "svt_conditionals.txt", "r").read(),
         }
 
-        self.curated_data_path = "/h/290/nikita/naturalv2/naturalv2/evals/svt_ty_relevant.csv" # TODO
+        self.curated_data_path = "/h/290/nikita/naturalv2/naturalv2/evals/svt_relevant.csv" # TODO
         self.outcome_treatment = [("target_achieved", ("semaglutide", "tirzepatide"))]
         self.effect_sizes = [(68.55 - 58.44) / 100]
 
+    def hard_filter_ty(self, extract):
+        extract = extract.map(lambda x: np.nan if x in ["Unknown", "unknown", ""] else x)
+        treatment = extract['treatment'].apply(lambda x: x if x in [
+            'Tirzepatide', 'Semaglutide', 'Mounjaro', 'Ozempic', 'Wegovy', 'Zepbound', 'Rybelsus', 'Wegovy (Semaglutide)', 'Semaglutide (Rybelsus)', 'Wegovy/Semaglutide', 'Wegovy - Semaglutide', 'GLP-1 agonist medications (Semaglutide)',
+            'Mounjaro (Tirzepatide)', 'Ozempic (Semaglutide)', 'Mounjaro or Zepbound', 'Semaglutide (Ozempic)', 'Rybelsus (Semaglutide)', 'Ozempic/Wegovy (Semaglutide)', 'Wegovy/Ozempic', 'Wegovy / Ozempic',
+            'Mix of Semaglutide (Wegovy) and Ozempic', 'Mixed (Wegovy and Ozempic)', 'Ozempic/Wegovy', 'Wegovy or Ozempic (Semaglutide)', 'Wegovy or Ozempic', 'Wegovy (under the Ozempic brand)', 'Wegovy and Ozempic', 'Wegovy/Ozempic (Semaglutide)'
+        ] else np.nan).dropna()
+        extract = extract.loc[treatment.index]
+        outcome = (extract['end_weight'].notnull()) | (extract['weight_change'].notnull()) | (extract['percentage_weight_change'].notnull())
+        extract = extract[outcome]
+
+        return extract
+        
     def hard_filter_inclusion(self, extract):
         extract.loc[:, "inclusion_score"] = 0 
         t2dm = (extract['t2dm']==1) | (extract['t2dm'].isna()) | ((extract['start_HbA1c'] >= 7) & (10.5 >= extract['start_HbA1c'])) | (extract['start_HbA1c'].isna())  

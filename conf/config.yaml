@@ -1,6 +1,7 @@
 defaults:
   - _self_
   - user: ${oc.env:USER}
+  - model@cheap_model: gpt
   - model@sample_model: gpt
   - model@probs_model: vllm
   - eval: clinicaltrial

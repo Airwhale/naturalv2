@@ -114,15 +114,12 @@ class vLLM:
         return logprobs
 
     def compute_input_probs(self, X, options):
-        logprobs= []
         X_repeat = [x for x in X for _ in range(len(options))]
         options_repeat = options * len(X) 
         inp = []
         for x, y in zip(X_repeat, options_repeat):
             inp += [x+y]
-            if len(inp) == self.batch_size or len(inp) == len(X_repeat):
-                logprobs += self.input_logprob(inp)
-                inp = []
+        logprobs = self.input_logprob(inp)
         logprobs = np.array(logprobs).reshape((len(X), len(options)))
         probs = softmax(logprobs, axis=1)
         sample_idx = [np.random.choice(len(prob), p=prob) for prob in probs]

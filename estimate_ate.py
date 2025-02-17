@@ -12,14 +12,13 @@ import nest_asyncio
 from naturalv2.evals.svt import SvT
 from naturalv2.utils import *
 
-def extract_covariates(input_df, experiment, model, save_path, impute=False):
+def extract_covariates(input_df, experiment, model, save_path, extract_type):
     if os.path.exists(save_path):
         return pd.read_csv(save_path, index_col=0)
-    model.system_prompt = experiment.get_prompt("imputations") if impute else experiment.get_prompt("knowns")
+    model.system_prompt = experiment.get_prompt(extract_type)
     model.human_template = "\n## Input \n>{report}"
-    structured_columns = experiment.extended_names + experiment.outcome_names + ["treatment", "report"]
     
-    llm_samples_df = pd.DataFrame(columns=structured_columns)
+    llm_samples_df = pd.DataFrame()
     llm_inputs = []
     for i, row in tqdm(input_df.iterrows()):
         report = row["report"]
@@ -32,15 +31,20 @@ def extract_covariates(input_df, experiment, model, save_path, impute=False):
             } for j in range(len(llm_inputs))]
             df_to_save = pd.DataFrame.from_dict(dict_to_save)
             llm_samples_df = pd.concat([llm_samples_df, df_to_save], ignore_index=True)
-            if impute: # TODO later: Remove to use only new extractions - shouldn't change results much. 
+            if extract_type == "imputations": # TODO later: Remove to use only new extractions - shouldn't change results much. 
                 input_df.update(llm_samples_df, overwrite=False)
                 llm_samples_df = input_df.copy().iloc[:len(llm_samples_df)]
-            llm_samples_df = experiment.discretize(llm_samples_df, hard_filter=False, inf=False)
+            if extract_type != "ty_filter":
+                llm_samples_df = experiment.discretize(llm_samples_df, hard_filter=False, inf=False)
             llm_samples_df.to_csv(save_path) 
             llm_inputs = []
     
     llm_samples_df.to_csv(save_path)
     return llm_samples_df
+
+def filter_by_ty(samples_df, experiment):
+    samples_df = experiment.hard_filter_ty(samples_df)
+    return samples_df
 
 def filter_by_inclusion(samples_df, experiment):
     samples_df = experiment.discretize(samples_df, hard_filter=True, inf=False)
@@ -91,7 +95,7 @@ def extract_conditionals(input_df, experiment, model, save_path, inclusion=False
             llm_inputs, rows = [], []
     
     llm_probs_df.to_csv(save_path)
-    return llm_probs_df
+    return pd.read_csv(save_path, index_col=0) 
 
 def weight_by_inclusion(ites, inclusion_probs):
     # ites has shape [num_treatments, num_datapoints]
@@ -107,14 +111,23 @@ def main(cfg: DictConfig) -> None:
     experiment = SvT()
     os.makedirs(os.path.join(cfg.save_path, f"{experiment.nct_id}"), exist_ok=True)
 
+    cheap_model = instantiate(cfg.cheap_model, response_format={"type": "json_object"})
     sample_model = instantiate(cfg.sample_model, response_format={"type": "json_object"})
     nest_asyncio.apply()
 
-    curated_df = pd.read_csv(experiment.curated_data_path, index_col=0)
+    curated_df = pd.read_csv(experiment.curated_data_path, index_col=0).head(10)
+    
+    # filter reports that do not contain t,y info
+    ty_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/{cheap_model.model_name}_ty_samples.csv")
+    ty_samples = extract_covariates(
+        curated_df, experiment, cheap_model, ty_path, "ty_filter"
+    )
+    ty_filtered_df = filter_by_ty(ty_samples, experiment)
+
     # extract samples from reports, allowing LLM to output "unknown" for missing info
     unknowns_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/{sample_model.model_name}_samples_unknowns.csv")
     samples_with_unknown = extract_covariates(
-        curated_df, experiment, sample_model, unknowns_path
+        ty_filtered_df, experiment, sample_model, unknowns_path, "knowns"
     )
     
     # filter reports known to violate inclusion criteria
@@ -123,7 +136,7 @@ def main(cfg: DictConfig) -> None:
     # impute samples from reports, imputing missing info
     imputed_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/{sample_model.model_name}_samples_imputed.csv")
     imputed_samples = extract_covariates(
-        inclusion_filtered, experiment, sample_model, imputed_path, impute=True
+        inclusion_filtered, experiment, sample_model, imputed_path, "imputations"
     )
     # drop rows with missing covariates even after imputation
     imputed_samples = imputed_samples.dropna(subset=experiment.covariate_names).reset_index(drop=True)
