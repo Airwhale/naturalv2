@@ -14,7 +14,7 @@ cd naturalv2
 python setup.py develop
 ```
 
-Create a user file `conf/user/{your_name}.yaml`. See [nikita.yaml](https://github.com/nikitadhawan/naturalv2/tree/main/conf/user/nikita.yaml) for an example.
+Create a user file `conf/user/{your_name}.yaml` and add your own paths. See [nikita.yaml](https://github.com/nikitadhawan/naturalv2/tree/main/conf/user/nikita.yaml) for an example.
 ______________________________________________________________________
 
 ## Retrospective Study
@@ -33,3 +33,13 @@ ______________________________________________________________________
 ______________________________________________________________________
 
 ## Estimating NATURAL ATEs
+ 
+To convert a curated set of Reddit data to the NATURAL-IPW ATE for the trial with NCT ID: NCT03987919, run:
+
+```bash
+python estimate_ate.py cheap_model.model_name=gpt-3.5-turbo-0125 sample_model.model_name=gpt-4-1106-preview probs_model=meta-llama/Llama-2-70b-hf 
+```
+
+Model choices can be changed based on budget. The above are the models used in the NATURAL paper. The only exception is that the LLAMA2-70B model above is the HF version, while NATURAL used Meta's official release (which hopefully doesn't matter too much).
+
+Currently, this script is hard-coded to use the manually defined [SvT experiment](https://github.com/nikitadhawan/naturalv2/blob/main/naturalv2/evals/svt.py) corresponding to NCT ID NCT03987919. Eventually, we would like to create experiments in an automated fashion and store them as yamls, to be loaded in by this script.
