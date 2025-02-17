@@ -6,7 +6,7 @@ defaults:
   - eval: clinicaltrial
   - source@reddit: reddit
   - source@pubmed: pubmed
-  # - estimator: natural_full
+  - estimator: natural_ipw
 
 
 seed: 10

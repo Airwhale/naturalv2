@@ -9,13 +9,13 @@ from omegaconf import DictConfig
 from hydra.utils import instantiate
 import nest_asyncio
 
-from naturalv2.eval.experiment import Experiment
+from naturalv2.eval.svt import SvT
 from naturalv2.utils import *
 
 def extract_covariates(input_df, experiment, model, save_path, impute=False):
-    model.system_template = "" # TODO
+    model.system_template = experiment.get_prompt("imputations") if impute else experiment.get_prompt("knowns")
     model.human_template = "\n## Input \n>{report}"
-    structured_columns = experiment.covariate_names + experiment.treatment_names + experiment.outcome_names + "report"
+    structured_columns = experiment.extended_names + experiment.outcome_names + ["treatment", "report"]
     
     llm_samples_df = pd.DataFrame(columns=structured_columns)
     llm_inputs = []
@@ -30,7 +30,7 @@ def extract_covariates(input_df, experiment, model, save_path, impute=False):
             } for j in range(len(llm_inputs))]
             df_to_save = pd.DataFrame.from_dict(dict_to_save)
             llm_samples_df = pd.concat([llm_samples_df, df_to_save], ignore_index=True)
-            if impute: # TODO: Remove to use only new extractions - shouldn't change results much. 
+            if impute: # TODO later: Remove to use only new extractions - shouldn't change results much. 
                 input_df.update(llm_samples_df, overwrite=False)
                 llm_samples_df = input_df.copy().iloc[:len(llm_samples_df)]
                 llm_samples_df = dataset.discretize(llm_samples_df, hard_filter=False, inf=False)
@@ -46,7 +46,7 @@ def filter_by_inclusion(samples_df, experiment):
     return samples_df
 
 def extract_conditionals(input_df, experiment, model, save_path, inclusion=False):
-    model.system_template = "" # TODO
+    model.system_template = experiment.get_prompt("conditionals")
     llm_probs_df = pd.DataFrame()
     to_enum = ["inclusion"] if inclusion else experiment.treatment_names + experiment.outcome_names
     options = enumerate_strings(experiment.get_options(to_enum))
@@ -88,11 +88,15 @@ def extract_conditionals(input_df, experiment, model, save_path, inclusion=False
     llm_probs_df.to_csv(save_path)
     return llm_probs_df
 
+def weight_by_inclusion(ites, inclusion_probs):
+    # ites has shape [num_treatments, num_datapoints]
+    return np.average(ites, axis=1, weights=inclusion_probs["inclusion"])
+
         
 @hydra.main(config_path="conf/", config_name="config.yaml")
 def main(cfg: DictConfig) -> None:
 
-    experiment = Experiment(cfg.eval.nct_id, cfg.eval.data_path) # TODO: create Tirzepatide exp
+    experiment = SvT()
     sample_model = instantiate(cfg.sample.model, response_format={"type": "json_object"})
     nest_asyncio.apply()
 
@@ -105,14 +109,16 @@ def main(cfg: DictConfig) -> None:
     
     # filter reports known to violate inclusion criteria
     inclusion_filtered = filter_by_inclusion(samples_with_unknown, experiment)
-    # impute samples from reports, imputing missing info
     
+    # impute samples from reports, imputing missing info
     imputed_path = os.path.join(cfg.save_path, f"{experiment.nct_id}_{sample_model.model_name}_samples_imputed.csv")
     imputed_samples = extract_covariates(
         inclusion_filtered, experiment, sample_model, imputed_path, impute=True
     )
+    # drop rows with missing covariates even after imputation
+    imputed_samples = imputed_samples.dropna(subset=experiment.covariate_names).reset_index(drop=True)
     
-    probs_model = instantial(cfg.probs.model)
+    probs_model = instantiate(cfg.probs.model)
 
     # extract conditionals of the form P(T, Y | X, R)
     conditionals_path = os.path.join(cfg.save_path, f"{experiment.nct_id}_{probs_model.model_name}_conditionals.csv")
@@ -124,7 +130,31 @@ def main(cfg: DictConfig) -> None:
         imputed_samples, experiment, probs_model, inclusion_path, inclusion=True
     )
 
-    # TODO: compute ATE estimate
+    estimator = instantiate(cfg.estimator, experiment=experiment)
+    results_dicts = [] 
+    for outcome in experiment.outcome_names:
+        all_ites = estimator.get_ites(conditionals, outcome)
+        weighted_effects = weight_by_inclusion(all_ites, inclusion_probs) # len: num_treatments
+
+        for i, treat1 in enumerate(experiment.treatment_names):
+            for j, treat2 in enumerate(experiment.treatment_names):
+                if i < j:
+                    pred_ate = weighted_effects[j] - weighted_effects[i]
+                    results = {"outcome": outcome, "treatments": f"{treat2}-{treat1}", "pred_ate": pred_ate}
+                    print("Predicted ATE: ", pred_ate)
+                    if experiment.split != "test":
+                        effect_idx = experiment.outcome_treatment.index((outcome, (treat1, treat2)))
+                        true_ate = experiment.effect_sizes[effect_idx]
+                        error = abs(pred_ate - true_ate)
+                        results.update({"true_ate": true_ate, "error": error})
+                        print("True ATE: ", true_ate)
+                        print("Absolute Error: ", error)
+                    result_dicts.append(results)
+
+    # TODO later: compute other evaluation metrics, e.g. sensitivity, balance
+
+    result_df = pd.DataFrame(result_dicts)
+    result_df.to_csv(os.path.join(cfg.save_path, f"{experiment.nct_id}_ates.csv"))
 
 
 if __name__ == "__main__":
