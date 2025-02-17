@@ -3,3 +3,4 @@ save_path: /mfs1/u/nikita/
 data_path: /mfs1/u/nikita/
 path_to_main: /h/290/nikita/naturalv2/
 openai_api_key_path: /h/290/nikita/openai_api_key.txt   
+anthropic_api_key_path: /h/290/nikita/anthropic_api_key.txt
