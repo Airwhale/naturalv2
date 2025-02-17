@@ -16,6 +16,6 @@ experiment_name: test
 save_path: ${user.save_path}/naturalv2/results
 data_path: ${user.data_path}/naturalv2
 date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}
-restore: False
+load_model: True
 
 filter_by_date: False

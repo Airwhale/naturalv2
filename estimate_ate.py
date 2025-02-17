@@ -9,11 +9,13 @@ from omegaconf import DictConfig
 from hydra.utils import instantiate
 import nest_asyncio
 
-from naturalv2.eval.svt import SvT
+from naturalv2.evals.svt import SvT
 from naturalv2.utils import *
 
 def extract_covariates(input_df, experiment, model, save_path, impute=False):
-    model.system_template = experiment.get_prompt("imputations") if impute else experiment.get_prompt("knowns")
+    if os.path.exists(save_path):
+        return pd.read_csv(save_path, index_col=0)
+    model.system_prompt = experiment.get_prompt("imputations") if impute else experiment.get_prompt("knowns")
     model.human_template = "\n## Input \n>{report}"
     structured_columns = experiment.extended_names + experiment.outcome_names + ["treatment", "report"]
     
@@ -22,8 +24,8 @@ def extract_covariates(input_df, experiment, model, save_path, impute=False):
     for i, row in tqdm(input_df.iterrows()):
         report = row["report"]
         llm_inputs.append({"report": report})
-        if len(llm_inputs) >= model.batch_size or len(llm_inputs) == len(input_df):
-            llm_out_dicts = llm.get_outputs(llm_inputs)
+        if len(llm_inputs) >= model.batch_size or len(input_df) == len(llm_samples_df) + len(llm_inputs):
+            llm_out_dicts = model.get_outputs(model.system_prompt, llm_inputs)
             llm_out_dicts = [json.loads(text) for text in llm_out_dicts]
             dict_to_save = [{
                 **llm_out_dicts[j], **{'report': llm_inputs[j]["report"]}
@@ -33,7 +35,7 @@ def extract_covariates(input_df, experiment, model, save_path, impute=False):
             if impute: # TODO later: Remove to use only new extractions - shouldn't change results much. 
                 input_df.update(llm_samples_df, overwrite=False)
                 llm_samples_df = input_df.copy().iloc[:len(llm_samples_df)]
-                llm_samples_df = dataset.discretize(llm_samples_df, hard_filter=False, inf=False)
+            llm_samples_df = experiment.discretize(llm_samples_df, hard_filter=False, inf=False)
             llm_samples_df.to_csv(save_path) 
             llm_inputs = []
     
@@ -42,13 +44,16 @@ def extract_covariates(input_df, experiment, model, save_path, impute=False):
 
 def filter_by_inclusion(samples_df, experiment):
     samples_df = experiment.discretize(samples_df, hard_filter=True, inf=False)
-    samples_df = samples_df.map(lambda x: np.nan if x in ["Unknown", "unknown"] else x)
+    # samples_df = samples_df.map(lambda x: np.nan if x in ["Unknown", "unknown"] else x)
     return samples_df
 
 def extract_conditionals(input_df, experiment, model, save_path, inclusion=False):
-    model.system_template = experiment.get_prompt("conditionals")
+    if os.path.exists(save_path):
+        return pd.read_csv(save_path, index_col=0)
+    input_df = experiment.discretize(input_df, hard_filter=False, inf=True)
+    model.system_prompt = experiment.get_prompt("conditionals")
     llm_probs_df = pd.DataFrame()
-    to_enum = ["inclusion"] if inclusion else experiment.treatment_names + experiment.outcome_names
+    to_enum = ["inclusion"] if inclusion else ["treatment"] + experiment.outcome_names
     options = enumerate_strings(experiment.get_options(to_enum))
     interleaved_options = qa_interleaved_enum(
         experiment.get_question_prompt(to_enum),
@@ -73,10 +78,10 @@ def extract_conditionals(input_df, experiment, model, save_path, inclusion=False
             X += sample_text
 
         llm_inputs.append(X)
-        cols = experiment.covariate_names + experiment.treatment_names + experiment.outcome_names + "report"
+        cols = experiment.covariate_names + experiment.outcome_names + ["treatment", "report"]
         rows.append(row[cols])
-        if len(llm_inputs) >= model.batch_size:
-            post_probs, sample_indices = llm.compute_input_probs(llm_inputs, interleaved_options)
+        if len(llm_inputs) >= model.batch_size or len(input_df) == len(llm_probs_df) + len(llm_inputs):
+            post_probs, sample_indices, _ = model.compute_input_probs(llm_inputs, interleaved_options)
             dict_to_save = [{**rows[j].to_dict(), 
                              **idx_to_feat[sample_indices[j]], 
                              **{"probs": post_probs[j]}} for j in range(len(llm_inputs))]
@@ -90,19 +95,24 @@ def extract_conditionals(input_df, experiment, model, save_path, inclusion=False
 
 def weight_by_inclusion(ites, inclusion_probs):
     # ites has shape [num_treatments, num_datapoints]
-    return np.average(ites, axis=1, weights=inclusion_probs["inclusion"])
+    probs = inclusion_probs.apply(
+        lambda row: [float(prob) for prob in row["probs"][1:-1].split()][1], axis=1
+    ).to_numpy()
+    return np.average(ites, axis=1, weights=probs)
 
         
 @hydra.main(config_path="conf/", config_name="config.yaml")
 def main(cfg: DictConfig) -> None:
 
     experiment = SvT()
-    sample_model = instantiate(cfg.sample.model, response_format={"type": "json_object"})
+    os.makedirs(os.path.join(cfg.save_path, f"{experiment.nct_id}"), exist_ok=True)
+
+    sample_model = instantiate(cfg.sample_model, response_format={"type": "json_object"})
     nest_asyncio.apply()
 
     curated_df = pd.read_csv(experiment.curated_data_path, index_col=0)
     # extract samples from reports, allowing LLM to output "unknown" for missing info
-    unknowns_path = os.path.join(cfg.save_path, f"{experiment.nct_id}_{sample_model.model_name}_samples_unknowns.csv")
+    unknowns_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/{sample_model.model_name}_samples_unknowns.csv")
     samples_with_unknown = extract_covariates(
         curated_df, experiment, sample_model, unknowns_path
     )
@@ -111,27 +121,30 @@ def main(cfg: DictConfig) -> None:
     inclusion_filtered = filter_by_inclusion(samples_with_unknown, experiment)
     
     # impute samples from reports, imputing missing info
-    imputed_path = os.path.join(cfg.save_path, f"{experiment.nct_id}_{sample_model.model_name}_samples_imputed.csv")
+    imputed_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/{sample_model.model_name}_samples_imputed.csv")
     imputed_samples = extract_covariates(
         inclusion_filtered, experiment, sample_model, imputed_path, impute=True
     )
     # drop rows with missing covariates even after imputation
     imputed_samples = imputed_samples.dropna(subset=experiment.covariate_names).reset_index(drop=True)
     
-    probs_model = instantiate(cfg.probs.model)
+    probs_model = instantiate(cfg.probs_model)
+    if cfg.load_model:
+        probs_model.load_model()
+    probs_model_name = probs_model.model_name.replace("/", "_") # vllm-supported models often have a "/"
 
     # extract conditionals of the form P(T, Y | X, R)
-    conditionals_path = os.path.join(cfg.save_path, f"{experiment.nct_id}_{probs_model.model_name}_conditionals.csv")
+    conditionals_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/{probs_model_name}_conditionals.csv")
     conditionals = extract_conditionals(imputed_samples, experiment, probs_model, conditionals_path)
     
     # extract inclusion probabilities of the form P(X in I | R)
-    inclusion_path = os.path.join(cfg.save_path, f"{experiment.nct_id}_{probs_model.model_name}_inclusion_probs.csv")
+    inclusion_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/{probs_model_name}_inclusion_probs.csv")
     inclusion_probs = extract_conditionals(
         imputed_samples, experiment, probs_model, inclusion_path, inclusion=True
     )
 
     estimator = instantiate(cfg.estimator, experiment=experiment)
-    results_dicts = [] 
+    result_dicts = [] 
     for outcome in experiment.outcome_names:
         all_ites = estimator.get_ites(conditionals, outcome)
         weighted_effects = weight_by_inclusion(all_ites, inclusion_probs) # len: num_treatments
@@ -146,7 +159,7 @@ def main(cfg: DictConfig) -> None:
                         effect_idx = experiment.outcome_treatment.index((outcome, (treat1, treat2)))
                         true_ate = experiment.effect_sizes[effect_idx]
                         error = abs(pred_ate - true_ate)
-                        results.update({"true_ate": true_ate, "error": error})
+                        results.update({"true_ate": true_ate, "abs_error": error})
                         print("True ATE: ", true_ate)
                         print("Absolute Error: ", error)
                     result_dicts.append(results)
@@ -154,7 +167,7 @@ def main(cfg: DictConfig) -> None:
     # TODO later: compute other evaluation metrics, e.g. sensitivity, balance
 
     result_df = pd.DataFrame(result_dicts)
-    result_df.to_csv(os.path.join(cfg.save_path, f"{experiment.nct_id}_ates.csv"))
+    result_df.to_csv(os.path.join(cfg.save_path, f"{experiment.nct_id}/ate_results.csv"))
 
 
 if __name__ == "__main__":

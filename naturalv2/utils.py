@@ -106,7 +106,7 @@ def enum_to_dcts(enumerated, to_enum):
         separate = [i.split(":") for i in elem.split(",")]
         dct = {}
         for field in range(len(to_enum)):
-            dct["sample_" + to_enum[field]] = separate[field][1][1:]
+            dct[to_enum[field]] = separate[field][1][1:]
         return_dcts.append(dct)
     return return_dcts
 

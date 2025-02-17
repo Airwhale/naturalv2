@@ -26,37 +26,43 @@ class vLLM:
         ):
 
         self.model_name = model_name
+        self.download_dir = download_dir
+        self.llm_path = llm_path
+        self.tokenizer_path = tokenizer_path
         self.temperature = temperature
         self.top_p = top_p
         self.max_seq_len = max_seq_len
         self.max_gen_len = max_gen_len
         self.batch_size = batch_size
+        self.gpu_mem_util = gpu_mem_util
         self.add_bos = add_bos
         self.length_norm = length_norm
         self.seed = seed
         self.system_prompt = system_prompt
+        self.num_gpus = num_gpus
 
-        print(f"Initializing vLLM with {model_name}...")
+    def load_model(self):
+        print(f"Initializing vLLM with {self.model_name}...")
 
-        if not num_gpus:
-            num_gpus = torch.cuda.device_count()
+        if not self.num_gpus:
+            self.num_gpus = torch.cuda.device_count()
             
-        if not llm_path or not tokenizer_path: 
-            print(f"Downloading model {model_name}...")
-            print(f"Download directory: {download_dir}")
+        if not self.llm_path or not self.tokenizer_path: 
+            print(f"Downloading model {self.model_name}...")
+            print(f"Download directory: {self.download_dir}")
             self.llm = LLM(
                 model=self.model_name, 
-                download_dir=download_dir, 
-                gpu_memory_utilization=gpu_mem_util,
-                tensor_parallel_size=num_gpus
+                download_dir=self.download_dir, 
+                gpu_memory_utilization=self.gpu_mem_util,
+                tensor_parallel_size=self.num_gpus
             )
         else:
             self.llm = LLM(
-                model=llm_path, 
-                tokenizer=tokenizer_path, 
-                download_dir=download_dir, 
-                gpu_memory_utilization=gpu_mem_util,
-                tensor_parallel_size=num_gpus 
+                model=self.llm_path, 
+                tokenizer=self.tokenizer_path, 
+                download_dir=self.download_dir, 
+                gpu_memory_utilization=self.gpu_mem_util,
+                tensor_parallel_size=self.num_gpus 
             )
         
         print("LLM initialized!")
@@ -65,7 +71,7 @@ class vLLM:
         self.check_bos()
 
         self.sampling_params = SamplingParams(
-            n=1, temperature=temperature, max_tokens=max_gen_len, prompt_logprobs=0
+            n=1, temperature=self.temperature, max_tokens=self.max_gen_len, prompt_logprobs=0
         )
         print("Sampling params initialized!")
 

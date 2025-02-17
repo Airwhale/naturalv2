@@ -33,8 +33,8 @@ class SvT:
         }
 
         self.curated_data_path = "/h/290/nikita/naturalv2/naturalv2/evals/svt_ty_relevant.csv" # TODO
-        self.outcome_treatment = ("target_achieved", ("semaglutide", "tirzepatide"))
-        self.effect_sizes = (68.55 - 58.44) / 100
+        self.outcome_treatment = [("target_achieved", ("semaglutide", "tirzepatide"))]
+        self.effect_sizes = [(68.55 - 58.44) / 100]
 
     def hard_filter_inclusion(self, extract):
         extract.loc[:, "inclusion_score"] = 0 
