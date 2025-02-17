@@ -1,5 +1,5 @@
 _target_: naturalv2.sources.reddit.RedditSet
-data_path: /mfs1/u/nikita/naturalv2/reddit_data/
+data_path: ${data_path}/reddit_data/
 trial: ${trial.source}
 match_method: string_match
 llm: ${model}

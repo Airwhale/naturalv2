@@ -1,5 +1,5 @@
 _target_: naturalv2.sources.pubmed.PubMedSet
-data_path: ${user.save_path}/naturalv2/pubmed_data/
+data_path: ${data_path}/pubmed_data/
 trial: ${eval}
 match_method: string_match
 llm: ${model}
