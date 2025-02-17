@@ -1,6 +1,6 @@
 _target_: naturalv2.models.vllm.vLLM
 model_name: meta-llama/Meta-Llama-3-8B-Instruct
-download_dir: /mfs1/u/${oc.env:USER}/cache/
+download_dir: ${user.vllm_model_cache}
 llm_path: ""
 tokenizer_path: "" 
 temperature: 1
