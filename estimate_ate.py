@@ -125,7 +125,7 @@ def main(cfg: DictConfig) -> None:
     ty_filtered_df = filter_by_ty(ty_samples, experiment)
 
     # extract samples from reports, allowing LLM to output "unknown" for missing info
-    unknowns_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/{sample_model.model_name}_samples_unknowns.csv")
+    unknowns_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/{sample_model.model_name}_samples_knowns.csv")
     samples_with_unknown = extract_covariates(
         ty_filtered_df, experiment, sample_model, unknowns_path, "knowns"
     )
