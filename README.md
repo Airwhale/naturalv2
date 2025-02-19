@@ -1,18 +1,19 @@
 # NATURAL-v2
 
-</div>
-
 This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) to larger data and evaluation scales.
 
 ______________________________________________________________________
 
 ## Set-up
+Prior to installing the dependencies for this project, it is recommended to install [uv](https://github.com/astral-sh/uv?tab=readme-ov-file#installation) and create a virtual environment. You may use whatever virtual environment management tool 
+that you like, including These uv, conda, and virtualenv.
 
 ```bash
 git clone https://github.com/nikitadhawan/naturalv2.git
 cd naturalv2
-python setup.py develop
+uv sync --no-cache --dev
 ```
+**Note**: Add `--active` to the `uv sync` command if you prefer to use the active virtual environment. Otherwise, the virtual environment will be created in the `.venv` directory inside the project root.
 
 Create a user file `conf/user/{your_name}.yaml` and add your own paths. See [nikita.yaml](https://github.com/nikitadhawan/naturalv2/tree/main/conf/user/nikita.yaml) for an example.
 ______________________________________________________________________

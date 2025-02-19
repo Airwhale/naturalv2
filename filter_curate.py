@@ -1,18 +1,10 @@
-import os
-import numpy as np
-import json
-import pandas as pd
-from tqdm import tqdm
-
 import hydra
-from omegaconf import DictConfig
 from hydra.utils import instantiate
-import nest_asyncio
+from omegaconf import DictConfig
 
 
-@hydra.main(config_path="conf/", config_name="config.yaml")
+@hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
-
     trial = instantiate(cfg.eval)
     llm = instantiate(cfg.model)
 
