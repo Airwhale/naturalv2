@@ -145,8 +145,12 @@ def main(cfg: DictConfig) -> None:
         cfg.sample_model, response_format={"type": "json_object"}
     )
     nest_asyncio.apply()
+    
+    data_flow = {}
 
     curated_df = pd.read_csv(experiment.curated_data_path, index_col=0).head(10)
+    data_flow["curated"] = len(curated_df)
+    print(f"Initial number of curated reports: {len(curated_df)} reports.")
 
     # filter reports that do not contain t,y info
     ty_path = os.path.join(
@@ -156,18 +160,23 @@ def main(cfg: DictConfig) -> None:
         curated_df, experiment, cheap_model, ty_path, "ty_filter"
     )
     ty_filtered_df = filter_by_ty(ty_samples, experiment)
+    data_flow["ty_filtered"] = len(ty_filtered_df)
+    print(f"After treatment-outcome filter: {len(ty_filtered_df)} reports.")
+
 
     # extract samples from reports, allowing LLM to output "unknown" for missing info
-    unknowns_path = os.path.join(
+    knowns_path = os.path.join(
         cfg.save_path,
         f"{experiment.nct_id}/{sample_model.model_name}_samples_knowns.csv",
     )
     samples_with_unknown = extract_covariates(
-        ty_filtered_df, experiment, sample_model, unknowns_path, "knowns"
+        ty_filtered_df, experiment, sample_model, knowns_path, "knowns"
     )
 
     # filter reports known to violate inclusion criteria
     inclusion_filtered = filter_by_inclusion(samples_with_unknown, experiment)
+    data_flow["inclusion_filtered"] = len(inclusion_filtered)
+    print(f"After inclusion filter: {len(inclusion_filtered)} reports.")
 
     # impute samples from reports, imputing missing info
     imputed_path = os.path.join(
@@ -181,6 +190,8 @@ def main(cfg: DictConfig) -> None:
     imputed_samples = imputed_samples.dropna(
         subset=experiment.covariate_names
     ).reset_index(drop=True)
+    data_flow["final"] = len(imputed_samples)
+    print(f"Final: {len(imputed_samples)} reports.")
 
     probs_model = instantiate(cfg.probs_model)
     if cfg.load_model:
@@ -232,6 +243,7 @@ def main(cfg: DictConfig) -> None:
                         results.update({"true_ate": true_ate, "abs_error": error})
                         print("True ATE: ", true_ate)
                         print("Absolute Error: ", error)
+                    results.update(data_flow)
                     result_dicts.append(results)
 
     # TODO later: compute other evaluation metrics, e.g. sensitivity, balance
