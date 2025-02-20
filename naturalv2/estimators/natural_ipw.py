@@ -1,7 +1,6 @@
 import numpy as np
 
-
-from naturalv2.utils import enumerate_strings, enum_to_dcts
+from naturalv2.utils import enum_to_dcts, enumerate_strings
 
 
 class NaturalIPW:
@@ -15,7 +14,7 @@ class NaturalIPW:
 
     def compute_prop_score(self, conditionals):
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
-        idx_to_feat = enum_to_dcts(options, self.experiment.covariate_names)
+        idx_to_feat = enum_to_dcts(options, self.covariate_names)
         feat_dicts = [self.experiment.transform_samples(dct) for dct in idx_to_feat]
         prop_score_lst = []
 
@@ -35,7 +34,9 @@ class NaturalIPW:
                 # average over posts
                 prop_scores = []
                 for t in range(self.num_treat):
-                    prop_t = propensity.apply(lambda arr: arr[t]).sum() / len(subset)
+                    prop_t = propensity.apply(lambda arr, t=t: arr[t]).sum() / len(
+                        subset
+                    )  # Fixed B023
                     prop_scores.append(prop_t)
             prop_score_lst.append(prop_scores)
         return prop_score_lst
@@ -61,8 +62,7 @@ class NaturalIPW:
 
         self.prop_score_lst = self.compute_prop_score(conditionals)
         all_ites = np.zeros((self.num_treat, len(conditionals)))
-        for i, row in enumerate(conditionals.iterrows()):
-            row = row[1]
+        for i, (_, row) in enumerate(conditionals.iterrows()):  # Fixed PLW2901
             probs = row["probs"]
             x = row[self.covariate_names].to_dict()
             # enumerate treatments

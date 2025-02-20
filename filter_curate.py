@@ -3,6 +3,9 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 
+# ruff: noqa
+
+
 @hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     trial = instantiate(cfg.eval)

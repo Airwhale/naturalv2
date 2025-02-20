@@ -3,7 +3,7 @@ defaults:
   - user: ${oc.env:USER}
   - model@cheap_model: openai
   - model@sample_model: openai
-  - model@probs_model: vec-inf
+  - model@probs_model: vllm
   - eval: clinicaltrial
   - source@reddit: reddit
   - source@pubmed: pubmed

@@ -43,28 +43,20 @@ class SvT:
         ]
         # self.inclusion_criteria = trial.inclusion_criteria.criteria
 
-        self.prompts = {
-            "ty_filter": open(
-                os.path.join(path_to_main, "naturalv2", "prompts", "svt_ty_filter.txt"),
-                "r",
-            ).read(),
-            "knowns": open(
-                os.path.join(path_to_main, "naturalv2", "prompts", "svt_knowns.txt"),
-                "r",
-            ).read(),
-            "imputations": open(
-                os.path.join(
-                    path_to_main, "naturalv2", "prompts", "svt_imputations.txt"
-                ),
-                "r",
-            ).read(),
-            "conditionals": open(
-                os.path.join(
-                    path_to_main, "naturalv2", "prompts", "svt_conditionals.txt"
-                ),
-                "r",
-            ).read(),
-        }
+        self.prompts = {}
+        base_dir = os.path.join(path_to_main, "naturalv2", "prompts")
+
+        with open(os.path.join(base_dir, "svt_ty_filter.txt"), "r") as f:
+            self.prompts["ty_filter"] = f.read()
+
+        with open(os.path.join(base_dir, "svt_knowns.txt"), "r") as f:
+            self.prompts["knowns"] = f.read()
+
+        with open(os.path.join(base_dir, "svt_imputations.txt"), "r") as f:
+            self.prompts["imputations"] = f.read()
+
+        with open(os.path.join(base_dir, "svt_conditionals.txt"), "r") as f:
+            self.prompts["conditionals"] = f.read()
 
         self.curated_data_path = os.path.join(
             path_to_main, "naturalv2", "evals", "svt_relevant.csv"
@@ -121,16 +113,14 @@ class SvT:
             | (extract["weight_change"].notnull())
             | (extract["percentage_weight_change"].notnull())
         )
-        extract = extract[outcome]
-
-        return extract
+        return extract[outcome]
 
     def hard_filter_inclusion(self, extract):
         extract.loc[:, "inclusion_score"] = 0
         t2dm = (
             (extract["t2dm"] == 1)
             | (extract["t2dm"].isna())
-            | ((extract["start_HbA1c"] >= 7) & (10.5 >= extract["start_HbA1c"]))
+            | ((extract["start_HbA1c"] >= 7) & (extract["start_HbA1c"] <= 10.5))
             | (extract["start_HbA1c"].isna())
         )
         metformin = (extract["metformin"] == 1) | (extract["metformin"].isna())
@@ -144,8 +134,7 @@ class SvT:
             extract.loc[criterion, "inclusion_score"] += 1
         known_to_unmatch = extract[extract["inclusion_score"] < 4].index
         extract = extract.drop(known_to_unmatch)
-        extract = extract.drop(["t2dm", "metformin", "dosage"], axis=1)
-        return extract
+        return extract.drop(["t2dm", "metformin", "dosage"], axis=1)
 
     def get_options(self, feature_names):
         options = {
@@ -201,10 +190,9 @@ class SvT:
         return {key: questions[key] for key in feature_names}
 
     def transform_samples(self, dct):
-        if isinstance(dct, dict):
-            all_keys = list(dct.keys())
-        else:  # it must be a pandas df
-            all_keys = dct.columns
+        all_keys = (
+            list(dct.keys()) if isinstance(dct, dict) else dct.columns
+        )  # pandas df
         for field in all_keys:
             if field in ["sample_treatment", "treatment"]:
                 binary_map = {
@@ -250,10 +238,9 @@ class SvT:
         return dct
 
     def interpret_samples(self, dct):
-        if isinstance(dct, dict):
-            all_keys = list(dct.keys())
-        else:  # it must be a pandas df
-            all_keys = dct.columns
+        all_keys = (
+            list(dct.keys()) if isinstance(dct, dict) else dct.columns
+        )  # pandas df
         for field in all_keys:
             if field in ["sample_sex", "sex"]:
                 sex_map = {0: "Male", 1: "Female"}
@@ -445,8 +432,7 @@ class SvT:
             sample_df.loc[sample_df["start_weight"] > 220, "start_weight"] = 1
             sample_df.loc[sample_df["duration_days"] <= 90, "duration_days"] = 0
             sample_df.loc[sample_df["duration_days"] > 90, "duration_days"] = 1
-        sample_df = sample_df.reset_index(drop=True)
-        return sample_df
+        return sample_df.reset_index(drop=True)
 
     def get_prompt(self, key):
         return self.prompts[key]

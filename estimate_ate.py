@@ -14,7 +14,7 @@ from scipy.special import softmax
 from tqdm import tqdm
 
 from naturalv2.evals.svt import SvT
-from naturalv2.lm import LM
+from naturalv2.models.lm import LM
 from naturalv2.utils import (
     ImputationsResponse,
     KnownsResponse,
@@ -32,7 +32,7 @@ async def extract_covariates(
     model: LM,
     save_path: str,
     extract_type: Literal["ty_filter", "knowns", "imputations"],
-    batch_size: int = 2,
+    batch_size: int = 1,
 ):
     if os.path.exists(save_path):
         return pd.read_csv(save_path, index_col=0)
@@ -98,14 +98,12 @@ async def extract_covariates(
 
 
 def filter_by_ty(samples_df, experiment):
-    samples_df = experiment.hard_filter_ty(samples_df)
-    return samples_df
+    return experiment.hard_filter_ty(samples_df)
 
 
 def filter_by_inclusion(samples_df, experiment):
-    samples_df = experiment.discretize(samples_df, hard_filter=True, inf=False)
+    return experiment.discretize(samples_df, hard_filter=True, inf=False)
     # samples_df = samples_df.map(lambda x: np.nan if x in ["Unknown", "unknown"] else x)
-    return samples_df
 
 
 def extract_conditionals(
@@ -210,7 +208,7 @@ def weight_by_inclusion(ites, inclusion_probs):
 
 
 @hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     experiment = SvT(path_to_main=cfg.user.path_to_main)
     os.makedirs(os.path.join(cfg.save_path, f"{experiment.nct_id}"), exist_ok=True)
 
@@ -221,7 +219,7 @@ def main(cfg: DictConfig) -> None:
 
     data_flow = {}
 
-    curated_df = pd.read_csv(experiment.curated_data_path, index_col=0).head(200)
+    curated_df = pd.read_csv(experiment.curated_data_path, index_col=0).head(10)
     data_flow["curated"] = len(curated_df)
     print(f"Initial number of curated reports: {len(curated_df)} reports.")
 

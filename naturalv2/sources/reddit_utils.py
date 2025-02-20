@@ -3,13 +3,14 @@ import json
 import logging.handlers
 import os
 import urllib
-import urllib.request as request
 import warnings
 from time import time
+from urllib import request
 
 import pandas as pd
 import wget
 import zstandard
+
 
 warnings.simplefilter("ignore", UserWarning)
 warnings.simplefilter("ignore", FutureWarning)
@@ -53,11 +54,11 @@ def download_sub_data(subreddit, data_type, data_path):
             chunk = previous_chunk + chunk
         try:
             return chunk.decode()
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as err:
             if bytes_read > max_window_size:
                 raise UnicodeError(
                     f"Unable to decode frame after reading {bytes_read:,} bytes"
-                )
+                ) from err
             log.info(f"Decoding error with {bytes_read:,} bytes, reading another chunk")
             return read_and_decode(
                 reader, chunk_size, max_window_size, chunk, bytes_read
@@ -109,7 +110,7 @@ def download_sub_data(subreddit, data_type, data_path):
 def download_from_url(url_str, max_retries=5, retry_delay=120):
     for attempt in range(max_retries):
         try:
-            headers = {"User-Agent": "Mozilla/5.0"}  # Reddit requires a User-Agent
+            headers = {"User-Agent": "Mozilla/5.0"}
             req = request.Request(url_str, headers=headers)
             data = json.load(request.urlopen(req))
             time.sleep(2)
@@ -118,19 +119,25 @@ def download_from_url(url_str, max_retries=5, retry_delay=120):
             if e.code != 429:
                 print(f"Error fetching data from {url_str}: {e}")
                 return {"error": str(e)}
-            if e.code == 429 and attempt < max_retries - 1:  # Too Many Requests
+            if attempt < max_retries - 1:
                 print(f"Rate limited, waiting {retry_delay} seconds before retry...")
                 time.sleep(retry_delay)
-                continue
             else:
-                print(f"Error fetching data from {url_str}: {e}")
-                break
+                print(f"Max retries exceeded for {url_str}")
+                return {"error": "Max retries exceeded"}
+        except Exception as e:
+            print(f"Unexpected error fetching {url_str}: {e}")
+            return {"error": str(e)}
+    return {"error": "Failed to fetch data after maximum retries"}
 
 
 def download_sub_about_info(data_path):
     if not os.path.exists(os.path.join(data_path, "subs_list.txt")):
         download_subs_list(data_path)
-    subs_list = open(data_path + "subs_list.txt", "r").read().splitlines()
+
+    with open(data_path + "subs_list.txt", "r") as f:
+        subs_list = f.read().splitlines()
+
     about_csv_path = data_path + "subs_about.csv"
     about_df = pd.DataFrame(columns=["sub", "description", "public_description"])
     about_jsons = data_path + "subs_about"
@@ -175,8 +182,7 @@ def filter_by_date(df, utc_date_cutoff):
 
 def get_date(utc_timestamp):
     dt = datetime.datetime.fromtimestamp(utc_timestamp, tz=datetime.timezone.utc)
-    formatted_date = dt.strftime("%B %d, %Y")
-    return formatted_date
+    return dt.strftime("%B %d, %Y")
 
 
 def rule_based_filter(post_df, text_field):
@@ -205,7 +211,7 @@ def rule_based_filter(post_df, text_field):
         body = body.strip()
         # drop if there is no space in first 2048 characters
         try:
-            tmp = body[: body.rindex(" ", 0, 2048)]
+            _ = body[: body.rindex(" ", 0, 2048)]
         except ValueError:
             post_df = post_df.drop([i])
             continue
@@ -266,7 +272,7 @@ def get_context_post_df(submissions, comments, treatment_names, outcome_words):
     comments["permalink_processed"] = comments["permalink"].map(
         lambda x: get_comment_permalink(x)
     )
-    for i, submission in submissions.iterrows():
+    for _, submission in submissions.iterrows():
         subreddit = submission["subreddit"]
         title = submission["title"]
         submission_text = submission["selftext"]
@@ -336,12 +342,12 @@ def get_reddit_synonyms(keywords, llm):
     all_keywords = []
     # process outputs into a list of individual words
     for keyword in llm_keywords:
-        keyword = (
+        processed_keyword = (
             keyword[keyword.find("[") + 1 : keyword.find("]")]
             .replace('"', "")
             .replace("'", "")
         )
-        keyword_list = [k.strip() for k in keyword.split(",")]
+        keyword_list = [k.strip() for k in processed_keyword.split(",")]
         all_keywords.extend(keyword_list)
         # for k in keyword_list:
         #     words = k.split()
@@ -355,7 +361,7 @@ def subreddit_relevance_llm(desc, keywords, llm):
     system_prompt += "Your task is to determine if a subreddit is likely to contain personal experiences related to a specific clinical trial based on the trial’s details and the subreddit description."
 
     user_prompt = f"""Evaluate the subreddit relevance to the clinical trial information provided. Consider if the subreddit likely contains personal experiences about the trial's focus. Answer "Yes" if relevant, "No" if not.
-    
+
 **Clinical Trial Details:**
 - Keywords: {keywords[0]}
 - Interventions: {keywords[1]}
@@ -366,5 +372,4 @@ def subreddit_relevance_llm(desc, keywords, llm):
 
 Is the subreddit likely to contain personal experiences relevant to the effects measured in this trial? Answer with "Yes" or "No".
     """
-    answer = llm.get_outputs(system_prompt, [user_prompt])[0]
-    return answer
+    return llm.get_outputs(system_prompt, [user_prompt])[0]

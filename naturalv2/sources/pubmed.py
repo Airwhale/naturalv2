@@ -6,6 +6,9 @@ import pandas as pd
 from pubmed_utils import fetch_articles, pubmed_queries_llm, search_pubmed
 
 
+# ruff: noqa
+
+
 class PubMedSet:
     def __init__(
         self, data_path, trial, match_method, llm, download=False, api_key=None
@@ -28,7 +31,7 @@ class PubMedSet:
                 + trial.conditions
                 + [i.title for i in trial.interventions]
             )
-        elif method == "llm":
+        if method == "llm":
             return pubmed_queries_llm(trial, self.llm)
 
     def get_query(self, keyword):

@@ -69,7 +69,6 @@ class Study:
         retro_trials.sort(key=lambda x: x[1])
         train_size = int(len(retro_trials) * cfg.train_ratio)
         train_trials, val_trials = retro_trials[:train_size], retro_trials[train_size:]
-        test_trials = test_trials
 
         self.condition = list(cfg.condition)
         self.train_ratio = cfg.train_ratio

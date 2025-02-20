@@ -1,5 +1,5 @@
-import os
 import json
+import os
 
 
 class Location:
@@ -136,6 +136,7 @@ class BaselineChar:
         for cohort_measure in self.measures:
             if cohort.id == cohort_measure["groupId"]:
                 return cohort_measure
+        return None
 
     def __repr__(self):
         return (
@@ -171,10 +172,11 @@ class OutcomeResult:
         for measure_class in self.measures:
             categories = measure_class.get("categories", [])
             # if measure_class.get('title', '') == title and len(categories) > 0:
-            measurements = categories[0].get("measurements", [])
+            measurements = categories[0].get("measurements", []) if categories else []
             for cohort_measure in measurements:
                 if cohort.id == cohort_measure["groupId"]:
                     return cohort_measure
+        return None
 
     def __repr__(self):
         return (

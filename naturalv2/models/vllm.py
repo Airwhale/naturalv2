@@ -6,7 +6,7 @@ from scipy.special import softmax
 from vllm import LLM, SamplingParams
 
 
-class vLLM:
+class VLLM:
     def __init__(
         self,
         model_name: str,
