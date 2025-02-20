@@ -4,4 +4,3 @@ temperature: 0.2
 top_p: 1
 max_tokens: 512
 seed: ${..seed}
-additional_drop_params: ["guided_json"]
