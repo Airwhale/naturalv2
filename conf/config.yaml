@@ -1,16 +1,16 @@
 defaults:
   - _self_
   - user: ${oc.env:USER}
-  - model@cheap_model: gpt
-  - model@sample_model: gpt
-  - model@probs_model: vllm
+  - model@cheap_model: openai
+  - model@sample_model: openai
+  - model@probs_model: vec-inf
   - eval: clinicaltrial
   - source@reddit: reddit
   - source@pubmed: pubmed
   - estimator: natural_ipw
 
 
-seed: 10
+seed: 42
 train_ratio: 0.6
 condition: diabetes
 experiment_name: test
