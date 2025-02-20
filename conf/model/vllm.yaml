@@ -2,7 +2,7 @@ _target_: naturalv2.models.vllm.vLLM
 model_name: meta-llama/Meta-Llama-3-8B-Instruct
 download_dir: ${user.vllm_model_cache}
 llm_path: ""
-tokenizer_path: "" 
+tokenizer_path: ""
 temperature: 1
 top_p: 1
 max_seq_len: 8000
@@ -13,4 +13,4 @@ seed: ${seed}
 system_prompt: ""
 add_bos: False
 length_norm: False
-num_gpus: 
+num_gpus:

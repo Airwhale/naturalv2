@@ -1,4 +1,5 @@
 import asyncio
+
 from openai import AsyncOpenAI
 
 
@@ -16,8 +17,8 @@ class GPT:
         seed: int = 1234,
         response_format=None,
     ):
-        key_file = open(openai_api_key_path, "r")
-        openai_api_key = key_file.read().rstrip("\n")
+        with open(openai_api_key_path, "r") as key_file:
+            openai_api_key = key_file.read().rstrip("\n")
         self.client = AsyncOpenAI(api_key=openai_api_key)
         self.model_name = model_name
         self.system_prompt = system_prompt

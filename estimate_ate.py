@@ -26,7 +26,7 @@ def extract_covariates(input_df, experiment, model, save_path, extract_type):
 
     llm_samples_df = pd.DataFrame()
     llm_inputs = []
-    for i, row in tqdm(input_df.iterrows()):
+    for _, row in tqdm(input_df.iterrows()):
         report = row["report"]
         llm_inputs.append({"report": report})
         if len(llm_inputs) >= model.batch_size or len(input_df) == len(
@@ -57,14 +57,12 @@ def extract_covariates(input_df, experiment, model, save_path, extract_type):
 
 
 def filter_by_ty(samples_df, experiment):
-    samples_df = experiment.hard_filter_ty(samples_df)
-    return samples_df
+    return experiment.hard_filter_ty(samples_df)
 
 
 def filter_by_inclusion(samples_df, experiment):
-    samples_df = experiment.discretize(samples_df, hard_filter=True, inf=False)
+    return experiment.discretize(samples_df, hard_filter=True, inf=False)
     # samples_df = samples_df.map(lambda x: np.nan if x in ["Unknown", "unknown"] else x)
-    return samples_df
 
 
 def extract_conditionals(input_df, experiment, model, save_path, inclusion=False):
@@ -85,7 +83,7 @@ def extract_conditionals(input_df, experiment, model, save_path, inclusion=False
     idx_to_feat = [experiment.transform_samples(dct) for dct in idx_to_feat]
     llm_inputs, rows = [], []
 
-    for i, row in tqdm(input_df.iterrows()):
+    for _, row in tqdm(input_df.iterrows()):
         X = row["report"]
         if not inclusion:
             # get corresponding row from input_df
@@ -136,7 +134,7 @@ def weight_by_inclusion(ites, inclusion_probs):
 
 
 @hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     experiment = SvT(path_to_main=cfg.user.path_to_main)
     os.makedirs(os.path.join(cfg.save_path, f"{experiment.nct_id}"), exist_ok=True)
 
@@ -145,7 +143,7 @@ def main(cfg: DictConfig) -> None:
         cfg.sample_model, response_format={"type": "json_object"}
     )
     nest_asyncio.apply()
-    
+
     data_flow = {}
 
     curated_df = pd.read_csv(experiment.curated_data_path, index_col=0).head(10)
@@ -162,7 +160,6 @@ def main(cfg: DictConfig) -> None:
     ty_filtered_df = filter_by_ty(ty_samples, experiment)
     data_flow["ty_filtered"] = len(ty_filtered_df)
     print(f"After treatment-outcome filter: {len(ty_filtered_df)} reports.")
-
 
     # extract samples from reports, allowing LLM to output "unknown" for missing info
     knowns_path = os.path.join(

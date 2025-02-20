@@ -17,3 +17,51 @@ dev = [
     "ruff>=0.9.6",
     "vec-inf>=0.4.1",
 ]
+
+[tool.ruff]
+include = ["*.py", "pyproject.toml", "*.ipynb"]
+line-length = 88
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+    "A", # flake8-builtins
+    "B", # flake8-bugbear
+    "COM", # flake8-commas
+    "C4", # flake8-comprehensions
+    "RET", # flake8-return
+    "SIM", # flake8-simplify
+    "ICN", # flake8-import-conventions
+    "Q", # flake8-quotes
+    "RSE", # flake8-raise
+    "F", # pyflakes
+    "I", # isort
+    "N", # pep8-naming
+    "ERA", # eradicate
+    "PL", # pylint
+]
+fixable = ["A", "B", "COM", "C4", "RET", "SIM", "ICN", "Q", "RSE", "D", "E", "F", "I", "W", "N", "ERA", "PL"]
+ignore = [
+    "B905", # `zip()` without an explicit `strict=` parameter
+    "E501", # line too long
+    "D203", # 1 blank line required before class docstring
+    "D213", # Multi-line docstring summary should start at the second line
+    "PLR2004", # Replace magic number with named constant
+    "PLR0913", # Too many arguments
+    "COM812", # Missing trailing comma
+    "ERA001", # Remove commented out code
+]
+
+# Ignore import violations in all `__init__.py` files.
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401", "F403", "F811"]
+
+[tool.ruff.lint.pep8-naming]
+ignore-names = ["X*", "setUp"]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2

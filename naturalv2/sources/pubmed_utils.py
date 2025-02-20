@@ -1,7 +1,7 @@
 import ast
 import json
 import os
-from xml.etree import ElementTree
+import xml.etree.ElementTree as ET
 
 import requests
 
@@ -16,7 +16,7 @@ def search_pubmed(query, api_key):
         "api_key": api_key,
     }
     response = requests.get(search_url, params=params)
-    root = ElementTree.fromstring(response.content)
+    root = ET.fromstring(response.content)
 
     webenv = root.find("WebEnv").text
     query_key = root.find("QueryKey").text
@@ -35,7 +35,7 @@ def fetch_articles(webenv, query_key, api_key, data_path):
     }
 
     response = requests.get(fetch_url, params=params)
-    root = ElementTree.fromstring(response.content)
+    root = ET.fromstring(response.content)
     case_reports = []
     for article in root.findall(".//PubmedArticle"):
         article_data = {}
@@ -116,7 +116,7 @@ def parse_section(section):
     for child in section:
         if child.tag == "p":
             content.append(
-                ElementTree.tostring(child, encoding="unicode", method="text").strip()
+                ET.tostring(child, encoding="unicode", method="text").strip()
             )
         elif child.tag == "sec":
             content.extend(parse_section(child))
@@ -139,7 +139,7 @@ def fetch_pmc_fulltext(data_path, pmc_id, api_key):
         "api_key": api_key,
     }
     response = requests.get(fetch_url, params=params)
-    root = ElementTree.fromstring(response.content)
+    root = ET.fromstring(response.content)
     article = root.find(".//article")
     if article is None:
         return None
