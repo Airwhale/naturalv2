@@ -73,7 +73,6 @@ async def extract_covariates(
             json.loads(text) for response in lm_responses for text in response
         ]
 
-        # TODO [fcogidi]: avoid saving to disk at every iteration?
         out_dicts.extend(
             [
                 {**parsed_lm_responses[j], **{"report": reports[j]}}
@@ -190,6 +189,8 @@ def extract_conditionals(
             }
             for j in range(len(reports))
         ]
+
+        # TODO [fcogidi]: avoid saving to disk at every iteration?
         df_to_save = pd.DataFrame.from_dict(dict_to_save)
         llm_probs_df = pd.concat([llm_probs_df, df_to_save], ignore_index=True)
         llm_probs_df.to_csv(save_path)
