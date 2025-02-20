@@ -1,4 +1,57 @@
 import re
+from typing import Literal, Union
+
+from pydantic import BaseModel
+
+
+class TYFilterResponse(BaseModel):
+    """Response format for treatment-outcome filter stage"""
+
+    start_weight: Union[float, Literal["Unknown"]]
+    end_weight: Union[float, Literal["Unknown"]]
+    weight_unit: Literal["kg", "lb", "Unknown"]
+    weight_change: Union[float, Literal["Unknown"]]
+    percentage_weight_change: Union[float, Literal["Unknown"]]
+    treatment: Literal["Semaglutide", "Tirzepatide", "Other", "Unknown"]
+
+
+class KnownsResponse(BaseModel):
+    t2dm: Literal["Yes", "No", "Unknown"]
+    metformin: Literal["Yes", "No", "Unknown"]
+    bmi: Union[float, Literal["Unknown"]]
+    age: Union[int, Literal["Unknown"]]
+    sex: Literal["Male", "Female", "Unknown"]
+    start_HbA1c: Union[float, Literal["Unknown"]]
+    end_HbA1c: Union[float, Literal["Unknown"]]
+    country: Union[str, Literal["Unknown"]]
+    start_weight: Union[float, Literal["Unknown"]]
+    end_weight: Union[float, Literal["Unknown"]]
+    weight_unit: Literal["kg", "lb", "Unknown"]
+    weight_change: Union[float, Literal["Unknown"]]
+    percentage_weight_change: Union[float, Literal["Unknown"]]
+    duration_days: Union[int, Literal["Unknown"]]
+    treatment: Literal[
+        "Semaglutide",
+        "Tirzepatide",
+        "Ozempic",
+        "Wegovy",
+        "Rybelsus",
+        "Mounjaro",
+        "Zepbound",
+        "Unknown",
+    ]
+    dosage: Union[float, Literal["Unknown"]]
+    target_achieved: Literal["Yes", "No", "Unknown"]
+
+
+class ImputationsResponse(BaseModel):
+    bmi: Union[float, Literal["Unknown"]]
+    age: Union[int, Literal["Unknown"]]
+    sex: Literal["Male", "Female", "Unknown"]
+    start_HbA1c: Union[float, Literal["Unknown"]]
+    country: Union[str, Literal["Unknown"]]
+    start_weight: Union[float, Literal["Unknown"]]
+    duration_days: Union[int, Literal["Unknown"]]
 
 
 def check_nonplacebo(intervention_names):
