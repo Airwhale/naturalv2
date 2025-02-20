@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pandas as pd
 
@@ -43,20 +45,30 @@ class SvT:
 
         self.prompts = {
             "ty_filter": open(
-                path_to_main + "naturalv2/prompts/svt_ty_filter.txt", "r"
+                os.path.join(path_to_main, "naturalv2", "prompts", "svt_ty_filter.txt"),
+                "r",
             ).read(),
             "knowns": open(
-                path_to_main + "naturalv2/prompts/svt_knowns.txt", "r"
+                os.path.join(path_to_main, "naturalv2", "prompts", "svt_knowns.txt"),
+                "r",
             ).read(),
             "imputations": open(
-                path_to_main + "naturalv2/prompts/svt_imputations.txt", "r"
+                os.path.join(
+                    path_to_main, "naturalv2", "prompts", "svt_imputations.txt"
+                ),
+                "r",
             ).read(),
             "conditionals": open(
-                path_to_main + "naturalv2/prompts/svt_conditionals.txt", "r"
+                os.path.join(
+                    path_to_main, "naturalv2", "prompts", "svt_conditionals.txt"
+                ),
+                "r",
             ).read(),
         }
 
-        self.curated_data_path = path_to_main + "naturalv2/evals/svt_relevant.csv"
+        self.curated_data_path = os.path.join(
+            path_to_main, "naturalv2", "evals", "svt_relevant.csv"
+        )
         self.outcome_treatment = [("target_achieved", ("semaglutide", "tirzepatide"))]
         self.effect_sizes = [(68.55 - 58.44) / 100]
 
