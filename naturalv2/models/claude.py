@@ -15,8 +15,8 @@ class Claude:
         max_tokens: int = 16,
         seed: int = 1234,
     ):
-        key_file = open(anthropic_api_key_path, "r")
-        anthropic_api_key = key_file.read().rstrip("\n")
+        with open(anthropic_api_key_path, "r") as key_file:
+            anthropic_api_key = key_file.read().rstrip("\n")
         self.client = AsyncAnthropic(api_key=anthropic_api_key)
         self.model_name = model_name
         self.system_prompt = system_prompt

@@ -8,14 +8,12 @@ def check_nonplacebo(intervention_names):
     return len(nonplacebo_interventions) > 0
 
 
-def check_noncontrol(type):
-    if type == "NO_INTERVENTION":
-        return False
-    return True
+def check_noncontrol(intervention_type):
+    return intervention_type != "NO_INTERVENTION"
 
 
 def check_binary_endpoint(text):
-    BINARY_PATTERNS = [
+    binary_patterns = [
         r"""
     \b(                  # Word boundary to ensure full-word match
         proportion       | # "proportion of ..."
@@ -37,10 +35,11 @@ def check_binary_endpoint(text):
     ]
     return any(
         re.search(pattern, text, re.IGNORECASE | re.VERBOSE)
-        for pattern in BINARY_PATTERNS
+        for pattern in binary_patterns
     )
 
 
+# Rest of the code remains unchanged below this line
 def check_trial(trial):
     stats = {
         "total": 1,

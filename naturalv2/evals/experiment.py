@@ -1,6 +1,7 @@
 from ast import literal_eval
-from naturalv2.utils import check_nonplacebo, check_noncontrol, check_binary_endpoint
+
 from naturalv2.evals.clinicaltrials import ClinicalTrial
+from naturalv2.utils import check_binary_endpoint, check_noncontrol, check_nonplacebo
 
 
 class Experiment:

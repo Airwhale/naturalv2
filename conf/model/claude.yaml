@@ -1,6 +1,6 @@
 _target_: naturalv2.models.claude.Claude
 model_name: claude-3-5-sonnet-20241022
-anthropic_api_key_path: ${user.anthropic_api_key_path} 
+anthropic_api_key_path: ${user.anthropic_api_key_path}
 temperature: 0.7
 top_p: 1
 max_tokens: 512

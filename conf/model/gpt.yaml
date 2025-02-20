@@ -1,9 +1,9 @@
 _target_: naturalv2.models.gpt.GPT
 model_name: gpt-4-1106-preview
-openai_api_key_path: ${user.openai_api_key_path} 
+openai_api_key_path: ${user.openai_api_key_path}
 temperature: 0.7
 top_p: 1
 max_tokens: 512
 batch_size: 1
 seed: ${..seed}
-response_format: 
+response_format:
