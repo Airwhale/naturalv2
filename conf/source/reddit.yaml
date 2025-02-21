@@ -1,6 +1,6 @@
 _target_: naturalv2.sources.reddit.RedditSet
 data_path: ${data_path}/reddit_data/
-trial: ${trial.source}
+trial: ${eval}
 match_method: string_match
-llm: ${model}
+llm: ${cheap_model}
 download: False

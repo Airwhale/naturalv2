@@ -1,5 +1,7 @@
+import asyncio
 import json
 import os
+from typing import Literal
 
 import hydra
 import nest_asyncio
@@ -7,10 +9,16 @@ import numpy as np
 import pandas as pd
 from hydra.utils import instantiate
 from omegaconf import DictConfig
+from pydantic import BaseModel
+from scipy.special import softmax
 from tqdm import tqdm
 
 from naturalv2.evals.svt import SvT
+from naturalv2.models.lm import LM
 from naturalv2.utils import (
+    ImputationsResponse,
+    KnownsResponse,
+    TYFilterResponse,
     enum_to_dcts,
     enumerate_strings,
     get_sample_text,
@@ -18,39 +26,71 @@ from naturalv2.utils import (
 )
 
 
-def extract_covariates(input_df, experiment, model, save_path, extract_type):
+async def extract_covariates(
+    input_df: pd.DataFrame,
+    experiment: SvT,
+    model: LM,
+    save_path: str,
+    extract_type: Literal["ty_filter", "knowns", "imputations"],
+    batch_size: int = 1,
+):
     if os.path.exists(save_path):
         return pd.read_csv(save_path, index_col=0)
-    model.system_prompt = experiment.get_prompt(extract_type)
-    model.human_template = "\n## Input \n>{report}"
 
-    llm_samples_df = pd.DataFrame()
-    llm_inputs = []
-    for _, row in tqdm(input_df.iterrows()):
-        report = row["report"]
-        llm_inputs.append({"report": report})
-        if len(llm_inputs) >= model.batch_size or len(input_df) == len(
-            llm_samples_df
-        ) + len(llm_inputs):
-            llm_out_dicts = model.get_outputs(model.system_prompt, llm_inputs)
-            llm_out_dicts = [json.loads(text) for text in llm_out_dicts]
-            dict_to_save = [
-                {**llm_out_dicts[j], **{"report": llm_inputs[j]["report"]}}
-                for j in range(len(llm_inputs))
-            ]
-            df_to_save = pd.DataFrame.from_dict(dict_to_save)
-            llm_samples_df = pd.concat([llm_samples_df, df_to_save], ignore_index=True)
-            if (
-                extract_type == "imputations"
-            ):  # TODO later: Remove to use only new extractions - shouldn't change results much.
-                input_df.update(llm_samples_df, overwrite=False)
-                llm_samples_df = input_df.copy().iloc[: len(llm_samples_df)]
-            if extract_type != "ty_filter":
-                llm_samples_df = experiment.discretize(
-                    llm_samples_df, hard_filter=False, inf=False
+    if extract_type == "ty_filter":
+        response_format: type[BaseModel] = TYFilterResponse
+    elif extract_type == "knowns":
+        response_format = KnownsResponse
+    else:
+        response_format = ImputationsResponse
+
+    system_msg = {"role": "system", "content": experiment.get_prompt(extract_type)}
+    human_template = "\n## Input \n>{report}"
+
+    out_dicts = []
+
+    for start in tqdm(range(0, len(input_df), batch_size)):
+        batch_df = input_df.iloc[start : start + batch_size]
+
+        reports = batch_df["report"].tolist()
+        lm_responses = await asyncio.gather(  # guaranteed to be in order
+            *(
+                model.apredict(
+                    messages=[
+                        system_msg,
+                        {
+                            "role": "user",
+                            "content": human_template.format(report=report),
+                        },
+                    ],
+                    response_format=response_format,
+                    # extra_body={"guided_json": response_format.model_json_schema()},
                 )
-            llm_samples_df.to_csv(save_path)
-            llm_inputs = []
+                for report in reports
+            )
+        )
+        parsed_lm_responses: list[dict] = [
+            json.loads(text) for response in lm_responses for text in response
+        ]
+
+        out_dicts.extend(
+            [
+                {**parsed_lm_responses[j], **{"report": reports[j]}}
+                for j in range(len(batch_df))
+            ]
+        )
+
+    llm_samples_df = pd.DataFrame.from_dict(out_dicts)
+    if (
+        extract_type == "imputations"
+    ):  # TODO later: Remove to use only new extractions - shouldn't change results much.
+        input_df.update(llm_samples_df, overwrite=False)
+        llm_samples_df = input_df.copy()
+
+    if extract_type != "ty_filter":
+        llm_samples_df = experiment.discretize(
+            llm_samples_df, hard_filter=False, inf=False
+        )
 
     llm_samples_df.to_csv(save_path)
     return llm_samples_df
@@ -65,12 +105,22 @@ def filter_by_inclusion(samples_df, experiment):
     # samples_df = samples_df.map(lambda x: np.nan if x in ["Unknown", "unknown"] else x)
 
 
-def extract_conditionals(input_df, experiment, model, save_path, inclusion=False):
+def extract_conditionals(
+    input_df: pd.DataFrame,
+    experiment: SvT,
+    model: LM,
+    save_path: str,
+    inclusion: bool = False,
+    length_norm: bool = False,
+    batch_size: int = 1,
+):
     if os.path.exists(save_path):
         return pd.read_csv(save_path, index_col=0)
+
     input_df = experiment.discretize(input_df, hard_filter=False, inf=True)
-    model.system_prompt = experiment.get_prompt("conditionals")
-    llm_probs_df = pd.DataFrame()
+
+    system_prompt = experiment.get_prompt("conditionals")
+
     to_enum = ["inclusion"] if inclusion else ["treatment"] + experiment.outcome_names
     options = enumerate_strings(experiment.get_options(to_enum))
     interleaved_options = qa_interleaved_enum(
@@ -81,45 +131,70 @@ def extract_conditionals(input_df, experiment, model, save_path, inclusion=False
     )
     idx_to_feat = enum_to_dcts(options, to_enum)
     idx_to_feat = [experiment.transform_samples(dct) for dct in idx_to_feat]
-    llm_inputs, rows = [], []
 
-    for _, row in tqdm(input_df.iterrows()):
-        X = row["report"]
+    llm_probs_df = pd.DataFrame()
+
+    for start in tqdm(range(0, len(input_df), batch_size)):
+        batch_df = input_df.iloc[start : start + batch_size].reset_index(drop=True)
+
+        reports = batch_df["report"].tolist()
         if not inclusion:
-            # get corresponding row from input_df
-            sample_row = input_df.loc[input_df["report"] == X]
-            if len(sample_row) == 0:
-                continue
-            sample_row = sample_row[experiment.covariate_names]
-            sample_row = sample_row.to_dict("records")[0]
-            sample_text = get_sample_text(sample_row, experiment)
-            X += sample_text
+            for idx, report in enumerate(reports):
+                row = input_df.loc[input_df["report"] == report]
+                if len(row) == 0:
+                    continue
+                row = row[experiment.covariate_names].to_dict("records")[0]
+                sample_text = get_sample_text(row, experiment)
+                reports[idx] += sample_text
 
-        llm_inputs.append(X)
+        reports_repeated = [
+            report for report in reports for _ in range(len(interleaved_options))
+        ]
+        options_repeated = interleaved_options * len(reports)
+        llm_inputs = [
+            report + option
+            for report, option in zip(reports_repeated, options_repeated)
+        ]
+
         cols = (
             experiment.covariate_names
             + experiment.outcome_names
             + ["treatment", "report"]
         )
-        rows.append(row[cols])
-        if len(llm_inputs) >= model.batch_size or len(input_df) == len(
-            llm_probs_df
-        ) + len(llm_inputs):
-            post_probs, sample_indices, _ = model.compute_input_probs(
-                llm_inputs, interleaved_options
-            )
-            dict_to_save = [
-                {
-                    **rows[j].to_dict(),
-                    **idx_to_feat[sample_indices[j]],
-                    **{"probs": post_probs[j]},
-                }
-                for j in range(len(llm_inputs))
-            ]
-            df_to_save = pd.DataFrame.from_dict(dict_to_save)
-            llm_probs_df = pd.concat([llm_probs_df, df_to_save], ignore_index=True)
-            llm_probs_df.to_csv(save_path)
-            llm_inputs, rows = [], []
+        rows = batch_df[cols]
+
+        lm_responses = [
+            model.predict(prompt=system_prompt + "\n\n" + llm_input)
+            for llm_input in llm_inputs
+        ]
+
+        logprobs = []
+        for lm_response in lm_responses:
+            logprob = sum(lm_response[0]["prompt_logprobs"])
+            if length_norm:
+                logprob = logprob / len(lm_response[0]["prompt_tokens"])
+            logprobs.append(logprob)
+
+        probs = softmax(
+            np.array(logprobs).reshape((len(reports), len(interleaved_options))),
+            axis=1,
+        )
+        sample_indices = [np.random.choice(len(prob), p=prob) for prob in probs]
+
+        dict_to_save = [
+            {
+                **rows.iloc[j].to_dict(),
+                **idx_to_feat[sample_indices[j]],
+                **{"probs": probs[j]},
+            }
+            for j in range(len(reports))
+        ]
+
+        # TODO [fcogidi]: avoid saving to disk at every iteration?
+        df_to_save = pd.DataFrame.from_dict(dict_to_save)
+        llm_probs_df = pd.concat([llm_probs_df, df_to_save], ignore_index=True)
+        llm_probs_df.to_csv(save_path)
+        llm_inputs, rows = [], []
 
     llm_probs_df.to_csv(save_path)
     return pd.read_csv(save_path, index_col=0)
@@ -138,10 +213,9 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     experiment = SvT(path_to_main=cfg.user.path_to_main)
     os.makedirs(os.path.join(cfg.save_path, f"{experiment.nct_id}"), exist_ok=True)
 
-    cheap_model = instantiate(cfg.cheap_model, response_format={"type": "json_object"})
-    sample_model = instantiate(
-        cfg.sample_model, response_format={"type": "json_object"}
-    )
+    cheap_model = LM(**cfg.cheap_model)
+    sample_model = LM(**cfg.sample_model)
+
     nest_asyncio.apply()
 
     data_flow = {}
@@ -152,10 +226,12 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
 
     # filter reports that do not contain t,y info
     ty_path = os.path.join(
-        cfg.save_path, f"{experiment.nct_id}/{cheap_model.model_name}_ty_samples.csv"
+        cfg.save_path,
+        f"{experiment.nct_id}",
+        f"{cheap_model.model.replace('/', '-')}_ty_samples.csv",
     )
-    ty_samples = extract_covariates(
-        curated_df, experiment, cheap_model, ty_path, "ty_filter"
+    ty_samples = asyncio.run(
+        extract_covariates(curated_df, experiment, cheap_model, ty_path, "ty_filter")
     )
     ty_filtered_df = filter_by_ty(ty_samples, experiment)
     data_flow["ty_filtered"] = len(ty_filtered_df)
@@ -164,10 +240,12 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     # extract samples from reports, allowing LLM to output "unknown" for missing info
     knowns_path = os.path.join(
         cfg.save_path,
-        f"{experiment.nct_id}/{sample_model.model_name}_samples_knowns.csv",
+        f"{experiment.nct_id}/{sample_model.model.replace('/', '-')}_samples_knowns.csv",
     )
-    samples_with_unknown = extract_covariates(
-        ty_filtered_df, experiment, sample_model, knowns_path, "knowns"
+    samples_with_unknown = asyncio.run(
+        extract_covariates(
+            ty_filtered_df, experiment, sample_model, knowns_path, "knowns"
+        )
     )
 
     # filter reports known to violate inclusion criteria
@@ -178,10 +256,12 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     # impute samples from reports, imputing missing info
     imputed_path = os.path.join(
         cfg.save_path,
-        f"{experiment.nct_id}/{sample_model.model_name}_samples_imputed.csv",
+        f"{experiment.nct_id}/{sample_model.model.replace('/', '-')}_samples_imputed.csv",
     )
-    imputed_samples = extract_covariates(
-        inclusion_filtered, experiment, sample_model, imputed_path, "imputations"
+    imputed_samples = asyncio.run(
+        extract_covariates(
+            inclusion_filtered, experiment, sample_model, imputed_path, "imputations"
+        )
     )
     # drop rows with missing covariates even after imputation
     imputed_samples = imputed_samples.dropna(
@@ -190,16 +270,12 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     data_flow["final"] = len(imputed_samples)
     print(f"Final: {len(imputed_samples)} reports.")
 
-    probs_model = instantiate(cfg.probs_model)
-    if cfg.load_model:
-        probs_model.load_model()
-    probs_model_name = probs_model.model_name.replace(
-        "/", "_"
-    )  # vllm-supported models often have a "/"
+    probs_model = LM(**cfg.probs_model, model_type="text", prompt_logprobs=0)
 
     # extract conditionals of the form P(T, Y | X, R)
     conditionals_path = os.path.join(
-        cfg.save_path, f"{experiment.nct_id}/{probs_model_name}_conditionals.csv"
+        cfg.save_path,
+        f"{experiment.nct_id}/{probs_model.model.replace('/', '-')}_conditionals.csv",
     )
     conditionals = extract_conditionals(
         imputed_samples, experiment, probs_model, conditionals_path
@@ -207,7 +283,8 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
 
     # extract inclusion probabilities of the form P(X in I | R)
     inclusion_path = os.path.join(
-        cfg.save_path, f"{experiment.nct_id}/{probs_model_name}_inclusion_probs.csv"
+        cfg.save_path,
+        f"{experiment.nct_id}/{probs_model.model.replace('/', '-')}_inclusion_probs.csv",
     )
     inclusion_probs = extract_conditionals(
         imputed_samples, experiment, probs_model, inclusion_path, inclusion=True

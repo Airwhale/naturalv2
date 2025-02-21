@@ -1,0 +1,7 @@
+model: ???
+api_base: ???
+api_key: EMPTY
+temperature: 0.2
+top_p: 1
+max_tokens: 256
+seed: ${..seed}

@@ -1,0 +1,6 @@
+model: ???
+api_key: ${oc.env:OPENAI_API_KEY}
+temperature: 0.2
+top_p: 1
+max_tokens: 512
+seed: ${..seed}

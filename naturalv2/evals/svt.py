@@ -58,7 +58,9 @@ class SvT:
         with open(os.path.join(base_dir, "svt_conditionals.txt"), "r") as f:
             self.prompts["conditionals"] = f.read()
 
-        self.curated_data_path = path_to_main + "naturalv2/evals/svt_relevant.csv"
+        self.curated_data_path = os.path.join(
+            path_to_main, "naturalv2", "evals", "svt_relevant.csv"
+        )
         self.outcome_treatment = [("target_achieved", ("semaglutide", "tirzepatide"))]
         self.effect_sizes = [(68.55 - 58.44) / 100]
 
