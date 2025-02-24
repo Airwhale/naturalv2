@@ -5,8 +5,7 @@ This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) to larger da
 ______________________________________________________________________
 
 ## Set-up
-Prior to installing the dependencies for this project, it is recommended to install [uv](https://github.com/astral-sh/uv?tab=readme-ov-file#installation) and create a virtual environment. You may use whatever virtual environment management tool
-that you like, including These uv, conda, and virtualenv.
+Prior to installing the dependencies for this project, it is recommended to install [uv](https://github.com/astral-sh/uv?tab=readme-ov-file#installation) and create a virtual environment. You may use whatever virtual environment management tool that you like, including uv, conda, and virtualenv.
 
 ```bash
 git clone https://github.com/nikitadhawan/naturalv2.git
