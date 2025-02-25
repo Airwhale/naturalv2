@@ -92,8 +92,12 @@ class LM:
         }
 
     def _process_response(self, response, **kwargs) -> Union[list[dict], list[str]]:
-        cost = completion_cost(completion_response=response)
-        self._cost += cost
+        try:
+            cost = completion_cost(completion_response=response)
+            self._cost += cost
+        except Exception as e:
+            logger.error(f"Failed to calculate cost: {e}")
+
         logger.info(f"Running cost: ${float(self._cost):.10f}")
 
         if (
