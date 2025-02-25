@@ -107,7 +107,7 @@ class Study:
         print(f"Train: {len(self.train_trials)} trials, {self.num_train_labels} labels")
         print(f"Val: {len(self.val_trials)} trials, {self.num_val_labels} labels")
         print(
-            f"Test: {len(self.test_trials)} trials, {self.num_test_to_predict} to predict"
+            f"Test: {len(self.test_trials)} trials, {self.num_test_to_predict} labels to predict"
         )
 
     def to_yaml(self, filename):

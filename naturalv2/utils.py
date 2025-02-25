@@ -69,6 +69,8 @@ def check_binary_endpoint(text):
     binary_patterns = [
         r"""
     \b(                  # Word boundary to ensure full-word match
+        number           | # "number of ..."
+        count            | # "count of ..."
         proportion       | # "proportion of ..."
         percentage       | # "percentage of ..."
         percent          | # "percent of ..."

@@ -6,28 +6,40 @@ from naturalv2.utils import check_binary_endpoint, check_noncontrol, check_nonpl
 
 class Experiment:
     def __init__(self, nct_id, data_path, split="train"):
-        trial = ClinicalTrial(data_path, nct_id)
+        self.trial = ClinicalTrial(data_path, nct_id)
         self.split = split
-        self.trial_path = trial.data_path
-        self.nct_id = trial.nct_id
-        self.title = trial.official_title
+        self.trial_path = self.trial.data_path
+        self.nct_id = self.trial.nct_id
+        self.title = self.trial.official_title
         self.date = (
-            trial.estimated_completion
+            self.trial.estimated_completion
             if self.split == "test"
-            else trial.results_first_posted
+            else self.trial.results_first_posted
         )
-        self.references = [ref.get("citation", "") for ref in trial.references]
+        self.references = [ref.get("citation", "") for ref in self.trial.references]
 
+        self.set_outcome_treatment_effects()
+        self.covariate_names = [base.title for base in self.trial.baseline_char]
+        self.inclusion_criteria = self.trial.inclusion_criteria.criteria
+
+        self.data_dump = []  # list of paths to relevant data dumps, one per source
+        self.curated_data_path = ""  # path to curated data
+        self.treatment_common_names = []
+        self.outcome_common_names = []
+        self.extended_covariate_names = []
+        self.set_transforms()
+
+    def set_outcome_treatment_effects(self):
         self.outcome_treatment = []
-        if split == "test":  # use enpdoints and arms to find outcome_treatment pairs
+        if self.split == "test":  # use enpdoints and arms to find outcome_treatment pairs
             outcomes = [
                 outcome
-                for outcome in trial.primary_endpoints
+                for outcome in self.trial.primary_endpoints
                 if check_binary_endpoint(outcome.title)
             ]
             arms = [
                 arm
-                for arm in trial.arm_groups
+                for arm in self.trial.arm_groups
                 if check_noncontrol(arm.type)
                 and check_nonplacebo(arm.intervention_names)
             ]
@@ -42,7 +54,7 @@ class Experiment:
         else:  # use result information to find outcome_treatment pairs
             outcomes = [
                 result
-                for result in trial.outcome_results
+                for result in self.trial.outcome_results
                 if check_binary_endpoint(result.title)
             ]
             self.effect_sizes = []
@@ -55,25 +67,40 @@ class Experiment:
                 for i, cohort1 in enumerate(arms):
                     for j, cohort2 in enumerate(arms):
                         if i < j:
-                            effect_size = literal_eval(
-                                result.cohort_stats(cohort2)["value"]
-                            ) - literal_eval(result.cohort_stats(cohort1)["value"])
+                            effect1, effect2 = result.cohort_stats(cohort1), result.cohort_stats(cohort2)
+                            denom1, denom2 = literal_eval(cohort1.denom), literal_eval(cohort2.denom)
+                            if effect1 is not None and effect2 is not None and denom1 > 0 and denom2 > 0:
+                                effect1 = literal_eval(effect1["value"])
+                                effect2 = literal_eval(effect2["value"])
+                            else:
+                                continue
+
+                            # divide by cohort size or 100 if result is a percentage
+                            effect1 = effect1/100 if "percent" in result.unit_of_measure.lower() else effect1/denom1
+                            effect2 = effect2/100 if "percent" in result.unit_of_measure.lower() else effect2/denom2
+                            effect_size = effect2 - effect1
                             self.outcome_treatment.append(
                                 (result.title, (cohort1.title, cohort2.title))
                             )
                             self.effect_sizes.append(
-                                effect_size / 100
+                                effect_size
                             )  # always cohort2 - cohort1
 
         self.outcome_names = [out.title for out in outcomes]
         self.treatment_names = [arm.title for arm in arms]
-        self.covariate_names = [base.title for base in trial.baseline_char]
-        self.inclusion_criteria = trial.inclusion_criteria.criteria
 
-    def download_data(self):
-        self.data_dump = []  # list of paths to relevant data dumps, one per source
+    def hard_filter_ty(self, extractions):
+        return
 
-    def curate_data(self):
-        self.curated_data_path = ""  # path to curated data
+    def hard_filter_inclusion(self, extractions):
+        return
 
-        # TODO: common names, misspellings
+    def discretize(self, extractions):
+        return
+
+    def set_transforms(self):
+        self.options = {}
+        self.question_prompts = {}
+        self.numerical_repr = {}
+        self.language_repr = {}
+
