@@ -26,7 +26,10 @@ class Experiment:
         self.curated_data_path = ""  # path to curated data
         self.treatment_common_names = []
         self.outcome_common_names = []
-        self.extended_covariate_names = []
+        self.extended_covariate_names = [] # inclusion-related binary variables
+        self.options = {}
+        self.question_prompts = {}
+
         self.set_transforms()
 
     def set_outcome_treatment_effects(self):
@@ -90,17 +93,19 @@ class Experiment:
         self.treatment_names = [arm.title for arm in arms]
 
     def hard_filter_ty(self, extractions):
-        return
+        for name in self.treatment_names + self.outcome_names:
+            extractions = extractions[extractions[name].isin(self.options[name])]
+        return extractions
 
     def hard_filter_inclusion(self, extractions):
-        return
+        for name in self.extended_covariate_names:
+            extractions = extractions[extractions[name].lower().isin(["yes", "unknown"])]
+        return extractions
 
     def discretize(self, extractions):
         return
 
     def set_transforms(self):
-        self.options = {}
-        self.question_prompts = {}
         self.numerical_repr = {}
         self.language_repr = {}
 
