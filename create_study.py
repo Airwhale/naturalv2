@@ -1,15 +1,19 @@
+import logging
 import os
 
 import hydra
 import yaml
-from hydra.utils import instantiate
 from omegaconf import DictConfig
 
+from naturalv2.evals.clinicaltrials import ClinicalTrial, download_clinical_trials
 from naturalv2.evals.experiment import Experiment
 from naturalv2.utils import check_trial
 
 
-def find_valid_ncts(cfg, test=False):
+logger = logging.getLogger(__name__)
+
+
+def find_valid_ncts(data_path: str, test: bool = False) -> list[str]:
     stats = {
         "total": 0,
         "randomized": 0,
@@ -17,49 +21,50 @@ def find_valid_ncts(cfg, test=False):
         "nonhealthy": 0,
         "binary_endpoint": 0,
     }
-    trial_path = cfg.data_path + "/nct_reports"
-    if test:
-        trial_path += "_test"
-    valid_nct_path = trial_path + "/valid_binary_nct_ids.txt"
+    trial_path = os.path.join(data_path, "nct_reports" + ("_test" if test else ""))
+    valid_nct_path = os.path.join(trial_path, "valid_binary_nct_ids.txt")
+
+    if not os.path.exists(trial_path):
+        download_clinical_trials(trial_path, test)
+
     if not os.path.exists(valid_nct_path):
-        for filename in os.listdir(trial_path):
-            if filename.endswith(".json"):
-                nct_id = filename[:-5]  # ends with .json
-                trial = instantiate(cfg.eval, data_path=trial_path, nct_id=nct_id)
-                trial_stats, check = check_trial(trial)
-                for key, value in trial_stats.items():
-                    stats[key] += value
-                if check:
-                    with open(valid_nct_path, "a") as f:
-                        f.write(f"{nct_id}\n")
-        print("Benchmark Stats", stats)
-    with open(valid_nct_path, "r") as f:
-        return [line.strip() for line in f.readlines()]
+        with open(valid_nct_path, "a") as valid_file:
+            for filename in os.listdir(trial_path):
+                if filename.endswith(".json"):
+                    nct_id = filename[:-5]  # ends with .json
+                    trial = ClinicalTrial(data_path=trial_path, nct_id=nct_id)
+                    trial_stats, check = check_trial(trial)
+                    for key, value in trial_stats.items():
+                        stats[key] += value
+                    if check:
+                        valid_file.write(f"{nct_id}\n")
+        logger.info("Benchmark Stats: %s", stats)
+
+    with open(valid_nct_path, "r") as valid_file:
+        return [line.strip() for line in valid_file.readlines()]
 
 
-def find_condition_ncts(nct_list, cfg, test=False):
-    trial_path = cfg.data_path + "/nct_reports"
-    if test:
-        trial_path += "_test"
-    condition_nct_path = trial_path + f"/valid_binary_{cfg.condition[0]}_nct_ids.txt"
+def find_condition_ncts(
+    nct_ids: list[str], data_path: str, conditions: list[str], test=False
+) -> list[tuple[str, str]]:
+    trial_path = os.path.join(data_path, "nct_reports" + ("_test" if test else ""))
+    condition_nct_path = os.path.join(
+        trial_path, f"valid_binary_{conditions[0]}_nct_ids.txt"
+    )
     condition_trials = []
-    for nct_id in nct_list:
-        trial = instantiate(cfg.eval, data_path=trial_path, nct_id=nct_id)
-        # check if any of {conditions} is mentioned in the trial's list of conditions or keywords
-        conditions = [cond.replace("_", " ") for cond in cfg.condition]
-        if any(
-            any(
-                cond.lower() in word.lower()
-                for word in trial.conditions + trial.keywords
-            )
-            for cond in conditions
-        ):
+    conditions_set = {cond.replace("_", " ").lower() for cond in conditions}
+
+    for nct_id in nct_ids:
+        trial = ClinicalTrial(data_path=trial_path, nct_id=nct_id)
+        trial_conditions = {word.lower() for word in trial.conditions + trial.keywords}
+        if conditions_set.intersection(trial_conditions):
             result_date = (
                 trial.estimated_completion if test else trial.results_first_posted
             )
             condition_trials.append((nct_id, result_date))
-            with open(condition_nct_path, "w") as f:
-                f.write(f"{nct_id}\n")
+            with open(condition_nct_path, "a") as condition_file:
+                condition_file.write(f"{nct_id}\n")
+
     return condition_trials
 
 
@@ -118,15 +123,19 @@ class Study:
 @hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     # find nct_ids of valid retrospective and test trials
-    nct_list = find_valid_ncts(cfg)
-    test_nct_list = find_valid_ncts(cfg, test=True)
-    print(
-        f"Total valid trials: {len(nct_list)} Completed and {len(test_nct_list)} Test"
+    nct_list = find_valid_ncts(cfg.data_path)
+    test_nct_list = find_valid_ncts(cfg.data_path, test=True)
+    logger.info(
+        "Total valid trials: %s Completed and %s Test",
+        len(nct_list),
+        len(test_nct_list),
     )
 
     # find nct_ids of retrospective and test trials related to {condition}
-    retro_trials = find_condition_ncts(nct_list, cfg)
-    test_trials = find_condition_ncts(test_nct_list, cfg, test=True)
+    retro_trials = find_condition_ncts(nct_list, cfg.data_path, cfg.conditions)
+    test_trials = find_condition_ncts(
+        test_nct_list, cfg.data_path, cfg.conditions, test=True
+    )
 
     study = Study(retro_trials, test_trials, cfg)
     study.to_yaml(os.path.join(cfg.save_path, cfg.condition[0] + "_study.yaml"))
