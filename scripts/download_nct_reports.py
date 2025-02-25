@@ -4,6 +4,7 @@ import logging
 import os
 
 import requests
+from tqdm import tqdm
 
 
 logging.basicConfig(level=logging.INFO)
@@ -28,8 +29,7 @@ if __name__ == "__main__":
     }
 
     all_trials = []
-    expected_num_pages = 1
-    curr_page = 1
+    download_prog_bar = tqdm(desc="Downloading trials", leave=False)
 
     while True:
         response = requests.get(
@@ -39,30 +39,31 @@ if __name__ == "__main__":
         )
 
         if response.status_code != 200:
-            logging.error("Failed to download completed trials: " + response.text)
+            logging.error("Failed to download trials: " + response.text)
             break
 
         response_json = response.json()
         if "totalCount" in response_json:
             total_trials = response_json["totalCount"]
             logging.info("Expected number of trials: %d", total_trials)
-            expected_num_pages = total_trials // 1000 + 1
+            download_prog_bar.total = total_trials
 
-        all_trials.extend(response_json["studies"])
-        logging.info("Downloaded page %d of %d", curr_page, expected_num_pages)
+        studies = response_json["studies"]
+        all_trials.extend(studies)
+        download_prog_bar.update(len(studies))
 
         next_token = response_json.get("nextPageToken")
         if not next_token:
+            download_prog_bar.close()
             break
 
-        curr_page += 1
         params["pageToken"] = next_token
 
     logging.info("Successfully downloaded %d trials", len(all_trials))
 
     os.makedirs(args.data_path, exist_ok=True)
 
-    for trial in all_trials:
+    for trial in tqdm(all_trials, desc="Saving trials", leave=False):
         with open(
             os.path.join(
                 args.data_path,
