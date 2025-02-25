@@ -270,7 +270,13 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     data_flow["final"] = len(imputed_samples)
     print(f"Final: {len(imputed_samples)} reports.")
 
-    probs_model = LM(**cfg.probs_model, model_type="text", prompt_logprobs=0)
+    probs_model = LM(
+        **cfg.probs_model, 
+        model_type="text", 
+        prompt_logprobs=0, 
+        max_tokens=1,
+        get_response=False,
+    )
 
     # extract conditionals of the form P(T, Y | X, R)
     conditionals_path = os.path.join(
