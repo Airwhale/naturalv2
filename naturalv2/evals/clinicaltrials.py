@@ -1,5 +1,12 @@
 import json
+import logging
 import os
+
+import requests
+from tqdm import tqdm
+
+
+logger = logging.getLogger(__name__)
 
 
 class Location:
@@ -325,3 +332,56 @@ class ClinicalTrial(object):
             f"primary_endpoints={[e.title for e in self.primary_endpoints]}\n"
             f")"
         )
+
+
+def download_clinical_trials(data_path: str, test: bool = False):
+    os.makedirs(data_path, exist_ok=True)
+
+    params = {
+        "format": "json",
+        "aggFilters": "studyType:int,results:with,status:com"
+        if not test
+        else "studyType:int,results:without,status:act",
+        "countTotal": "true",
+        "pageSize": "100",
+    }
+
+    download_prog_bar = tqdm(desc="Downloading trials")
+
+    while True:
+        response = requests.get(
+            "https://clinicaltrials.gov/api/v2/studies",
+            params=params,
+            headers={"accept": "application/json"},
+        )
+
+        if response.status_code != 200:
+            logger.error("Failed to download trials: " + response.text)
+            break
+
+        response_json = response.json()
+        if "totalCount" in response_json:
+            total_trials = response_json["totalCount"]
+            logger.info("Expected number of trials: %d", total_trials)
+            download_prog_bar.total = total_trials
+
+        studies = response_json["studies"]
+
+        for trial in studies:
+            with open(
+                os.path.join(
+                    data_path,
+                    f"{trial['protocolSection']['identificationModule']['nctId']}.json",
+                ),
+                "w",
+            ) as f:
+                json.dump(trial, f, indent=2)
+
+        download_prog_bar.update(len(studies))
+
+        next_token = response_json.get("nextPageToken")
+        if not next_token:
+            download_prog_bar.close()
+            break
+
+        params["pageToken"] = next_token
