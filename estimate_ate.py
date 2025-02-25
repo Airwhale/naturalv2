@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from typing import Literal
+from typing import Literal, Optional
 
 import hydra
 import nest_asyncio
@@ -33,16 +33,10 @@ async def extract_covariates(
     save_path: str,
     extract_type: Literal["ty_filter", "knowns", "imputations"],
     batch_size: int = 1,
+    response_format: Optional[type[BaseModel]] = None,
 ):
     if os.path.exists(save_path):
         return pd.read_csv(save_path, index_col=0)
-
-    if extract_type == "ty_filter":
-        response_format: type[BaseModel] = TYFilterResponse
-    elif extract_type == "knowns":
-        response_format = KnownsResponse
-    else:
-        response_format = ImputationsResponse
 
     system_msg = {"role": "system", "content": experiment.get_prompt(extract_type)}
     human_template = "\n## Input \n>{report}"
@@ -231,7 +225,14 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
         f"{cheap_model.model.replace('/', '-')}_ty_samples.csv",
     )
     ty_samples = asyncio.run(
-        extract_covariates(curated_df, experiment, cheap_model, ty_path, "ty_filter")
+        extract_covariates(
+            curated_df,
+            experiment,
+            cheap_model,
+            ty_path,
+            "ty_filter",
+            response_format=TYFilterResponse,
+        )
     )
     ty_filtered_df = filter_by_ty(ty_samples, experiment)
     data_flow["ty_filtered"] = len(ty_filtered_df)
@@ -244,7 +245,12 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     )
     samples_with_unknown = asyncio.run(
         extract_covariates(
-            ty_filtered_df, experiment, sample_model, knowns_path, "knowns"
+            ty_filtered_df,
+            experiment,
+            sample_model,
+            knowns_path,
+            "knowns",
+            response_format=KnownsResponse,
         )
     )
 
@@ -260,7 +266,12 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     )
     imputed_samples = asyncio.run(
         extract_covariates(
-            inclusion_filtered, experiment, sample_model, imputed_path, "imputations"
+            inclusion_filtered,
+            experiment,
+            sample_model,
+            imputed_path,
+            "imputations",
+            response_format=ImputationsResponse,
         )
     )
     # drop rows with missing covariates even after imputation

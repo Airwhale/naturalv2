@@ -1,7 +1,14 @@
+import logging
 import os
 from typing import Literal, Optional, Union
 
+import litellm
 from litellm import acompletion, atext_completion, completion, text_completion
+from litellm.cost_calculator import completion_cost
+
+
+litellm.logging = False
+logger = logging.getLogger(__name__)
 
 
 class LM:
@@ -17,6 +24,7 @@ class LM:
         self.model = model
         self.model_type = model_type
         self.num_retries = num_retries
+        self._cost = 0.0
 
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
@@ -57,6 +65,7 @@ class LM:
                 num_retries=self.num_retries,
                 **kwargs,
             )
+
         return self._process_response(response, **kwargs)
 
     def _prepare_text_completion_params(self, messages, **kwargs) -> dict[str, str]:
@@ -84,8 +93,15 @@ class LM:
             **kwargs,
         }
 
-    @staticmethod
-    def _process_response(response, **kwargs) -> Union[list[dict], list[str]]:
+    def _process_response(self, response, **kwargs) -> Union[list[dict], list[str]]:
+        try:
+            cost = completion_cost(completion_response=response)
+            self._cost += cost
+        except Exception as e:
+            logger.error(f"Failed to calculate cost: {e}")
+
+        logger.info(f"Running cost: ${float(self._cost):.10f}")
+
         if (
             kwargs.get("logprobs") is not None
             or kwargs.get("prompt_logprobs") is not None
