@@ -1,7 +1,14 @@
 import re
-from typing import Literal, Union
+from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel
+
+from naturalv2.evals.clinical_trial import (
+    ArmGroup,
+    ArmGroupType,
+    ClinicalTrial,
+    DesignAllocation,
+)
 
 
 class TYFilterResponse(BaseModel):
@@ -54,18 +61,18 @@ class ImputationsResponse(BaseModel):
     duration_days: Union[int, Literal["Unknown"]]
 
 
-def check_nonplacebo(intervention_names):
+def check_nonplacebo(intervention_names: Optional[list[str]]) -> bool:
     nonplacebo_interventions = [
-        name for name in intervention_names if "placebo" not in name.lower()
+        name for name in (intervention_names or []) if "placebo" not in name.lower()
     ]
     return len(nonplacebo_interventions) > 0
 
 
-def check_noncontrol(intervention_type):
-    return intervention_type != "NO_INTERVENTION"
+def check_noncontrol(intervention_type: Optional[ArmGroupType]) -> bool:
+    return intervention_type != ArmGroupType.NO_INTERVENTION
 
 
-def check_binary_endpoint(text):
+def check_binary_endpoint(text: str) -> bool:
     binary_patterns = [
         r"""
     \b(                  # Word boundary to ensure full-word match
@@ -94,8 +101,7 @@ def check_binary_endpoint(text):
     )
 
 
-# Rest of the code remains unchanged below this line
-def check_trial(trial):
+def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
     stats = {
         "total": 1,
         "randomized": 0,
@@ -103,30 +109,95 @@ def check_trial(trial):
         "nonhealthy": 0,
         "binary_endpoint": 0,
     }
-    if trial.alloc == "RANDOMIZED":
+
+    if (
+        get_nested_value(trial, "protocolSection.designModule.designInfo.allocation")
+        == DesignAllocation.RANDOMIZED
+    ):
         stats["randomized"] = 1
+        arm_groups: Optional[list[ArmGroup]] = get_nested_value(
+            trial, "protocolSection.armsInterventionsModule.armGroups"
+        )
         noncontrol_arms = [
-            arm for arm in trial.arm_groups if check_noncontrol(arm.type)
+            arm for arm in (arm_groups or []) if check_noncontrol(arm.type)
         ]
         nonplacebo_arms = [
-            arm for arm in noncontrol_arms if check_nonplacebo(arm.intervention_names)
+            arm for arm in noncontrol_arms if check_nonplacebo(arm.interventionNames)
         ]
         if len(nonplacebo_arms) >= 2:
             stats["multiple_noncontrol"] = 1
-            if (
-                trial.inclusion_criteria.healthy_volunteers != ""
-                and not trial.inclusion_criteria.healthy_volunteers
+
+            inclusion_criteria = trial.protocolSection.eligibilityModule
+            if inclusion_criteria and (
+                inclusion_criteria.healthyVolunteers != ""
+                and not inclusion_criteria.healthyVolunteers
             ):
                 stats["nonhealthy"] = 1
                 binary = False
-                for endpoint in trial.primary_endpoints:
-                    if check_binary_endpoint(endpoint.title):
+                for endpoint in (
+                    get_nested_value(
+                        trial, "protocolSection.outcomesModule.primaryOutcomes"
+                    )
+                    or []
+                ):
+                    if check_binary_endpoint(endpoint.measure):
                         stats["binary_endpoint"] = 1
                         binary = True
                         break
                 if binary:
                     return stats, True
     return stats, False
+
+
+def get_nested_value(data: Any, path: str) -> Optional[Any]:
+    """
+    Gets a value from a deeply nested data structure using a path string.
+
+    Parameters
+    ----------
+    data : Any
+        The nested data structure (e.g., dictionary, list, or Pydantic BaseModel).
+    path : str
+        The path to the desired value (e.g., 'a.b.c.2.d.1.[1]'). Uses dot notation
+        for dictionary keys and attribute access, and square brackets for list/tuple indices.
+
+    Returns
+    -------
+    Any
+        The value at the specified path, or ``None`` if any intermediate key/index
+        is not found or if a value in the path is ``None``.
+    """
+    if data is None:
+        return None
+
+    if not path:
+        return data
+
+    parts = re.findall(r"([^.\[\]]+)|\[(\d+)\]", path)
+    current = data
+
+    for key_part, index_part in parts:
+        try:
+            if index_part:  # list/tuple index
+                index = int(index_part)
+                if isinstance(current, (list, tuple)):
+                    current = current[index]
+                else:
+                    return None  # Not indexable
+            elif key_part:  # dictionary key or attribute
+                if isinstance(current, dict):
+                    current = current[key_part]
+                else:
+                    # handle objects with attribute access (e.g., Pydantic models)
+                    current = getattr(current, key_part)
+
+            if current is None:
+                return None  # early return if None is encountered
+
+        except (KeyError, IndexError, AttributeError, TypeError):
+            return None  # path doesn't exist
+
+    return current
 
 
 def qa_interleaved_enum(q_dct, options_dct, a_enum, to_enum):
