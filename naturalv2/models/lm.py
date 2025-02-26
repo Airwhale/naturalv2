@@ -80,9 +80,9 @@ class LM:
         api_base = kwargs.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
 
         # Build the prompt from the messages.
-        prompt = "\n\n".join([x["content"] for x in messages]) 
+        prompt = "\n\n".join([x["content"] for x in messages])
         if kwargs.pop("get_reponse", None):
-            prompt == "\n\nBEGIN RESPONSE:"
+            prompt = "\n\nBEGIN RESPONSE:"
 
         return {
             "model": f"text-completion-openai/{model}",
