@@ -340,9 +340,11 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     # TODO later: compute other evaluation metrics, e.g. sensitivity, balance
 
     result_df = pd.DataFrame(result_dicts)
-    result_df.to_csv(
-        os.path.join(cfg.save_path, f"{experiment.nct_id}/ate_results.csv")
-    )
+    results_path = os.path.join(cfg.save_path, f"{experiment.nct_id}/ate_results.csv")
+    if os.path.exists(results_path):
+        existing_df = pd.read_csv(results_path, index_col=0)
+        result_df = pd.concat([existing_df, result_df], ignore_index=True)
+    result_df.to_csv(results_path)
 
 
 if __name__ == "__main__":
