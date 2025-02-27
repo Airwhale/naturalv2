@@ -78,7 +78,13 @@ def _process_condition_trial(
     trial_conditions_set = {
         word.lower() for word in (trial_conditions or []) + (trial_keywords or [])
     }
-    if conditions_set.intersection(trial_conditions_set):
+
+    matching_conditions = [
+        trial_condition
+        for trial_condition in trial_conditions_set
+        if any(condition in trial_condition for condition in conditions_set)
+    ]
+    if matching_conditions:
         result_date: Optional[str] = (
             get_nested_value(
                 trial, "protocolSection.statusModule.completionDateStruct.date"
