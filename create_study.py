@@ -75,7 +75,7 @@ class Study:
         train_size = int(len(retro_trials) * cfg.train_ratio)
         train_trials, val_trials = retro_trials[:train_size], retro_trials[train_size:]
 
-        self.condition = list(cfg.condition)
+        self.condition = list(cfg.conditions)
         self.train_ratio = cfg.train_ratio
         self.num_train_trials = len(train_trials)
         self.num_val_trials = len(val_trials)
@@ -138,7 +138,7 @@ def main(cfg: DictConfig) -> None:
     )
 
     study = Study(retro_trials, test_trials, cfg)
-    study.to_yaml(os.path.join(cfg.save_path, cfg.condition[0] + "_study.yaml"))
+    study.to_yaml(os.path.join(cfg.save_path, cfg.conditions[0] + "_study.yaml"))
 
     # TODO: common names + paths to data dumps
 
