@@ -42,7 +42,7 @@ class NaturalIPW:
         return prop_score_lst
 
     def get_ites(self, conditionals, outcome):
-        # array of ITEs (treat2 - treat1) per unit
+        # array of ITEs (treat2 - treat1) per unit corresponding to {outcome}
         conditionals = conditionals.copy()
         outcome_idx = self.experiment.outcome_names.index(outcome)
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))

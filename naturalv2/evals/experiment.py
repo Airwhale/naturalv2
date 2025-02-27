@@ -184,6 +184,9 @@ class Experiment:
             extractions = extractions[
                 extractions[name].lower().isin(["yes", "unknown"])
             ]
+            extractions = extractions[
+                extractions[name].lower().isin(["yes", "unknown"])
+            ]
         return extractions
 
     def discretize(self, extractions):

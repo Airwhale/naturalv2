@@ -216,6 +216,7 @@ def main(cfg: DictConfig) -> None:
 
     study = Study(retro_trials, test_trials, cfg)
     study.to_yaml(os.path.join(cfg.save_path, cfg.conditions[0] + "_study.yaml"))
+    study.to_yaml(os.path.join(cfg.save_path, cfg.conditions[0] + "_study.yaml"))
 
     # TODO: common names + paths to data dumps
 
