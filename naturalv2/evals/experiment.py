@@ -3,12 +3,14 @@ from typing import Any, Literal, Optional
 
 from naturalv2.evals.clinical_trial import (
     ArmGroup,
+    BaselineMeasure,
     ClinicalTrial,
     MeasureGroup,
     Measurement,
     Outcome,
     OutcomeMeasure,
     OutcomeMeasureType,
+    Reference,
 )
 from naturalv2.utils import (
     check_binary_endpoint,
@@ -38,7 +40,7 @@ class Experiment:
                 "protocolSection.statusModule.resultsFirstPostDateStruct.date",
             )
         )
-        references = get_nested_value(
+        references: Optional[list[Reference]] = get_nested_value(
             self.trial, "protocolSection.referencesModule.references"
         )
         self.references: list[str] = (
@@ -46,12 +48,12 @@ class Experiment:
         )
 
         self._set_outcome_treatment_effects()
+
+        baseline_measures: Optional[list[BaselineMeasure]] = get_nested_value(
+            self.trial, "resultsSection.baselineCharacteristicsModule.measures"
+        )
         self.covariate_names: list[str] = [
-            base.title
-            for base in get_nested_value(
-                self.trial, "resultsSection.baselineCharacteristicsModule.measures"
-            )
-            or []
+            base.title for base in baseline_measures or []
         ]
         self.inclusion_criteria: Optional[str] = get_nested_value(
             self.trial, "protocolSection.eligibilityModule.eligibilityCriteria"
@@ -76,41 +78,44 @@ class Experiment:
         if (
             self.split == "test"
         ):  # use enpdoints and arms to find outcome_treatment pairs
-            primary_outcomes: list[Outcome] = [
+            primary_outcomes: Optional[list[Outcome]] = get_nested_value(
+                self.trial, "protocolSection.outcomesModule.primaryOutcomes"
+            )
+            arm_groups: Optional[list[ArmGroup]] = get_nested_value(
+                self.trial, "protocolSection.armsInterventionsModule.armGroups"
+            )
+
+            outcomes: list[Outcome] = [
                 outcome
-                for outcome in get_nested_value(
-                    self.trial, "protocolSection.outcomesModule.primaryOutcomes"
-                )
-                or []
+                for outcome in primary_outcomes or []
                 if check_binary_endpoint(outcome.measure)
             ]
-            arm_groups: list[ArmGroup] = [
+            arms: list[ArmGroup] = [
                 arm
-                for arm in get_nested_value(
-                    self.trial, "protocolSection.armsInterventionsModule.armGroups"
-                )
-                or []
+                for arm in arm_groups or []
                 if check_noncontrol(arm.type)
                 and check_nonplacebo(arm.interventionNames)
             ]
 
-            for outcome in primary_outcomes:
-                for i, arm1 in enumerate(arm_groups):
-                    for j, arm2 in enumerate(arm_groups):
+            for outcome in outcomes:
+                for i, arm1 in enumerate(arms):
+                    for j, arm2 in enumerate(arms):
                         if i < j:
                             self.outcome_treatment.append(
                                 (outcome.measure, (arm1.label, arm2.label))
                             )
 
-            self.outcome_names: list[str] = [out.measure for out in primary_outcomes]
-            self.treatment_names: list[str] = [arm.label for arm in arm_groups]
+            self.outcome_names: list[str] = [out.measure for out in outcomes]
+            self.treatment_names: list[str] = [arm.label for arm in arms]
         else:  # use result information to find outcome-treatment pairs
+            trial_outcome_measures: Optional[list[OutcomeMeasure]] = get_nested_value(
+                self.trial,
+                "resultsSection.outcomeMeasuresModule.outcomeMeasures",
+            )
+
             outcome_measures: list[OutcomeMeasure] = [
                 result
-                for result in get_nested_value(
-                    self.trial, "resultsSection.outcomeMeasuresModule.outcomeMeasures"
-                )
-                or []
+                for result in trial_outcome_measures or []
                 if result.type == OutcomeMeasureType.PRIMARY
                 and check_binary_endpoint(result.title)
             ]

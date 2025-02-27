@@ -8,6 +8,7 @@ from naturalv2.evals.clinical_trial import (
     ArmGroupType,
     ClinicalTrial,
     DesignAllocation,
+    Outcome,
 )
 
 
@@ -134,12 +135,11 @@ def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
             ):
                 stats["nonhealthy"] = 1
                 binary = False
-                for endpoint in (
-                    get_nested_value(
-                        trial, "protocolSection.outcomesModule.primaryOutcomes"
-                    )
-                    or []
-                ):
+
+                endpoints: Optional[list[Outcome]] = get_nested_value(
+                    trial, "protocolSection.outcomesModule.primaryOutcomes"
+                )
+                for endpoint in endpoints or []:
                     if check_binary_endpoint(endpoint.measure):
                         stats["binary_endpoint"] = 1
                         binary = True
