@@ -15,10 +15,21 @@ repos:
     - id: check-toml
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: 'v0.7.0'
+    rev: 'v0.9.8'
     hooks:
     - id: ruff
       args: [--fix, --exit-non-zero-on-fix]
       types_or: [python, jupyter]
     - id: ruff-format
       types_or: [python, jupyter]
+
+ci:
+    autofix_commit_msg: |
+        [pre-commit.ci] Add auto fixes from pre-commit.com hooks
+
+        for more information, see https://pre-commit.ci
+    autofix_prs: true
+    autoupdate_branch: ''
+    autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+    autoupdate_schedule: monthly
+    submodules: false

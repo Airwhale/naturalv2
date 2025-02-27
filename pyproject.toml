@@ -15,6 +15,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ipykernel>=6.29.5",
+    "pip-audit>=2.8.0",
     "pre-commit>=4.1.0",
     "ruff>=0.9.6",
     "vec-inf>=0.4.1",

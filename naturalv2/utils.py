@@ -129,10 +129,7 @@ def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
             stats["multiple_noncontrol"] = 1
 
             inclusion_criteria = trial.protocolSection.eligibilityModule
-            if inclusion_criteria and (
-                inclusion_criteria.healthyVolunteers != ""
-                and not inclusion_criteria.healthyVolunteers
-            ):
+            if inclusion_criteria and not inclusion_criteria.healthyVolunteers:
                 stats["nonhealthy"] = 1
                 binary = False
 

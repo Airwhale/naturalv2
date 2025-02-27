@@ -1,6 +1,8 @@
 import asyncio
 import json
+import logging
 import os
+import sys
 from typing import Literal, Optional
 
 import hydra
@@ -26,17 +28,45 @@ from naturalv2.utils import (
 )
 
 
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+logger = logging.getLogger()
+
+
 async def extract_covariates(
     input_df: pd.DataFrame,
     experiment: SvT,
-    model: LM,
+    model_cfg: DictConfig,
     save_path: str,
     extract_type: Literal["ty_filter", "knowns", "imputations"],
     batch_size: int = 1,
     response_format: Optional[type[BaseModel]] = None,
 ):
+    if extract_type == "ty_filter":
+        save_path = os.path.join(
+            save_path,
+            f"{experiment.nct_id}",
+            f"{model_cfg.model.replace('/', '-')}_ty_samples.csv",
+        )
+    elif extract_type == "knowns":
+        save_path = os.path.join(
+            save_path,
+            f"{experiment.nct_id}/{model_cfg.model.replace('/', '-')}_samples_knowns.csv",
+        )
+    elif extract_type == "imputations":
+        save_path = os.path.join(
+            save_path,
+            f"{experiment.nct_id}/{model_cfg.model.replace('/', '-')}_samples_imputed.csv",
+        )
+    else:
+        raise ValueError(
+            f"Invalid extract_type. Expected one of ['ty_filter', 'knowns', 'imputations'], "
+            f"but got {extract_type}."
+        )
+
     if os.path.exists(save_path):
         return pd.read_csv(save_path, index_col=0)
+
+    model = LM(**model_cfg)
 
     system_msg = {"role": "system", "content": experiment.get_prompt(extract_type)}
     human_template = "\n## Input \n>{report}"
@@ -102,14 +132,33 @@ def filter_by_inclusion(samples_df, experiment):
 def extract_conditionals(
     input_df: pd.DataFrame,
     experiment: SvT,
-    model: LM,
+    model_cfg: DictConfig,
     save_path: str,
     inclusion: bool = False,
     length_norm: bool = False,
     batch_size: int = 1,
 ):
+    if inclusion:
+        save_path = os.path.join(
+            save_path,
+            f"{experiment.nct_id}",
+            f"{model_cfg.model.replace('/', '-')}_inclusion_probs.csv",
+        )
+    else:
+        save_path = os.path.join(
+            save_path,
+            f"{experiment.nct_id}",
+            f"{model_cfg.model.replace('/', '-')}_conditionals.csv",
+        )
+
     if os.path.exists(save_path):
         return pd.read_csv(save_path, index_col=0)
+
+    # validate model_cfg
+    assert model_cfg.get("model_type") == "text", "Model type must be 'text'."
+    assert model_cfg.get("prompt_logprobs") == 0, "Prompt logprobs must be 0."
+
+    model = LM(**model_cfg)
 
     input_df = experiment.discretize(input_df, hard_filter=False, inf=True)
 
@@ -207,48 +256,36 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     experiment = SvT(path_to_main=cfg.user.path_to_main)
     os.makedirs(os.path.join(cfg.save_path, f"{experiment.nct_id}"), exist_ok=True)
 
-    cheap_model = LM(**cfg.cheap_model)
-    sample_model = LM(**cfg.sample_model)
-
     nest_asyncio.apply()
 
     data_flow = {}
 
     curated_df = pd.read_csv(experiment.curated_data_path, index_col=0).head(10)
     data_flow["curated"] = len(curated_df)
-    print(f"Initial number of curated reports: {len(curated_df)} reports.")
+    logger.info(f"Initial number of curated reports: {len(curated_df)} reports.")
 
     # filter reports that do not contain t,y info
-    ty_path = os.path.join(
-        cfg.save_path,
-        f"{experiment.nct_id}",
-        f"{cheap_model.model.replace('/', '-')}_ty_samples.csv",
-    )
     ty_samples = asyncio.run(
         extract_covariates(
             curated_df,
             experiment,
-            cheap_model,
-            ty_path,
+            cfg.cheap_model,
+            cfg.save_path,
             "ty_filter",
             response_format=TYFilterResponse,
         )
     )
     ty_filtered_df = filter_by_ty(ty_samples, experiment)
     data_flow["ty_filtered"] = len(ty_filtered_df)
-    print(f"After treatment-outcome filter: {len(ty_filtered_df)} reports.")
+    logger.info(f"After treatment-outcome filter: {len(ty_filtered_df)} reports.")
 
     # extract samples from reports, allowing LLM to output "unknown" for missing info
-    knowns_path = os.path.join(
-        cfg.save_path,
-        f"{experiment.nct_id}/{sample_model.model.replace('/', '-')}_samples_knowns.csv",
-    )
     samples_with_unknown = asyncio.run(
         extract_covariates(
             ty_filtered_df,
             experiment,
-            sample_model,
-            knowns_path,
+            cfg.sample_model,
+            cfg.save_path,
             "knowns",
             response_format=KnownsResponse,
         )
@@ -257,54 +294,35 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     # filter reports known to violate inclusion criteria
     inclusion_filtered = filter_by_inclusion(samples_with_unknown, experiment)
     data_flow["inclusion_filtered"] = len(inclusion_filtered)
-    print(f"After inclusion filter: {len(inclusion_filtered)} reports.")
+    logger.info(f"After inclusion filter: {len(inclusion_filtered)} reports.")
 
     # impute samples from reports, imputing missing info
-    imputed_path = os.path.join(
-        cfg.save_path,
-        f"{experiment.nct_id}/{sample_model.model.replace('/', '-')}_samples_imputed.csv",
-    )
     imputed_samples = asyncio.run(
         extract_covariates(
             inclusion_filtered,
             experiment,
-            sample_model,
-            imputed_path,
+            cfg.sample_model,
+            cfg.save_path,
             "imputations",
             response_format=ImputationsResponse,
         )
     )
+
     # drop rows with missing covariates even after imputation
     imputed_samples = imputed_samples.dropna(
         subset=experiment.covariate_names
     ).reset_index(drop=True)
     data_flow["final"] = len(imputed_samples)
-    print(f"Final: {len(imputed_samples)} reports.")
-
-    probs_model = LM(
-        **cfg.probs_model,
-        model_type="text",
-        prompt_logprobs=0,
-        max_tokens=1,
-        get_response=False,
-    )
+    logger.info(f"Final: {len(imputed_samples)} reports.")
 
     # extract conditionals of the form P(T, Y | X, R)
-    conditionals_path = os.path.join(
-        cfg.save_path,
-        f"{experiment.nct_id}/{probs_model.model.replace('/', '-')}_conditionals.csv",
-    )
     conditionals = extract_conditionals(
-        imputed_samples, experiment, probs_model, conditionals_path
+        imputed_samples, experiment, cfg.probs_model, cfg.save_path
     )
 
     # extract inclusion probabilities of the form P(X in I | R)
-    inclusion_path = os.path.join(
-        cfg.save_path,
-        f"{experiment.nct_id}/{probs_model.model.replace('/', '-')}_inclusion_probs.csv",
-    )
     inclusion_probs = extract_conditionals(
-        imputed_samples, experiment, probs_model, inclusion_path, inclusion=True
+        imputed_samples, experiment, cfg.probs_model, cfg.save_path, inclusion=True
     )
 
     estimator = instantiate(cfg.estimator, experiment=experiment)
@@ -324,7 +342,7 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
                         "treatments": f"{treat2}-{treat1}",
                         "pred_ate": pred_ate,
                     }
-                    print("Predicted ATE: ", pred_ate)
+                    logger.info(f"Predicted ATE: {pred_ate}")
                     if experiment.split != "test":
                         effect_idx = experiment.outcome_treatment.index(
                             (outcome, (treat1, treat2))
@@ -332,8 +350,8 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
                         true_ate = experiment.effect_sizes[effect_idx]
                         error = abs(pred_ate - true_ate)
                         results.update({"true_ate": true_ate, "abs_error": error})
-                        print("True ATE: ", true_ate)
-                        print("Absolute Error: ", error)
+                        logger.info(f"True ATE: {true_ate}")
+                        logger.info(f"Absolute Error: {error}")
                     results.update(data_flow)
                     result_dicts.append(results)
 
