@@ -4,8 +4,7 @@ from naturalv2.utils import enum_to_dcts, enumerate_strings
 
 
 class NaturalIPW:
-    def __init__(self, experiment, name="natural_ipw"):
-        self.name = name
+    def __init__(self, experiment):
         self.experiment = experiment
         self.covariate_names = experiment.covariate_names
         self.num_treat = len(experiment.treatment_names)
@@ -60,7 +59,7 @@ class NaturalIPW:
             lambda row: row["probs"][:, 2 * outcome_idx : 2 * (outcome_idx + 1)], axis=1
         )
 
-        self.prop_score_lst = self.compute_prop_score(conditionals)
+        prop_score_lst = self.compute_prop_score(conditionals)
         all_ites = np.zeros((self.num_treat, len(conditionals)))
         for i, (_, row) in enumerate(conditionals.iterrows()):  # Fixed PLW2901
             probs = row["probs"]

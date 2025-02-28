@@ -4,8 +4,7 @@ from naturalv2.utils import enumerate_strings, enum_to_dcts
     
 class NaturalOI:
     
-    def __init__(self, experiment, name="natural_oi"):
-        self.name = name
+    def __init__(self, experiment):
         self.experiment = experiment
         self.covariate_names = experiment.covariate_names
         self.num_treat = len(experiment.treatment_names)
@@ -26,7 +25,7 @@ class NaturalOI:
             for key in self.covariate_names:
                 subset = subset.loc[subset[key] == features[key]]
             for t in range(self.num_treat):
-                subset_t = subset.loc["treatment" == t]
+                subset_t = subset.loc[subset["treatment"] == t]
                 if len(subset_t) > 0:
                     py1_given_xt = np.array([prob[1] for prob in subset_t["probs"]])
                     py1_given_xt = np.mean(py1_given_xt)
@@ -49,7 +48,7 @@ class NaturalOI:
             axis=1
         )
         
-        self.outcome_conditionals = self.compute_outcome_cond(conditionals)
+        outcome_conditionals = self.compute_outcome_cond(conditionals)
         all_ites = np.zeros((self.num_treat, len(conditionals)))
         for i, (_, row) in enumerate(conditionals.iterrows()):
             probs = row["probs"]

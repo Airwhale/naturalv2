@@ -108,6 +108,7 @@ def extract_conditionals(
     length_norm: bool = False,
     batch_size: int = 1,
 ):
+    # TODO: specify different possible conditionals to extract: (T,Y|X), (Y|T,X), (X \in I | X)
     if os.path.exists(save_path):
         return pd.read_csv(save_path, index_col=0)
 
@@ -320,6 +321,7 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
                 if i < j:
                     pred_ate = weighted_effects[j] - weighted_effects[i]
                     results = {
+                        "estimator": cfg.estimator._target_.split(".")[-1],
                         "outcome": outcome,
                         "treatments": f"{treat2}-{treat1}",
                         "pred_ate": pred_ate,
