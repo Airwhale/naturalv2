@@ -68,7 +68,9 @@ class LM:
 
         return self._process_response(response, **kwargs)
 
-    def _prepare_text_completion_params(self, messages, **kwargs) -> dict[str, str]:
+    def _prepare_text_completion_params(
+        self, messages, **kwargs
+    ) -> dict[str, Union[str, int, None]]:
         model_names = self.model.split("/", 1)
         provider, model = (
             model_names[0] if len(model_names) > 1 else "openai",
@@ -80,9 +82,9 @@ class LM:
         api_base = kwargs.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
 
         # Build the prompt from the messages.
-        prompt = "\n\n".join([x["content"] for x in messages]) 
+        prompt = "\n\n".join([x["content"] for x in messages])
         if kwargs.pop("get_reponse", None):
-            prompt == "\n\nBEGIN RESPONSE:"
+            prompt += "\n\nBEGIN RESPONSE:"
 
         return {
             "model": f"text-completion-openai/{model}",

@@ -59,7 +59,7 @@ class NaturalIPW:
             lambda row: row["probs"][:, 2 * outcome_idx : 2 * (outcome_idx + 1)], axis=1
         )
 
-        prop_score_lst = self.compute_prop_score(conditionals)
+        self.prop_score_lst = self.compute_prop_score(conditionals)
         all_ites = np.zeros((self.num_treat, len(conditionals)))
         for i, (_, row) in enumerate(conditionals.iterrows()):  # Fixed PLW2901
             probs = row["probs"]
