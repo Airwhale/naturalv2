@@ -1,3 +1,4 @@
+import os
 from ast import literal_eval
 from typing import Any, Literal, Optional
 
@@ -22,9 +23,14 @@ from naturalv2.utils import (
 
 class Experiment:
     def __init__(
-        self, data_path: str, split: Literal["train", "val", "test"] = "train"
+        self,
+        data_path: str,
+        nct_id: str,
+        split: Literal["train", "val", "test"] = "train",
     ) -> None:
-        self.trial = ClinicalTrial.from_json_file(data_path)
+        self.trial = ClinicalTrial.from_json_file(
+            os.path.join(data_path, f"{nct_id}.json")
+        )
         self.split = split
 
         self.trial_path = data_path

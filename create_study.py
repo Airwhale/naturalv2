@@ -148,8 +148,7 @@ class Study:
 
         train_exp = [
             Experiment(
-                os.path.join(cfg.data_path, "nct_reports", f"{nct_id}.json"),
-                split="train",
+                os.path.join(cfg.data_path, "nct_reports"), nct_id, split="train"
             )
             for (nct_id, _) in train_trials
         ]
@@ -159,10 +158,7 @@ class Study:
         self.num_train_labels = sum([len(exp.effect_sizes) for exp in train_exp])
 
         val_exp = [
-            Experiment(
-                os.path.join(cfg.data_path, "nct_reports", f"{nct_id}.json"),
-                split="val",
-            )
+            Experiment(os.path.join(cfg.data_path, "nct_reports"), nct_id, split="val")
             for (nct_id, _) in val_trials
         ]
         self.val_trials = [
@@ -172,8 +168,7 @@ class Study:
 
         test_exp = [
             Experiment(
-                os.path.join(cfg.data_path, "nct_reports_test", f"{nct_id}.json"),
-                split="test",
+                os.path.join(cfg.data_path, "nct_reports_test"), nct_id, split="test"
             )
             for (nct_id, _) in test_trials
         ]
