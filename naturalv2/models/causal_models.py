@@ -1,5 +1,5 @@
 from sklearn.linear_model import LogisticRegression, LinearRegression
-from causallib.estimation import MarginalOutcomeEstimator, IPW, Standardization, 
+from causallib.estimation import MarginalOutcomeEstimator, IPW, Standardization
 
 
 class DifferenceInMeans(object):
