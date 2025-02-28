@@ -1,6 +1,6 @@
 import numpy as np
 
-from naturalv2.models.causal_models import *
+from naturalv2.models.causal_models import DifferenceInMeans, IPSW, OutcomeImputation
 
 
 class NaturalMC:
@@ -16,10 +16,6 @@ class NaturalMC:
             "naive": DifferenceInMeans,
             "ipw": IPSW,
             "oi": OutcomeImputation,
-            "strat_oi": StratifiedOutcomeImputation,
-            "dr_vanilla": DoublyRobust,
-            "dr_ipfeature": DoublyRobustIPFeature,
-            "dr_importance": DoublyRobustImportance
         }
              
     def get_ites(self, conditionals, outcome):
