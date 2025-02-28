@@ -49,8 +49,6 @@ class NaturalOI:
             axis=1,
         )
         
-        outcome_conditionals = self.compute_outcome_cond(conditionals)
-
         self.outcome_conditionals = self.compute_outcome_cond(conditionals)
         all_ites = np.zeros((self.num_treat, len(conditionals)))
         for i, (_, row) in enumerate(conditionals.iterrows()):
