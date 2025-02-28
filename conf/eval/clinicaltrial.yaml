@@ -1,3 +1,2 @@
-_target_: naturalv2.evals.clinicaltrials.ClinicalTrial
 data_path: ${data_path}/nct_reports
 nct_id: NCT03987919

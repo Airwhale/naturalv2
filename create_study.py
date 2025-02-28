@@ -1,16 +1,30 @@
 import logging
 import os
+from multiprocessing import Pool, cpu_count
+from typing import Optional
 
 import hydra
 import yaml
 from omegaconf import DictConfig
+from tqdm import tqdm
 
-from naturalv2.evals.clinicaltrials import ClinicalTrial, download_clinical_trials
+from naturalv2.evals.clinical_trial import ClinicalTrial, download_clinical_trials
 from naturalv2.evals.experiment import Experiment
-from naturalv2.utils import check_trial
+from naturalv2.utils import check_trial, get_nested_value
 
 
 logger = logging.getLogger(__name__)
+
+
+def _process_trial_file(
+    args: tuple[str, str],
+) -> tuple[Optional[str], Optional[dict[str, int]], Optional[bool]]:
+    filename, trial_path = args
+    if filename.endswith(".json"):
+        trial = ClinicalTrial.from_json_file(os.path.join(trial_path, filename))
+        trial_stats, check = check_trial(trial)
+        return trial.protocolSection.identificationModule.nctId, trial_stats, check
+    return None, None, None
 
 
 def find_valid_ncts(data_path: str, test: bool = False) -> list[str]:
@@ -28,12 +42,18 @@ def find_valid_ncts(data_path: str, test: bool = False) -> list[str]:
         download_clinical_trials(trial_path, test)
 
     if not os.path.exists(valid_nct_path):
-        with open(valid_nct_path, "a") as valid_file:
-            for filename in os.listdir(trial_path):
-                if filename.endswith(".json"):
-                    nct_id = filename[:-5]  # ends with .json
-                    trial = ClinicalTrial(data_path=trial_path, nct_id=nct_id)
-                    trial_stats, check = check_trial(trial)
+        with open(valid_nct_path, "a") as valid_file, Pool(cpu_count()) as pool:
+            file_list = [(filename, trial_path) for filename in os.listdir(trial_path)]
+
+            results = list(
+                tqdm(
+                    pool.imap(_process_trial_file, file_list),
+                    desc="Finding valid trials" + (" (test)" if test else ""),
+                    total=len(file_list),
+                )
+            )
+            for nct_id, trial_stats, check in results:
+                if nct_id:
                     for key, value in trial_stats.items():
                         stats[key] += value
                     if check:
@@ -44,45 +64,92 @@ def find_valid_ncts(data_path: str, test: bool = False) -> list[str]:
         return [line.strip() for line in valid_file.readlines()]
 
 
+def _process_condition_trial(
+    args: tuple[str, str, set[str], bool],
+) -> tuple[Optional[str], Optional[str]]:
+    nct_id, trial_path, conditions_set, test = args
+    trial = ClinicalTrial.from_json_file(os.path.join(trial_path, f"{nct_id}.json"))
+    trial_conditions: Optional[list[str]] = get_nested_value(
+        trial, "protocolSection.conditionsModule.conditions"
+    )
+    trial_keywords: Optional[list[str]] = get_nested_value(
+        trial, "protocolSection.conditionsModule.keywords"
+    )
+    trial_conditions_set = {
+        word.lower() for word in (trial_conditions or []) + (trial_keywords or [])
+    }
+
+    matching_conditions = [
+        trial_condition
+        for trial_condition in trial_conditions_set
+        if any(condition in trial_condition for condition in conditions_set)
+    ]
+    if matching_conditions:
+        result_date: Optional[str] = (
+            get_nested_value(
+                trial, "protocolSection.statusModule.completionDateStruct.date"
+            )
+            if test
+            else get_nested_value(
+                trial, "protocolSection.statusModule.resultsFirstPostDateStruct.date"
+            )
+        )
+        return nct_id, result_date
+    return None, None
+
+
 def find_condition_ncts(
     nct_ids: list[str], data_path: str, conditions: list[str], test=False
-) -> list[tuple[str, str]]:
+) -> list[tuple[str, Optional[str]]]:
     trial_path = os.path.join(data_path, "nct_reports" + ("_test" if test else ""))
     condition_nct_path = os.path.join(
         trial_path, f"valid_binary_{conditions[0]}_nct_ids.txt"
     )
-    condition_trials = []
+    condition_trials: list[tuple[str, Optional[str]]] = []
     conditions_set = {cond.replace("_", " ").lower() for cond in conditions}
 
-    for nct_id in nct_ids:
-        trial = ClinicalTrial(data_path=trial_path, nct_id=nct_id)
-        trial_conditions = {word.lower() for word in trial.conditions + trial.keywords}
-        if conditions_set.intersection(trial_conditions):
-            result_date = (
-                trial.estimated_completion if test else trial.results_first_posted
+    with Pool(cpu_count()) as pool:
+        results = list(
+            tqdm(
+                pool.imap(
+                    _process_condition_trial,
+                    [(nct_id, trial_path, conditions_set, test) for nct_id in nct_ids],
+                ),
+                desc="Finding condition trials" + (" (test)" if test else ""),
+                total=len(nct_ids),
             )
-            condition_trials.append((nct_id, result_date))
-            with open(condition_nct_path, "a") as condition_file:
-                condition_file.write(f"{nct_id}\n")
+        )
+        for nct_id, result_date in results:
+            if nct_id:
+                condition_trials.append((nct_id, result_date))
+                with open(condition_nct_path, "a") as condition_file:
+                    condition_file.write(f"{nct_id}\n")
 
     return condition_trials
 
 
 class Study:
-    def __init__(self, retro_trials, test_trials, cfg):
+    def __init__(
+        self,
+        retro_trials: list[tuple[str, Optional[str]]],
+        test_trials: list[tuple[str, Optional[str]]],
+        cfg: DictConfig,
+    ):
         # order retro_trials by completion date and split into train/val according to train_ratio
-        retro_trials.sort(key=lambda x: x[1])
+        retro_trials.sort(key=lambda x: (x[1] is None, x[1]))
         train_size = int(len(retro_trials) * cfg.train_ratio)
         train_trials, val_trials = retro_trials[:train_size], retro_trials[train_size:]
 
-        self.condition = list(cfg.conditions)
-        self.train_ratio = cfg.train_ratio
+        self.conditions: list[str] = list(cfg.conditions)
+        self.train_ratio: float = cfg.train_ratio
         self.num_train_trials = len(train_trials)
         self.num_val_trials = len(val_trials)
         self.num_test_trials = len(test_trials)
 
         train_exp = [
-            Experiment(nct_id, cfg.eval.data_path, split="train")
+            Experiment(
+                os.path.join(cfg.data_path, "nct_reports"), nct_id, split="train"
+            )
             for (nct_id, _) in train_trials
         ]
         self.train_trials = [
@@ -91,7 +158,7 @@ class Study:
         self.num_train_labels = sum([len(exp.effect_sizes) for exp in train_exp])
 
         val_exp = [
-            Experiment(nct_id, cfg.eval.data_path, split="val")
+            Experiment(os.path.join(cfg.data_path, "nct_reports"), nct_id, split="val")
             for (nct_id, _) in val_trials
         ]
         self.val_trials = [
@@ -100,7 +167,9 @@ class Study:
         self.num_val_labels = sum([len(exp.effect_sizes) for exp in val_exp])
 
         test_exp = [
-            Experiment(nct_id, cfg.eval.data_path + "_test", split="test")
+            Experiment(
+                os.path.join(cfg.data_path, "nct_reports_test"), nct_id, split="test"
+            )
             for (nct_id, _) in test_trials
         ]
         self.test_trials = [
@@ -108,11 +177,20 @@ class Study:
         ]
         self.num_test_to_predict = sum([len(exp.outcome_treatment) for exp in test_exp])
 
-        print(f"Study created for {self.condition} with:")
-        print(f"Train: {len(self.train_trials)} trials, {self.num_train_labels} labels")
-        print(f"Val: {len(self.val_trials)} trials, {self.num_val_labels} labels")
-        print(
-            f"Test: {len(self.test_trials)} trials, {self.num_test_to_predict} labels to predict"
+        logger.info(
+            """
+            Study created for %s with:
+            Train: %s trials, %s labels
+            Val: %s trials, %s labels
+            Test: %s trials, %s labels to predict
+            """,
+            self.conditions,
+            self.num_train_trials,
+            self.num_train_labels,
+            self.num_val_trials,
+            self.num_val_labels,
+            self.num_test_trials,
+            self.num_test_to_predict,
         )
 
     def to_yaml(self, filename):
@@ -138,6 +216,7 @@ def main(cfg: DictConfig) -> None:
     )
 
     study = Study(retro_trials, test_trials, cfg)
+    study.to_yaml(os.path.join(cfg.save_path, cfg.conditions[0] + "_study.yaml"))
     study.to_yaml(os.path.join(cfg.save_path, cfg.conditions[0] + "_study.yaml"))
 
     # TODO: common names + paths to data dumps
