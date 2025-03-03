@@ -210,7 +210,7 @@ class Experiment:
                 quant_50 = extractions[cov].describe()["50%"]
                 extractions.loc[extractions[cov] <= quant_50, cov] = 0
                 extractions.loc[extractions[cov] > quant_50, cov] = 1
-                self.options.update({cov: [f"Less than or equal to {quant50}", f"Greater than {quant50}"]})
+                self.options.update({cov: [f"Less than or equal to {quant_50}", f"Greater than {quant_50}"]})
             else: 
                 self.options.update({cov: list(all_answers)})
                 cov_map = {name: i for (i, name) in enumerate(self.options[cov])}
