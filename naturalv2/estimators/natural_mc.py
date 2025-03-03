@@ -23,13 +23,18 @@ class NaturalMC:
         model = self.causal_models[self.estimator_type]()
         xs = conditionals[self.covariate_names].copy()
         ts = conditionals["treatment"].copy()
-        ys = conditionals["outcome"].copy()
+        ys = conditionals[outcome].copy()
         data = (xs, ts, ys)
         model.fit(data)
         individual_outcomes = model.estimate_individual_outcomes(data)
 
         all_ites = np.zeros((self.num_treat, len(conditionals)))
         for t in range(self.num_treat):
-            t_mask = [1 if treat == t else 0 for treat in ts]
-            all_ites = individual_outcomes * t_mask 
+            if self.estimator_type == "ipw":
+                t_mask = [1 if treat == t else 0 for treat in ts]
+                all_ites[t, :] = (individual_outcomes * t_mask).to_numpy()
+            elif self.estimator_type == "oi":
+                all_ites[t, :] = individual_outcomes[t].to_numpy()
+            else:
+                raise NotImplementedError(f"Estimator type '{self.estimator_type}' not implemented.")
         return all_ites

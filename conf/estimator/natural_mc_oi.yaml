@@ -1,0 +1,3 @@
+_target_: naturalv2.estimators.natural_mc.NaturalMC
+experiment:
+estimator_type: oi

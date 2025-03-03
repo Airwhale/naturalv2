@@ -134,23 +134,34 @@ def extract_conditionals(
     experiment: SvT,
     model_cfg: DictConfig,
     save_path: str,
-    inclusion: bool = False,
+    extract_type: Literal["ty_given_x", "y_given_tx", "inclusion", None],
     length_norm: bool = False,
     batch_size: int = 1,
 ):
     # TODO for NOI: specify different possible conditionals to extract: (X \in I | X), (T,Y|X), (Y|T,X)
-    if inclusion:
+    if extract_type == "ty_given_x":
+        save_path = os.path.join(
+            save_path,
+            f"{experiment.nct_id}",
+            f"{model_cfg.model.replace('/', '-')}_ty_given_x.csv",
+        )
+        to_enum = ["treatment"] + experiment.outcome_names
+    elif extract_type == "y_given_tx":
+        save_path = os.path.join(
+            save_path,
+            f"{experiment.nct_id}",
+            f"{model_cfg.model.replace('/', '-')}_y_given_tx.csv",
+        )
+        to_enum = experiment.outcome_names
+    elif extract_type == "inclusion":
         save_path = os.path.join(
             save_path,
             f"{experiment.nct_id}",
             f"{model_cfg.model.replace('/', '-')}_inclusion_probs.csv",
         )
+        to_enum = ["inclusion"]
     else:
-        save_path = os.path.join(
-            save_path,
-            f"{experiment.nct_id}",
-            f"{model_cfg.model.replace('/', '-')}_conditionals.csv",
-        )
+        return input_df
 
     if os.path.exists(save_path):
         return pd.read_csv(save_path, index_col=0)
@@ -165,7 +176,6 @@ def extract_conditionals(
 
     system_prompt = experiment.get_prompt("conditionals")
 
-    to_enum = ["inclusion"] if inclusion else ["treatment"] + experiment.outcome_names
     options = enumerate_strings(experiment.get_options(to_enum))
     interleaved_options = qa_interleaved_enum(
         experiment.get_question_prompt(to_enum),
@@ -182,12 +192,13 @@ def extract_conditionals(
         batch_df = input_df.iloc[start : start + batch_size].reset_index(drop=True)
 
         reports = batch_df["report"].tolist()
-        if not inclusion:
+        if extract_type != "inclusion":
             for idx, report in enumerate(reports):
                 row = input_df.loc[input_df["report"] == report]
                 if len(row) == 0:
                     continue
-                row = row[experiment.covariate_names].to_dict("records")[0]
+                to_sample = experiment.covariate_names if extract_type == "ty_given_x" else experiment.covariate_names + ["treatment"]
+                row = row[to_sample].to_dict("records")[0]
                 sample_text = get_sample_text(row, experiment)
                 reports[idx] += sample_text
 
@@ -316,14 +327,20 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     data_flow["final"] = len(imputed_samples)
     logger.info(f"Final: {len(imputed_samples)} reports.")
 
-    # extract conditionals of the form P(T, Y | X, R)
+    # extract conditionals depending on the estimator type
+    estimator_type = cfg.estimator._target_.split(".")[-1]
+    extract_type = {
+        "NaturalIPW": "ty_given_x",
+        "NaturalOI": "y_given_tx",
+        "NaturalMC": None,
+    }[estimator_type]
     conditionals = extract_conditionals(
-        imputed_samples, experiment, cfg.probs_model, cfg.save_path
+        imputed_samples, experiment, cfg.probs_model, cfg.save_path, extract_type=extract_type
     )
 
     # extract inclusion probabilities of the form P(X in I | R)
     inclusion_probs = extract_conditionals(
-        imputed_samples, experiment, cfg.probs_model, cfg.save_path, inclusion=True
+        imputed_samples, experiment, cfg.probs_model, cfg.save_path, extract_type="inclusion"
     )
 
     estimator = instantiate(cfg.estimator, experiment=experiment)
