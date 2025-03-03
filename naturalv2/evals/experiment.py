@@ -209,7 +209,7 @@ class Experiment:
                 extractions[cov] = pd.to_numeric(extractions[cov], errors="coerce")
                 quant_50 = extractions[cov].describe()["50%"]
                 extractions.loc[extractions[cov] <= quant_50, cov] = 0
-                extractions.loc[extractions[] > quant_50, cov] = 1
+                extractions.loc[extractions[cov] > quant_50, cov] = 1
                 self.options.update({cov: [f"Less than or equal to {quant50}", f"Greater than {quant50}"]})
             else: 
                 self.options.update({cov: list(all_answers)})
