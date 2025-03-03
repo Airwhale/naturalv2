@@ -2,6 +2,8 @@ import os
 from ast import literal_eval
 from typing import Any, Literal, Optional
 
+import pandas as pd
+
 from naturalv2.evals.clinical_trial import (
     ArmGroup,
     BaselineMeasure,
