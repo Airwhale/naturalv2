@@ -197,7 +197,11 @@ def extract_conditionals(
                 row = input_df.loc[input_df["report"] == report]
                 if len(row) == 0:
                     continue
-                to_sample = experiment.covariate_names if extract_type == "ty_given_x" else experiment.covariate_names + ["treatment"]
+                to_sample = (
+                    experiment.covariate_names
+                    if extract_type == "ty_given_x"
+                    else experiment.covariate_names + ["treatment"]
+                )
                 row = row[to_sample].to_dict("records")[0]
                 sample_text = get_sample_text(row, experiment)
                 reports[idx] += sample_text
@@ -335,12 +339,20 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
         "NaturalMC": None,
     }[estimator_type]
     conditionals = extract_conditionals(
-        imputed_samples, experiment, cfg.probs_model, cfg.save_path, extract_type=extract_type
+        imputed_samples,
+        experiment,
+        cfg.probs_model,
+        cfg.save_path,
+        extract_type=extract_type,
     )
 
     # extract inclusion probabilities of the form P(X in I | R)
     inclusion_probs = extract_conditionals(
-        imputed_samples, experiment, cfg.probs_model, cfg.save_path, extract_type="inclusion"
+        imputed_samples,
+        experiment,
+        cfg.probs_model,
+        cfg.save_path,
+        extract_type="inclusion",
     )
 
     estimator = instantiate(cfg.estimator, experiment=experiment)

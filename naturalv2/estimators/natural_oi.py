@@ -4,7 +4,6 @@ from naturalv2.utils import enum_to_dcts, enumerate_strings
 
 
 class NaturalOI:
-    
     def __init__(self, experiment):
         self.experiment = experiment
         self.covariate_names = experiment.covariate_names
@@ -48,7 +47,7 @@ class NaturalOI:
             ).reshape(self.conditional_shape),
             axis=1,
         )
-        
+
         self.outcome_conditionals = self.compute_outcome_cond(conditionals)
         all_ites = np.zeros((self.num_treat, len(conditionals)))
         for i, (_, row) in enumerate(conditionals.iterrows()):

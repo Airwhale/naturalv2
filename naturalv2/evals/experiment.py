@@ -73,7 +73,9 @@ class Experiment:
         self.curated_data_path = ""  # path to curated data
         self.treatment_common_names: list[str] = []
         self.outcome_common_names: list[str] = []
-        self.extended_covariate_names: list[str] = ["dosage"]  # inclusion-related binary variables
+        self.extended_covariate_names: list[str] = [
+            "dosage"
+        ]  # inclusion-related binary variables
         self.options: dict[str, Any] = {}
         self.question_prompts: dict[str, str] = {}
 
@@ -83,7 +85,7 @@ class Experiment:
         self.outcome_treatment = []
         if (
             self.split == "test"
-        ):  # use enpdoints and arms to find outcome_treatment pairs
+        ):  # use endpoints and arms to find outcome_treatment pairs
             primary_outcomes: Optional[list[Outcome]] = get_nested_value(
                 self.trial, "protocolSection.outcomesModule.primaryOutcomes"
             )
@@ -184,7 +186,7 @@ class Experiment:
 
             self.outcome_names = [out.title for out in outcome_measures]
             self.outcome_timeframes = [out.timeFrame for out in outcome_measures]
-            # TODO: maybe use timeframes in question_prompts, e.g. 
+            # TODO: maybe use timeframes in question_prompts, e.g.
             # outcome_q = "What was the patient's reported {out.title}?"
             # if out.timeFrame: outcome_q.replace("?", "after a duration of {out.timeFrame.split(",")[-1]}?")
             self.treatment_names = [arm.title for arm in measure_groups]
@@ -212,8 +214,15 @@ class Experiment:
                 quant_50 = extractions[cov].describe()["50%"]
                 extractions.loc[extractions[cov] <= quant_50, cov] = 0
                 extractions.loc[extractions[cov] > quant_50, cov] = 1
-                self.options.update({cov: [f"Less than or equal to {quant_50}", f"Greater than {quant_50}"]})
-            else: 
+                self.options.update(
+                    {
+                        cov: [
+                            f"Less than or equal to {quant_50}",
+                            f"Greater than {quant_50}",
+                        ]
+                    }
+                )
+            else:
                 self.options.update({cov: list(all_answers)})
                 cov_map = {name: i for (i, name) in enumerate(self.options[cov])}
                 extractions[cov] = extractions[cov].replace(cov_map)
@@ -233,16 +242,29 @@ class Experiment:
         binary_map_num = {"No": 0, "Yes": 1}
         binary_map_lang = {0: "No", 1: "Yes"}
 
-        self.numerical_repr = {"treatment": {name: i for (i, name) in enumerate(self.treatment_names)}}
-        self.numerical_repr.update({outcome: binary_map_num for outcome in self.outcome_names})
-        self.numerical_repr.update({cov: binary_map_num for cov in self.extended_covariate_names})
-        self.numerical_repr.update({
-            cov: {name: i for (i, name) in enumerate(self.options[cov])} for cov in self.covariate_names
-        })
-        
-        self.language_repr = {i: name for (i, name) in enumerate(self.treatment_names)}
-        self.language_repr.update({outcome: binary_map_lang for outcome in self.outcome_names})
-        self.language_repr.update({cov: binary_map_lang for cov in self.extended_covariate_names})
-        self.numerical_repr.update({
-            cov: {i: name for (i, name) in enumerate(self.options[cov])} for cov in self.covariate_names
-        })
+        self.numerical_repr = {
+            "treatment": {name: i for (i, name) in enumerate(self.treatment_names)}
+        }
+        self.numerical_repr.update(
+            {outcome: binary_map_num for outcome in self.outcome_names}
+        )
+        self.numerical_repr.update(
+            {cov: binary_map_num for cov in self.extended_covariate_names}
+        )
+        self.numerical_repr.update(
+            {
+                cov: {name: i for (i, name) in enumerate(self.options[cov])}
+                for cov in self.covariate_names
+            }
+        )
+
+        self.language_repr = dict(enumerate(self.treatment_names))
+        self.language_repr.update(
+            {outcome: binary_map_lang for outcome in self.outcome_names}
+        )
+        self.language_repr.update(
+            {cov: binary_map_lang for cov in self.extended_covariate_names}
+        )
+        self.numerical_repr.update(
+            {cov: dict(enumerate(self.options[cov])) for cov in self.covariate_names}
+        )

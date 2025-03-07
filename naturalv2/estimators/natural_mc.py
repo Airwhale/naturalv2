@@ -1,10 +1,9 @@
 import numpy as np
 
-from naturalv2.models.causal_models import DifferenceInMeans, IPSW, OutcomeImputation
+from naturalv2.models.causal_models import IPSW, DifferenceInMeans, OutcomeImputation
 
 
 class NaturalMC:
-
     def __init__(self, experiment, estimator_type="ipw"):
         self.experiment = experiment
         self.estimator_type = estimator_type
@@ -17,7 +16,7 @@ class NaturalMC:
             "ipw": IPSW,
             "oi": OutcomeImputation,
         }
-             
+
     def get_ites(self, conditionals, outcome):
         # array of ITEs (treat2 - treat1) per unit corresponding to {outcome}
         model = self.causal_models[self.estimator_type]()
@@ -36,5 +35,7 @@ class NaturalMC:
             elif self.estimator_type == "oi":
                 all_ites[t, :] = individual_outcomes[t].to_numpy()
             else:
-                raise NotImplementedError(f"Estimator type '{self.estimator_type}' not implemented.")
+                raise NotImplementedError(
+                    f"Estimator type '{self.estimator_type}' not implemented."
+                )
         return all_ites

@@ -67,7 +67,7 @@ class PubMedSet:
         # outcome_words = get_reddit_synonyms([o.title for o in self.trial.primary_endpoints], self.llm)
         if not os.path.exists(save_path):
             for sub in self.subreddits:
-                submissions = pd.read_csv(self.data_files[f"{sub}_submisions"])
+                submissions = pd.read_csv(self.data_files[f"{sub}_submissions"])
                 comments = pd.read_csv(self.data_files[f"{sub}_comments"])
                 if date_filter:
                     trial_date = datetime.datetime.strptime(

@@ -41,8 +41,32 @@ class SvT:
             "duration_days",
             "dosage",
         ]
-        self.treatment_common_names = ["ozempic", "mounjaro", "semaglutide", "tirzepatide", "wegovy", "rybelsus", "zepbound"]
-        self.outcome_common_names = ["kg", "kilo", "lb", "pound", "weigh", "drop", "loss", "lost", "gain", "hb", "a1c", "hemoglobin", "haemoglobin", "glucose", "sugar"]
+        self.treatment_common_names = [
+            "ozempic",
+            "mounjaro",
+            "semaglutide",
+            "tirzepatide",
+            "wegovy",
+            "rybelsus",
+            "zepbound",
+        ]
+        self.outcome_common_names = [
+            "kg",
+            "kilo",
+            "lb",
+            "pound",
+            "weigh",
+            "drop",
+            "loss",
+            "lost",
+            "gain",
+            "hb",
+            "a1c",
+            "hemoglobin",
+            "haemoglobin",
+            "glucose",
+            "sugar",
+        ]
         # self.inclusion_criteria = trial.inclusion_criteria.criteria
 
         self.prompts = {}

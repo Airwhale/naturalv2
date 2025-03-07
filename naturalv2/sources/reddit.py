@@ -83,7 +83,7 @@ class RedditSet:
                 download_sub_data(sub, "submissions", self.data_path)
             if not os.path.exists(comments_path):
                 download_sub_data(sub, "comments", self.data_path)
-            self.data_files[f"{sub}_submisions"] = submissions_path
+            self.data_files[f"{sub}_submissions"] = submissions_path
             self.data_files[f"{sub}_comments"] = comments_path
 
     def curate_data(self, date_filter=False):
@@ -93,7 +93,7 @@ class RedditSet:
         # outcome_words = get_reddit_synonyms([o.title for o in self.trial.primary_endpoints], self.llm)
         if not os.path.exists(save_path):
             for sub in self.subreddits:
-                submissions = pd.read_csv(self.data_files[f"{sub}_submisions"])
+                submissions = pd.read_csv(self.data_files[f"{sub}_submissions"])
                 comments = pd.read_csv(self.data_files[f"{sub}_comments"])
                 if date_filter:
                     trial_date = datetime.datetime.strptime(

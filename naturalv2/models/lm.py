@@ -83,7 +83,7 @@ class LM:
 
         # Build the prompt from the messages.
         prompt = "\n\n".join([x["content"] for x in messages])
-        if kwargs.pop("get_reponse", None):
+        if kwargs.pop("get_response", None):
             prompt += "\n\nBEGIN RESPONSE:"
 
         return {
