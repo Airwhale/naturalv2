@@ -236,10 +236,10 @@ class Experiment:
                             )
 
                             denom1 = literal_eval(
-                                cohort1.extract_denom_value_by_id(outcome.denoms)
+                                cohort1.extract_denom_value_by_id(outcome.denoms).replace(',', '')
                             )
                             denom2 = literal_eval(
-                                cohort2.extract_denom_value_by_id(outcome.denoms)
+                                cohort2.extract_denom_value_by_id(outcome.denoms).replace(',', '')
                             )
 
                             if (
@@ -248,8 +248,11 @@ class Experiment:
                                 and denom1 > 0
                                 and denom2 > 0
                             ):
-                                effect1: float = literal_eval(measure1.value)
-                                effect2: float = literal_eval(measure2.value)
+                                try:
+                                    effect1: float = literal_eval(measure1.value)
+                                    effect2: float = literal_eval(measure2.value)
+                                except:
+                                    continue
                             else:
                                 continue
 
