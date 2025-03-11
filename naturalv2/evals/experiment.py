@@ -236,23 +236,20 @@ class Experiment:
                             )
 
                             denom1 = literal_eval(
-                                cohort1.extract_denom_value_by_id(outcome.denoms).replace(',', '')
+                                cohort1.extract_denom_value_by_id(outcome.denoms)
                             )
                             denom2 = literal_eval(
-                                cohort2.extract_denom_value_by_id(outcome.denoms).replace(',', '')
+                                cohort2.extract_denom_value_by_id(outcome.denoms)
                             )
 
                             if (
-                                measure1 is not None
-                                and measure2 is not None
-                                and denom1 > 0
-                                and denom2 > 0
+                                (measure1 is not None and measure1.value != "None")
+                                and (measure2 is not None and measure2.value != "None")
+                                and (denom1 is not None and denom1 > 0)
+                                and (denom2 is not None and denom2 > 0)
                             ):
-                                try:
-                                    effect1: float = literal_eval(measure1.value)
-                                    effect2: float = literal_eval(measure2.value)
-                                except:
-                                    continue
+                                effect1: float = literal_eval(measure1.value)
+                                effect2: float = literal_eval(measure2.value)
                             else:
                                 continue
 
