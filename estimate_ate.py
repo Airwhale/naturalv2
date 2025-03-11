@@ -9,6 +9,7 @@ import hydra
 import nest_asyncio
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pydantic import BaseModel
@@ -30,6 +31,8 @@ from naturalv2.utils import (
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger()
+
+load_dotenv(".env")
 
 
 async def extract_covariates(
@@ -88,7 +91,6 @@ async def extract_covariates(
                         },
                     ],
                     response_format=response_format,
-                    # extra_body={"guided_json": response_format.model_json_schema()},
                 )
                 for report in reports
             )
@@ -276,7 +278,7 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
 
     data_flow = {}
 
-    curated_df = pd.read_csv(experiment.curated_data_path, index_col=0).head(10)
+    curated_df = pd.read_csv(experiment.curated_data_path, index_col=0)  # .head(10)
     data_flow["curated"] = len(curated_df)
     logger.info(f"Initial number of curated reports: {len(curated_df)} reports.")
 
