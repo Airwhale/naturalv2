@@ -142,9 +142,6 @@ class Study:
 
         self.conditions: list[str] = list(cfg.conditions)
         self.train_ratio: float = cfg.train_ratio
-        self.num_train_trials = len(train_trials)
-        self.num_val_trials = len(val_trials)
-        self.num_test_trials = len(test_trials)
 
         train_exp = [
             Experiment(
@@ -153,18 +150,26 @@ class Study:
             for (nct_id, _) in train_trials
         ]
         self.train_trials = [
-            {exp.nct_id: [exp.title, exp.date] + exp.references} for exp in train_exp
+            {exp.nct_id: [exp.title, exp.date] + exp.references}
+            for exp in train_exp
+            if exp.effect_sizes and exp.outcome_treatment
         ]
-        self.num_train_labels = sum([len(exp.effect_sizes) for exp in train_exp])
+        self.num_train_labels = sum(
+            [len(exp.effect_sizes) for exp in train_exp if exp.effect_sizes]
+        )
 
         val_exp = [
             Experiment(os.path.join(cfg.data_path, "nct_reports"), nct_id, split="val")
             for (nct_id, _) in val_trials
         ]
         self.val_trials = [
-            {exp.nct_id: [exp.title, exp.date] + exp.references} for exp in val_exp
+            {exp.nct_id: [exp.title, exp.date] + exp.references}
+            for exp in val_exp
+            if exp.effect_sizes and exp.outcome_treatment
         ]
-        self.num_val_labels = sum([len(exp.effect_sizes) for exp in val_exp])
+        self.num_val_labels = sum(
+            [len(exp.effect_sizes) for exp in val_exp if exp.effect_sizes]
+        )
 
         test_exp = [
             Experiment(
@@ -173,9 +178,17 @@ class Study:
             for (nct_id, _) in test_trials
         ]
         self.test_trials = [
-            {exp.nct_id: [exp.title, exp.date] + exp.references} for exp in test_exp
+            {exp.nct_id: [exp.title, exp.date] + exp.references}
+            for exp in test_exp
+            if exp.outcome_treatment
         ]
-        self.num_test_to_predict = sum([len(exp.outcome_treatment) for exp in test_exp])
+        self.num_test_to_predict = sum(
+            [len(exp.outcome_treatment) for exp in test_exp if exp.outcome_treatment]
+        )
+
+        self.num_train_trials = len(self.train_trials)
+        self.num_val_trials = len(self.val_trials)
+        self.num_test_trials = len(self.test_trials)
 
         logger.info(
             """
