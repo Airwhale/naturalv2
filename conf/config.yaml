@@ -20,8 +20,8 @@ probs_model:
   max_tokens: 1
   prompt_logprobs: 0
   get_response: False
-save_path: ${user.save_path}/naturalv2/results
-data_path: ${user.data_path}/naturalv2
+save_path: ${user.save_path}/results
+data_path: ${user.data_path}
 date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}
 load_model: True
 
