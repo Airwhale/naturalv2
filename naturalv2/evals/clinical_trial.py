@@ -1,8 +1,10 @@
 import json
 import logging
+import multiprocessing as mp
 import os
 from enum import Enum
-from typing import List, Optional
+from functools import partial
+from typing import Any, List, Optional
 
 import requests
 from pydantic import BaseModel, Field
@@ -14,7 +16,9 @@ logger = logging.getLogger(__name__)
 # ruff: noqa
 
 
+# -----------------------------------------------------------------------------
 # Types and Enums
+# -----------------------------------------------------------------------------
 class StrEnum(str, Enum):
     """Base class for str enums to be handled properly by pydantic."""
 
@@ -369,7 +373,9 @@ class GeoPoint(BaseModel):
     lon: float
 
 
+# -----------------------------------------------------------------------------
 # Study Data Structure
+# -----------------------------------------------------------------------------
 class OrgStudyIdInfo(BaseModel):
     id: str
     type: Optional[OrgStudyIdType] = None
@@ -700,6 +706,13 @@ class DenomCount(BaseModel):
     groupId: str
     value: str
 
+    def model_post_init(self, __context: Any) -> None:
+        """Post init hook to handle value normalization."""
+        self.value = self.value.replace(",", "")
+
+        if self.value in ["NA", "N/A"]:
+            self.value = "None"
+
 
 class Denom(BaseModel):
     units: Optional[str] = None
@@ -713,6 +726,13 @@ class Measurement(BaseModel):
     lowerLimit: Optional[str] = None
     upperLimit: Optional[str] = None
     comment: Optional[str] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        """Post init hook to handle value normalization."""
+        self.value = self.value.replace(",", "")
+
+        if self.value in ["NA", "N/A"]:
+            self.value = "None"
 
 
 class MeasureCategory(BaseModel):
@@ -1021,11 +1041,21 @@ class ClinicalTrial(BaseModel):
         return cls(**data)
 
 
+# -----------------------------------------------------------------------------
 # Utility Functions
-def download_clinical_trials(data_path: str, test: bool = False):
+# -----------------------------------------------------------------------------
+
+
+def download_clinical_trials(
+    data_path: str, test: bool = False, num_processes: Optional[int] = None
+):
+    """Download clinical trials data from ClinicalTrials.gov."""
+    if num_processes is None:
+        num_processes = mp.cpu_count()
+
     os.makedirs(data_path, exist_ok=True)
 
-    params = {
+    base_params = {
         "format": "json",
         "aggFilters": "studyType:int,results:with,status:com"
         if not test
@@ -1034,42 +1064,65 @@ def download_clinical_trials(data_path: str, test: bool = False):
         "pageSize": "100",
     }
 
-    download_prog_bar = tqdm(desc="Downloading trials")
+    # initial request to get total count and first page
+    first_page = _fetch_page(None, base_params, test)
+    if not first_page:
+        return
 
-    while True:
-        response = requests.get(
-            "https://clinicaltrials.gov/api/v2/studies",
-            params=params,
-            headers={"accept": "application/json"},
-        )
+    total_trials = first_page.get("totalCount", 0)
+    logger.info(f"Expected number of trials: {total_trials}")
 
-        if response.status_code != 200:
-            logger.error("Failed to download trials: " + response.text)
-            break
+    # save the first page of trials
+    with mp.Pool(processes=num_processes) as pool:
+        save_func = partial(_save_trial, data_path)
+        pool.map(save_func, first_page["studies"])
 
-        response_json = response.json()
-        if "totalCount" in response_json:
-            total_trials = response_json["totalCount"]
-            logger.info("Expected number of trials: %d", total_trials)
-            download_prog_bar.total = total_trials
+    with tqdm(total=total_trials, desc="Downloading trials") as progress_bar:
+        progress_bar.update(len(first_page["studies"]))
 
-        studies = response_json["studies"]
+        # continue with remaining pages
+        next_token = first_page.get("nextPageToken")
+        while next_token:
+            page_data = _fetch_page(next_token, base_params, test)
+            if not page_data:
+                break
 
-        for trial in studies:
-            with open(
-                os.path.join(
-                    data_path,
-                    f"{trial['protocolSection']['identificationModule']['nctId']}.json",
-                ),
-                "w",
-            ) as f:
-                json.dump(trial, f)
+            studies = page_data["studies"]
 
-        download_prog_bar.update(len(studies))
+            with mp.Pool(processes=num_processes) as pool:
+                save_func = partial(_save_trial, data_path)
+                pool.map(save_func, studies)
 
-        next_token = response_json.get("nextPageToken")
-        if not next_token:
-            download_prog_bar.close()
-            break
+            progress_bar.update(len(studies))
 
-        params["pageToken"] = next_token
+            next_token = page_data.get("nextPageToken")
+
+
+def _fetch_page(
+    page_token: Optional[Any], base_params: dict[str, str], test: bool
+) -> Optional[dict]:
+    """Fetch a single page of clinical trials data."""
+    params = base_params.copy()
+    if page_token:
+        params["pageToken"] = page_token
+
+    response = requests.get(
+        "https://clinicaltrials.gov/api/v2/studies",
+        params=params,
+        headers={"accept": "application/json"},
+    )
+
+    if response.status_code != 200:
+        logger.error(f"Failed to download trials: {response.text}")
+        return None
+
+    return response.json()
+
+
+def _save_trial(data_path: str, trial: dict[str, Any]) -> str:
+    """Save a single trial to a JSON file."""
+    nct_id = trial["protocolSection"]["identificationModule"]["nctId"]
+    file_path = os.path.join(data_path, f"{nct_id}.json")
+    with open(file_path, "w") as f:
+        json.dump(trial, f)
+    return nct_id
