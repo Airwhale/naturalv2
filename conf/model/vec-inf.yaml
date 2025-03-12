@@ -1,7 +1,7 @@
 model: ???
 api_base: ???
 api_key: EMPTY
-temperature: 0.2
+temperature: 0.7
 top_p: 1
 max_tokens: 256
 seed: ${..seed}
