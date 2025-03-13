@@ -69,7 +69,6 @@ class NaturalIPW:
                 # propensity score given x features
                 x_idx = feat_dicts.index(x)
                 t_given_x = self.prop_score_lst[x_idx, t]
-                hajek_denom = self.prop_score_lst[:, t].sum()
                 # enumerate binary outcomes
                 for y in range(2):
                     # probability of this enumerated possibility
@@ -77,7 +76,5 @@ class NaturalIPW:
                     # ignore propensity scores of 0
                     if t_given_x > 0:
                         all_ites[t, i] += y * posterior / t_given_x
-                # divide my sum of propensities for hajek estimator
-                all_ites[t, i] /= hajek_denom
 
         return all_ites
