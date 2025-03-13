@@ -28,15 +28,15 @@ class NaturalOI:
                 subset_t = subset.loc[subset["treatment"] == t]
 
                 if len(subset_t) > 0:
-                    py1_given_xt = np.array([prob[1] for prob in subset_t["probs"]])
-                    py1_given_xt = np.mean(py1_given_xt)
-                    outcome_conditionals[i, t] = py1_given_xt
+                    py1_given_xt = np.array([sum([j*prob[j] for j in range(len(prob))]) for prob in subset_t["probs"]])
+                    outcome_conditionals[i, t] = np.mean(py1_given_xt)
 
         return outcome_conditionals
 
     def get_ites(self, conditionals, outcome):
         # array of ITEs (treat2 - treat1) per unit corresponding to {outcome}
         conditionals = conditionals.copy()
+        outcome_idx = self.experiment.outcome_names.index(outcome)
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
         feat_dicts = [self.experiment.transform_samples(dct) for dct in idx_to_feat]
@@ -47,6 +47,10 @@ class NaturalOI:
             ).reshape(self.conditional_shape),
             axis=1,
         )
+        # choose probs corresponding to {outcome}
+        conditionals.loc[:, "probs"] = conditionals.apply(
+            lambda row: row["probs"][2 * outcome_idx : 2 * (outcome_idx + 1)], axis=1
+        )
 
         self.outcome_conditionals = self.compute_outcome_cond(conditionals)
         all_ites = np.zeros((self.num_treat, len(conditionals)))
@@ -54,7 +58,6 @@ class NaturalOI:
             x = row[self.covariate_names].to_dict()
             x_idx = feat_dicts.index(x)
             for t in range(self.num_treat):
-                py1_given_xt = self.outcome_conditionals[x_idx, t]
-                all_ites[t, i] = py1_given_xt
+                all_ites[t, i] = self.outcome_conditionals[x_idx, t]
 
         return all_ites
