@@ -38,7 +38,7 @@ class NaturalIPW:
                     )  # Fixed B023
                     prop_scores.append(prop_t)
             prop_score_lst.append(prop_scores)
-        return prop_score_lst
+        return np.array(prop_score_lst)
 
     def get_ites(self, conditionals, outcome):
         # array of ITEs (treat2 - treat1) per unit corresponding to {outcome}
@@ -66,15 +66,18 @@ class NaturalIPW:
             x = row[self.covariate_names].to_dict()
             # enumerate treatments
             for t in range(self.num_treat):
+                # propensity score given x features
+                x_idx = feat_dicts.index(x)
+                t_given_x = self.prop_score_lst[x_idx, t]
+                hajek_denom = self.prop_score_lst[:, t].sum()
                 # enumerate binary outcomes
                 for y in range(2):
                     # probability of this enumerated possibility
                     posterior = probs[t, y]
-                    # propensity score given x features
-                    x_idx = feat_dicts.index(x)
-                    z_given_x = self.prop_score_lst[x_idx][t]
                     # ignore propensity scores of 0
-                    if z_given_x > 0:
-                        all_ites[t, i] = t * y * posterior / z_given_x
+                    if t_given_x > 0:
+                        all_ites[t, i] += y * posterior / t_given_x
+                # divide my sum of propensities for hajek estimator
+                all_ites[t, i] /= hajek_denom
 
         return all_ites
