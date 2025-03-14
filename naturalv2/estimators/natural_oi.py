@@ -28,7 +28,12 @@ class NaturalOI:
                 subset_t = subset.loc[subset["treatment"] == t]
 
                 if len(subset_t) > 0:
-                    py1_given_xt = np.array([sum([j*prob[j] for j in range(len(prob))]) for prob in subset_t["probs"]])
+                    py1_given_xt = np.array(
+                        [
+                            sum([j * prob[j] for j in range(len(prob))])
+                            for prob in subset_t["probs"]
+                        ]
+                    )
                     outcome_conditionals[i, t] = np.mean(py1_given_xt)
 
         return outcome_conditionals
