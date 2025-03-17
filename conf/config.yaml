@@ -21,6 +21,7 @@ probs_model:
   prompt_logprobs: 0
   temperature: 1.0
   get_response: False
+  local: False
 save_path: ${user.save_path}/results
 data_path: ${user.data_path}
 date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}

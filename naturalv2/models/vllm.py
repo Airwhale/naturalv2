@@ -9,7 +9,7 @@ from vllm import LLM, SamplingParams
 class VLLM:
     def __init__(
         self,
-        model_name: str,
+        model: str,
         download_dir: str = ".",
         llm_path: str = "",
         tokenizer_path: str = "",
@@ -24,8 +24,9 @@ class VLLM:
         add_bos: bool = False,
         length_norm: bool = False,
         num_gpus: int = None,
+        **kwargs,
     ):
-        self.model_name = model_name
+        self.model_name = model
         self.download_dir = download_dir
         self.llm_path = llm_path
         self.tokenizer_path = tokenizer_path
@@ -40,6 +41,8 @@ class VLLM:
         self.seed = seed
         self.system_prompt = system_prompt
         self.num_gpus = num_gpus
+
+        self.load_model()
 
     def load_model(self):
         print(f"Initializing vLLM with {self.model_name}...")

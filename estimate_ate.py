@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 from naturalv2.evals.svt import SvT
 from naturalv2.models.lm import LM
+from naturalv2.models.vllm import VLLM
 from naturalv2.utils import (
     ImputationsResponse,
     KnownsResponse,
@@ -140,7 +141,6 @@ def extract_conditionals(
     length_norm: bool = False,
     batch_size: int = 1,
 ):
-    # TODO for NOI: specify different possible conditionals to extract: (X \in I | X), (T,Y|X), (Y|T,X)
     if extract_type == "ty_given_x":
         save_path = os.path.join(
             save_path,
@@ -171,8 +171,9 @@ def extract_conditionals(
     # validate model_cfg
     assert model_cfg.get("model_type") == "text", "Model type must be 'text'."
     assert model_cfg.get("prompt_logprobs") == 0, "Prompt logprobs must be 0."
+    local = model_cfg.get("local", None)
 
-    model = LM(**model_cfg)
+    model = VLLM(**model_cfg) if local else LM(**model_cfg)
 
     input_df = experiment.discretize(input_df, hard_filter=False, inf=True)
 
@@ -224,23 +225,30 @@ def extract_conditionals(
         )
         rows = batch_df[cols]
 
-        lm_responses = [
-            model.predict(prompt=system_prompt + "\n\n" + llm_input)
-            for llm_input in llm_inputs
-        ]
+        if local:
+            probs, sample_indices, _ = model.compute_input_probs(
+                reports, 
+                interleaved_options
+            )
 
-        logprobs = []
-        for lm_response in lm_responses:
-            logprob = sum(lm_response[0]["prompt_logprobs"])
-            if length_norm:
-                logprob = logprob / len(lm_response[0]["prompt_tokens"])
-            logprobs.append(logprob)
+        else:
+            lm_responses = [
+                model.predict(prompt=system_prompt + "\n\n" + llm_input)
+                for llm_input in llm_inputs
+            ]
 
-        probs = softmax(
-            np.array(logprobs).reshape((len(reports), len(interleaved_options))),
-            axis=1,
-        )
-        sample_indices = [np.random.choice(len(prob), p=prob) for prob in probs]
+            logprobs = []
+            for lm_response in lm_responses:
+                logprob = sum(lm_response[0]["prompt_logprobs"])
+                if length_norm:
+                    logprob = logprob / len(lm_response[0]["prompt_tokens"])
+                logprobs.append(logprob)
+
+            probs = softmax(
+                np.array(logprobs).reshape((len(reports), len(interleaved_options))),
+                axis=1,
+            )
+            sample_indices = [np.random.choice(len(prob), p=prob) for prob in probs]
 
         dict_to_save = [
             {
