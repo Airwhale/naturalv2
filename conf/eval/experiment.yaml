@@ -1,2 +1,3 @@
 data_path: ${data_path}/nct_reports
 nct_id: NCT03987919
+split: train
