@@ -1,7 +1,7 @@
-import json
 import os
 from ast import literal_eval
 from typing import Any, Literal, Optional
+import yaml
 
 from omegaconf import DictConfig
 import pandas as pd
@@ -38,7 +38,6 @@ class Experiment:
         nct_id: str,
         split: Literal["train", "val", "test"] = "train",
     ) -> None:
-        # TODO: handle joining nct_reports vs nct_reports_test here based on split
         if split == "test":
             self.trial_path = os.path.join(data_path, f"nct_reports_test/{nct_id}.json")
         else:
@@ -91,23 +90,17 @@ class Experiment:
         self.options: dict[str, Any] = {}
         self.question_prompts: dict[str, str] = {}
 
-    @classmethod
-    def from_json(
-        cls,
-        filename: str,
-        data_path: str,
-        nct_id: str,
-        split: Literal["train", "val", "test"],
-    ) -> "Experiment":
-        with open(filename, "r") as file:
-            data = json.load(file)
-        exp = cls(data_path, nct_id, split)
-        exp.__dict__ = data
-        return exp
-
-    def to_json(self, filename: str) -> None:
+    def to_yaml(self, filename):
         with open(filename, "w") as file:
-            json.dump(self.__dict__, file)
+            yaml.safe_dump(self.__dict__, file)
+    
+    @classmethod
+    def from_yaml(cls, filename):
+        with open(filename, "r") as file:
+            data = yaml.safe_load(file)
+        exp = cls.__new__(cls)
+        exp.__dict__.update(data)
+        return exp
 
     def set_common_names(
         self, attr: Literal["treatment", "outcome"], source_name: str, lm_cfg: DictConfig, prompt_dct: dict
