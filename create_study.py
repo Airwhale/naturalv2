@@ -145,7 +145,7 @@ class Study:
 
         train_exp = [
             Experiment(
-                os.path.join(cfg.data_path, "nct_reports"), nct_id, split="train"
+                cfg.data_path, nct_id, split="train"
             )
             for (nct_id, _) in train_trials
         ]
@@ -159,7 +159,7 @@ class Study:
         )
 
         val_exp = [
-            Experiment(os.path.join(cfg.data_path, "nct_reports"), nct_id, split="val")
+            Experiment(cfg.data_path, nct_id, split="val")
             for (nct_id, _) in val_trials
         ]
         self.val_trials = [
@@ -173,7 +173,7 @@ class Study:
 
         test_exp = [
             Experiment(
-                os.path.join(cfg.data_path, "nct_reports_test"), nct_id, split="test"
+                cfg.data_path, nct_id, split="test"
             )
             for (nct_id, _) in test_trials
         ]
@@ -209,6 +209,14 @@ class Study:
     def to_yaml(self, filename):
         with open(filename, "w") as file:
             yaml.safe_dump(self.__dict__, file)
+    
+    @classmethod
+    def from_yaml(cls, filename):
+        with open(filename, "r") as file:
+            data = yaml.safe_load(file)
+        study = cls.__new__(cls)
+        study.__dict__.update(data)
+        return study
 
 
 @hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
@@ -230,9 +238,6 @@ def main(cfg: DictConfig) -> None:
 
     study = Study(retro_trials, test_trials, cfg)
     study.to_yaml(os.path.join(cfg.save_path, cfg.conditions[0] + "_study.yaml"))
-    study.to_yaml(os.path.join(cfg.save_path, cfg.conditions[0] + "_study.yaml"))
-
-    # TODO: common names + paths to data dumps
 
 
 if __name__ == "__main__":

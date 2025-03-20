@@ -1,8 +1,9 @@
-import json
 import os
 from ast import literal_eval
 from typing import Any, Literal, Optional
+import yaml
 
+from omegaconf import DictConfig
 import pandas as pd
 from pydantic import BaseModel
 
@@ -37,7 +38,10 @@ class Experiment:
         nct_id: str,
         split: Literal["train", "val", "test"] = "train",
     ) -> None:
-        self.trial_path = os.path.join(data_path, f"{nct_id}.json")
+        if split == "test":
+            self.trial_path = os.path.join(data_path, f"nct_reports_test/{nct_id}.json")
+        else:
+            self.trial_path = os.path.join(data_path, f"nct_reports/{nct_id}.json")
         self.split = split
 
         trial = ClinicalTrial.from_json_file(self.trial_path)
@@ -78,50 +82,45 @@ class Experiment:
         )
 
         self._set_outcome_treatment_effects(trial)
-        self.treatment_common_names: Optional[list[str]] = None
-        self.outcome_common_names: Optional[list[str]] = None
+        self.treatment_common_names: dict[str, list[str]]= {}
+        self.outcome_common_names: dict[str, list[str]]= {}
 
-        self.data_dump: list[
-            str
-        ] = []  # list of paths to relevant data dumps, one per source
-        self.curated_data_path = ""  # path to curated data
+        self.source_paths: dict[str, str] = {} # paths to curated data, one per source
+        self.curated_data_path = ""  # path to curated data -- probably unnecessary
         self.options: dict[str, Any] = {}
         self.question_prompts: dict[str, str] = {}
 
+    def to_yaml(self, filename):
+        with open(filename, "w") as file:
+            yaml.safe_dump(self.__dict__, file)
+    
     @classmethod
-    def from_json(
-        cls,
-        filename: str,
-        data_path: str,
-        nct_id: str,
-        split: Literal["train", "val", "test"],
-    ) -> "Experiment":
+    def from_yaml(cls, filename):
         with open(filename, "r") as file:
-            data = json.load(file)
-        exp = cls(data_path, nct_id, split)
-        exp.__dict__ = data
+            data = yaml.safe_load(file)
+        exp = cls.__new__(cls)
+        exp.__dict__.update(data)
         return exp
 
-    def to_json(self, filename: str) -> None:
-        with open(filename, "w") as file:
-            json.dump(self.__dict__, file)
-
     def set_common_names(
-        self, attr: Literal["treatment", "outcome"], lm: LM, prompt: str
+        self, attr: Literal["treatment", "outcome"], source_name: str, lm_cfg: DictConfig, prompt_dct: dict
     ) -> None:
         if attr not in ["treatment", "outcome"]:
             raise ValueError(f"Expected 'treatment' or 'outcome', got {attr}")
 
-        if getattr(self, f"{attr}_common_names") is not None:
+        if getattr(self, f"{attr}_common_names"):
             return
 
+        lm = LM(**lm_cfg)
+        system_msg = {"role": "system", "content": prompt_dct["system"]}
         common_names = []
         for name in getattr(self, f"{attr}_names"):
-            prompt = prompt.format(**{f"{attr}_name": name})
-            lm_response = lm.predict(prompt=prompt, response_format=ListResponse)
+            prompt = prompt_dct[name].format(**{f"keyword": name})
+            messages = [system_msg, {"role": "user", "content": prompt}]
+            lm_response = lm.predict(messages=messages, response_format=ListResponse)
             common_names.extend(self._parse_lm_response(lm_response[0]))
 
-        setattr(self, f"{attr}_common_names", list(set(common_names)))
+        getattr(self, f"{attr}_common_names").update({source_name: list(set(common_names))})
 
     def hard_filter_ty(self, extractions):
         for name in self.treatment_names + self.outcome_names:

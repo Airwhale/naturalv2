@@ -3,7 +3,7 @@ defaults:
   - model@cheap_model: openai
   - model@sample_model: openai
   - model@probs_model: vec-inf
-  - eval: clinicaltrial
+  - eval: experiment
   - source@reddit: reddit
   - source@pubmed: pubmed
   - estimator: natural_ipw
@@ -14,6 +14,9 @@ seed: 42
 train_ratio: 0.6
 conditions:
   - diabetes
+sources
+  - reddit
+  - pubmed
 experiment_name: test
 probs_model:
   model_type: text
