@@ -104,7 +104,7 @@ async def extract_covariates(
         reports = batch_df["report"].tolist()
         lm_responses = await asyncio.gather(  # guaranteed to be in order
             *(
-                model.apredict(
+                model.async_get_completion(
                     messages=[
                         system_msg,
                         {
@@ -197,7 +197,7 @@ def process_remote_model(
 ) -> tuple[np.ndarray, list[int]]:
     """Process inputs with remote LM model."""
     lm_responses = [
-        model.predict(prompt=system_prompt + "\n\n" + llm_input)
+        model.get_completion(prompt=system_prompt + "\n\n" + llm_input)
         for llm_input in llm_inputs
     ]
 
@@ -307,6 +307,9 @@ def extract_conditionals(
     _, interleaved_options, idx_to_feat = prepare_for_conditional_extraction(
         experiment, to_enum
     )
+
+    if local:
+        model.system_prompt = system_prompt
 
     llm_probs_df = pd.DataFrame()
 
