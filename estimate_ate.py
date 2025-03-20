@@ -144,17 +144,6 @@ async def extract_covariates(
     return llm_samples_df
 
 
-def filter_by_ty(samples_df: pd.DataFrame, experiment: SvT) -> pd.DataFrame:
-    """Filter samples by treatment and outcome."""
-    return experiment.hard_filter_ty(samples_df)
-
-
-def filter_by_inclusion(samples_df: pd.DataFrame, experiment: SvT) -> pd.DataFrame:
-    """Filter samples by inclusion criteria."""
-    # samples_df = samples_df.map(lambda x: np.nan if x in ["Unknown", "unknown"] else x)
-    return experiment.discretize(samples_df, hard_filter=True, inf=False)
-
-
 def prepare_conditional_inputs(
     input_df: pd.DataFrame, experiment: SvT, extract_type: str, reports: list[str]
 ) -> list[str]:
@@ -464,7 +453,7 @@ def main(cfg: DictConfig) -> None:
             response_format=TYFilterResponse,
         )
     )
-    ty_filtered_df = filter_by_ty(ty_samples, experiment)
+    ty_filtered_df = experiment.hard_filter_ty(ty_samples)
     data_flow["ty_filtered"] = len(ty_filtered_df)
     logger.info(f"After treatment-outcome filter: {len(ty_filtered_df)} reports.")
 
@@ -481,7 +470,9 @@ def main(cfg: DictConfig) -> None:
     )
 
     # Filter reports known to violate inclusion criteria
-    inclusion_filtered = filter_by_inclusion(samples_with_unknown, experiment)
+    inclusion_filtered = experiment.discretize(
+        samples_with_unknown, hard_filter=True, inf=False
+    )
     data_flow["inclusion_filtered"] = len(inclusion_filtered)
     logger.info(f"After inclusion filter: {len(inclusion_filtered)} reports.")
 
