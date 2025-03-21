@@ -56,7 +56,7 @@ async def extract_covariates(
     experiment: SvT,
     model_cfg: DictConfig,
     save_path: str,
-    extract_type: Literal["ty_filter", "knowns", "imputations"],
+    extract_type: Literal["relevance", "ty_filter", "knowns", "imputations"],
     batch_size: int = 1,
     response_format: Optional[type[BaseModel]] = None,
 ) -> pd.DataFrame:
@@ -72,7 +72,7 @@ async def extract_covariates(
         Model configuration
     save_path: str
         Base path to save results
-    extract_type: Literal["ty_filter", "knowns", "imputations"]
+    extract_type: Literal["relevance", "ty_filter", "knowns", "imputations"]
         Type of extraction to perform
     batch_size: int
         Number of samples to process in each batch
@@ -443,6 +443,20 @@ def main(cfg: DictConfig) -> None:
     data_flow["curated"] = len(curated_df)
     logger.info(f"Initial number of curated reports: {len(curated_df)} reports.")
 
+    # # Find reports relevant to the problem setting (uncomment for automated pipeline)
+    # curated_df = asyncio.run(
+    #     extract_covariates(
+    #         curated_df,
+    #         experiment,
+    #         cfg.cheap_model,
+    #         cfg.save_path,
+    #         "relevance",
+    #         response_format=RelevanceResponse,
+    #     )
+    # )
+    # data_flow["relevant"] = len(curated_df)
+    # logger.info(f"After relevance filter: {len(curated_df)} reports.")
+    
     # Filter reports that do not contain t,y info
     ty_samples = asyncio.run(
         extract_covariates(
