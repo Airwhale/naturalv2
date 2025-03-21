@@ -45,6 +45,7 @@ def get_save_path(
     """Generate save path for extracted data."""
     return os.path.join(
         base_path,
+        "results",
         f"{nct_id}",
         f"{model_name.replace('/', '-')}_{extract_type}.csv",
     )
@@ -418,7 +419,7 @@ def calculate_treatment_effects(
 def save_results(results: list[dict], save_path: str, nct_id: str) -> None:
     """Save results to CSV file."""
     result_df = pd.DataFrame(results)
-    results_path = os.path.join(save_path, f"{nct_id}/ate_results.csv")
+    results_path = os.path.join(save_path, "results", f"{nct_id}/ate_results.csv")
 
     if os.path.exists(results_path):
         existing_df = pd.read_csv(results_path, index_col=0)
@@ -431,7 +432,7 @@ def save_results(results: list[dict], save_path: str, nct_id: str) -> None:
 def main(cfg: DictConfig) -> None:
     """Main function to estimate average treatment effects."""
     experiment = SvT(path_to_main=cfg.user.path_to_main)
-    os.makedirs(os.path.join(cfg.save_path, f"{experiment.nct_id}"), exist_ok=True)
+    os.makedirs(os.path.join(cfg.save_path, "results", f"{experiment.nct_id}"), exist_ok=True)
 
     nest_asyncio.apply()
 
