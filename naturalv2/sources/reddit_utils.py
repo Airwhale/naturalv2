@@ -81,14 +81,14 @@ def download_sub_data(subreddit, data_type, data_path):
         reader.close()
 
     file_path = data_path + "{}_{}.zst".format(subreddit, data_type)
-    file_size = os.stat(file_path).st_size
+    # file_size = os.stat(file_path).st_size
     file_lines = 0
-    file_bytes_processed = 0
-    created = None
+    # file_bytes_processed = 0
+    # created = None
     bad_lines = 0
     data = []
 
-    for line, file_bytes_processed in read_lines_zst(file_path):
+    for line, _ in read_lines_zst(file_path):
         try:
             obj = json.loads(line)
             data += [obj]
@@ -179,7 +179,7 @@ def get_comment_permalink(permalink):
 
 
 def date_filter(df, date_str):
-    date_obj = datetime.datetime.strptime(date_str, '%Y-%m-%d')
+    date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
     utc_date_cutoff = int(date_obj.replace(tzinfo=datetime.timezone.utc).timestamp())
     idx = df["date_created"].apply(lambda x: int(x) <= utc_date_cutoff)
     return df[idx]
@@ -366,11 +366,13 @@ def subreddit_relevance_llm(desc, keywords, lm):
     system_prompt += "Your task is to determine if a subreddit is likely to contain personal experiences related to a set of related conditions based on the subreddit description."
 
     user_prompt = "Evaluate the subreddit relevance to the conditions listed. Consider if the subreddit likely contains personal experiences with the condition. Answer Yes if relevant, No if not."
-    user_prompt += f"\n\n**Conditions:** {keywords}\n\n**Subreddit Description:** {desc}"
-    user_prompt == "Is the subreddit likely to contain personal experiences relevant to the listed conditions? Answer with Yes or No."
+    user_prompt += (
+        f"\n\n**Conditions:** {keywords}\n\n**Subreddit Description:** {desc}"
+    )
+    user_prompt += "Is the subreddit likely to contain personal experiences relevant to the listed conditions? Answer with Yes or No."
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
+        {"role": "user", "content": user_prompt},
     ]
-    return lm.predict(messages=messages)[0]
+    return lm(messages=messages)[0]

@@ -1,17 +1,17 @@
-import datetime
 import os
 
 import pandas as pd
 
 from naturalv2.models.lm import LM
 from naturalv2.sources.reddit_utils import (
-    get_sub_about_info,
-    download_sub_data,
     date_filter,
+    download_sub_data,
     get_context_post_df,
+    get_sub_about_info,
     rule_based_filter,
     subreddit_relevance_llm,
 )
+
 
 class RedditSource:
     def __init__(self, data_path, match_method, lm_cfg):
@@ -27,9 +27,7 @@ class RedditSource:
             sub_name, desc, public_desc = row[1].to_list()
             desc = f"Subreddit: r/{sub_name}.\nDescription: {desc}\nPublic description: {public_desc}"
             if self.match_method == "string_match":
-                if any(
-                    keyword.lower() in desc.lower() for keyword in keywords
-                ):
+                if any(keyword.lower() in desc.lower() for keyword in keywords):
                     self.relevant_subs.append(sub_name)
                     print(f"{sub_name} is relevant.")
             elif self.match_method == "llm":
@@ -58,16 +56,18 @@ class RedditSource:
         if os.path.exists(save_path):
             cleaned_data = pd.read_csv(save_path, index_col=0)
             return save_path, len(cleaned_data)
-        
+
         rule_filtered_df = pd.DataFrame()
         for sub in self.relevant_subs:
-            submissions = pd.read_csv(os.path.join(self.data_path, f"{sub}_submissions.csv"), index_col=0)
-            comments = pd.read_csv(os.path.join(self.data_path, f"{sub}_comments.csv"), index_col=0)
+            submissions = pd.read_csv(
+                os.path.join(self.data_path, f"{sub}_submissions.csv"), index_col=0
+            )
+            comments = pd.read_csv(
+                os.path.join(self.data_path, f"{sub}_comments.csv"), index_col=0
+            )
             submissions = rule_based_filter(submissions, "selftext")
             comments = rule_based_filter(comments, "body")
-            merged_df = get_context_post_df(
-                submissions, comments
-            )
+            merged_df = get_context_post_df(submissions, comments)
             rule_filtered_df = pd.concat(
                 [rule_filtered_df, merged_df], ignore_index=True
             )
@@ -78,41 +78,57 @@ class RedditSource:
 
     def experiment_data(self, exp, study_name, filter_by_date, clean_data_path):
         # check treatment/outcome mention, filter by date
-        save_path = os.path.join(self.data_path, f"{study_name}/reddit_{exp.nct_id}.csv")
+        save_path = os.path.join(
+            self.data_path, f"{study_name}/reddit_{exp.nct_id}.csv"
+        )
         if os.path.exists(save_path):
             exp_df = pd.read_csv(save_path, index_col=0)
             return save_path, len(exp_df)
-        
+
         clean_data = pd.read_csv(clean_data_path, index_col=0)
         exp_df = pd.DataFrame(columns=clean_data.columns)
         treatment_names = exp.treatment_common_names["reddit"]
         outcome_names = exp.outcome_common_names["reddit"]
 
         for _, row in clean_data.iterrows():
-            t_matches = [x for x in treatment_names
-                         if x in row["subreddit"].lower() 
-                         or x in row["title"].lower()
-                         or x in row["post"].lower()]
-            if isinstance(row["initial_post"], str) and not pd.isna(row["initial_post"]):
-                t_matches += [x for x in treatment_names if x in row["initial_post"].lower()]
+            t_matches = [
+                x
+                for x in treatment_names
+                if x in row["subreddit"].lower()
+                or x in row["title"].lower()
+                or x in row["post"].lower()
+            ]
+            if isinstance(row["initial_post"], str) and not pd.isna(
+                row["initial_post"]
+            ):
+                t_matches += [
+                    x for x in treatment_names if x in row["initial_post"].lower()
+                ]
             t_matches = set(t_matches)
-            o_matches = [x for x in outcome_names
-                         if x in row["subreddit"].lower() 
-                         or x in row["title"].lower()
-                         or x in row["post"].lower()]
-            if isinstance(row["initial_post"], str) and not pd.isna(row["initial_post"]):
-                o_matches += [x for x in outcome_names if x in row["initial_post"].lower()]
+            o_matches = [
+                x
+                for x in outcome_names
+                if x in row["subreddit"].lower()
+                or x in row["title"].lower()
+                or x in row["post"].lower()
+            ]
+            if isinstance(row["initial_post"], str) and not pd.isna(
+                row["initial_post"]
+            ):
+                o_matches += [
+                    x for x in outcome_names if x in row["initial_post"].lower()
+                ]
             o_matches = set(o_matches)
             if len(t_matches) > 0 and len(o_matches) > 0:
                 row["treatments"] = list(t_matches)
                 row["outcomes"] = list(o_matches)
                 exp_df = pd.concat([exp_df, pd.DataFrame([row])], ignore_index=True)
-        
+
         if filter_by_date:
             exp_df = date_filter(exp_df, exp.date)
         exp_df.to_csv(save_path)
         return save_path, len(exp_df)
-    
+
     def get_common_name_prompts(self):
         system_prompt = "You are a helpful medical assistant who can translate medical terminology into common terms."
         t_prompt = "\n\nWhat are common brand names or terms that people use when discussing the treatment, {keyword}, specifically when posting on Reddit?"
