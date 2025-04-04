@@ -292,7 +292,7 @@ def extract_conditionals(
         return pd.read_csv(file_path, index_col=0)
 
     # Validate model configuration
-    assert model_cfg.get("model_type") == "text", "Model type must be 'text'."
+    assert model_cfg.get("completion_type") == "text", "Model type must be 'text'."
     assert model_cfg.get("prompt_logprobs") == 0, "Prompt logprobs must be 0."
     local = model_cfg.get("local", None)
 
