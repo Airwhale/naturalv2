@@ -2,10 +2,10 @@ import os
 from ast import literal_eval
 from typing import Any, Literal, Optional
 
+import numpy as np
 import pandas as pd
 import yaml
 from omegaconf import DictConfig
-from pydantic import BaseModel
 
 from naturalv2.evals.clinical_trial import (
     ArmGroup,
@@ -24,11 +24,8 @@ from naturalv2.utils import (
     check_noncontrol,
     check_nonplacebo,
     get_nested_value,
+    ListResponse,
 )
-
-
-class ListResponse(BaseModel):
-    output: Optional[list[str]]
 
 
 class Experiment:
@@ -43,6 +40,7 @@ class Experiment:
         else:
             self.trial_path = os.path.join(data_path, f"nct_reports/{nct_id}.json")
         self.split = split
+        self.studies: list[str] = [] 
 
         trial = ClinicalTrial.from_json_file(self.trial_path)
 
@@ -58,6 +56,9 @@ class Experiment:
                 trial,
                 "protocolSection.statusModule.resultsFirstPostDateStruct.date",
             )
+        )
+        self.conditions = get_nested_value(
+            trial, "protocolSection.conditionsModule.conditions"
         )
 
         references: Optional[list[Reference]] = get_nested_value(
@@ -86,9 +87,15 @@ class Experiment:
         self.outcome_common_names: dict[str, list[str]] = {}
 
         self.source_paths: dict[str, str] = {}  # paths to curated data, one per source
-        self.curated_data_path = ""  # path to curated data -- probably unnecessary
         self.options: dict[str, Any] = {}
-        self.question_prompts: dict[str, str] = {}
+        for feat in self.extended_covariate_names + self.outcome_names:
+            self.options.update({feat: ["No", "Yes"]})
+        self.options.update({"treatment": self.treatment_names})
+
+        self.covariate_desc = {cov.title: cov.description for cov in baseline_measures}
+        self.covariate_desc.update({"Duration": "Time period that the patient took treatment for, with units."})
+
+        self.question_prompts: dict[str, str] = {} # TODO
 
     def to_yaml(self, filename):
         with open(filename, "w") as file:
@@ -129,7 +136,7 @@ class Experiment:
         )
 
     def hard_filter_ty(self, extractions):
-        for name in self.treatment_names + self.outcome_names:
+        for name in ["treatment"] + self.outcome_names:
             extractions = extractions[extractions[name].isin(self.options[name])]
         return extractions
 
@@ -141,6 +148,9 @@ class Experiment:
         return extractions
 
     def discretize(self, extractions: pd.DataFrame) -> pd.DataFrame:
+        # extractions = extractions.map(
+        #     lambda x: np.nan if x in ["Unknown", "unknown"] else x
+        # )
         for cov in self.covariate_names:
             all_answers = extractions[cov].unique()
             if len(all_answers) > 10:
@@ -164,18 +174,18 @@ class Experiment:
         binary_map_num = {"No": 0, "Yes": 1}
         for feat in self.extended_covariate_names + self.outcome_names:
             extractions[feat] = extractions[feat].replace(binary_map_num)
-            self.options.update({feat: ["No", "Yes"]})
 
         treatment_map = {name: i for (i, name) in enumerate(self.treatment_names)}
         extractions["treatment"] = extractions["treatment"].replace(treatment_map)
-        self.options.update({"treatment": self.treatment_names})
 
         self._set_transforms()
+        self._set_questions()
 
         return extractions
 
     def _set_outcome_treatment_effects(self, trial: ClinicalTrial) -> None:
         self.outcome_treatment: list[tuple[str, tuple[str, str]]] = []
+        self.treatment_desc, self.outcome_desc = {}, {}
 
         if self.split == "test":  # use arm information to find outcome-treatment pairs
             primary_outcomes: Optional[list[Outcome]] = get_nested_value(
@@ -289,6 +299,13 @@ class Experiment:
             outcome.timeFrame for outcome in outcomes
         ]
 
+        self.treatment_desc = {
+            treatment.title: treatment.description for treatment in treatments
+        }
+        self.outcome_desc = {
+            outcome.title: outcome.description for outcome in outcomes
+        }
+
     def _set_transforms(self):
         binary_map_num = {"No": 0, "Yes": 1}
         binary_map_lang = {0: "No", 1: "Yes"}
@@ -320,7 +337,33 @@ class Experiment:
             {cov: dict(enumerate(self.options[cov])) for cov in self.covariate_names}
         )
 
+    def _set_questions(self):
+        return
+
     def _parse_lm_response(self, lm_response: str) -> list[str]:
         return (
             ListResponse.model_validate_json(lm_response).output if lm_response else []
         )
+    
+    def apply_transform(self, dct, repr_type="numeric"):
+        all_keys = list(dct.keys())
+        for field in all_keys:
+            field_map = self.numerical_repr[field] if repr_type == "numeric" else self.language_repr[field]
+            dct[field] = field_map[dct[field]]
+        return dct
+    
+    def get_system_prompt(self, prompt_type, source_name):
+        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
+        prompt_file = os.path.join(base_dir, f"{prompt_type}.txt")
+        with open(prompt_file, "r") as f:
+            prompt = f.read()
+        format_inputs = {
+            "conditions": str(self.conditions),
+            "treatments": str(self.treatment_names + self.treatment_common_names),
+            "outcomes": str(self.outcome_names),
+            "covariates": str(self.covariate_names),
+            "ty_desc": "".join([f"\n{k}: {v}" for k, v in {**self.treatment_desc, **self.outcome_desc}.items()]),
+            "covariates_desc": "".join([f"\n{k}: {v}" for k, v in self.covariate_desc.items()]),
+            "inclusion_criteria": self.inclusion_criteria,
+        }
+        return prompt.format(**format_inputs)

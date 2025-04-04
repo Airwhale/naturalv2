@@ -37,7 +37,7 @@ class LM:
         **kwargs,
     ) -> None:
         assert completion_type in ["chat", "text"], (
-            f"Expected ``completion_type`` to be one of ['chat', 'text] but got {completion_type}"
+            f"Expected `completion_type` to be one of ['chat', 'text'] but got {completion_type}"
         )
 
         self.model = model

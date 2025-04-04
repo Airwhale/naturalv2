@@ -78,10 +78,15 @@ def main(cfg: DictConfig) -> None:
         for nct_id in train_ncts + val_ncts + test_ncts:
             if f"{source_name}_{nct_id}" not in study_dataset.data_paths:
                 exp_file = os.path.join(cfg.save_path, f"experiments/{nct_id}.yaml")
+                # Load Experiment from exisiting file or create a new one
                 try:
                     exp = Experiment.from_yaml(exp_file)
                 except:
                     exp = Experiment(cfg.data_path, nct_id, split="train")
+                # Track the studies of which this Experiment is a part
+                if cfg.conditions[0] not in exp.studies:
+                    exp.studies.append(cfg.conditions[0])
+                # Curate a dataset for this Experiment from {source_name}
                 if source_name in exp.source_paths:
                     exp_data_path = exp.source_paths[source_name]
                     exp_data_size = len(pd.read_csv(exp_data_path, index_col=0))
@@ -96,8 +101,10 @@ def main(cfg: DictConfig) -> None:
                     exp_data_path, exp_data_size = source_dataset.experiment_data(
                         exp, study.conditions[0], cfg.filter_by_date, clean_path
                     )
+                    # Track Experiment data and save to yaml
                     exp.source_paths[source_name] = exp_data_path
                     exp.to_yaml(exp_file)
+                # Track Experiment data in study dataset
                 study_dataset.data_paths.update(
                     {f"{source_name}_{nct_id}": exp_data_path}
                 )
@@ -105,6 +112,7 @@ def main(cfg: DictConfig) -> None:
                     {f"{source_name}_{nct_id}": exp_data_size}
                 )
 
+    # Save paths to data for in study_dataset yaml
     study_dataset.to_yaml(
         os.path.join(
             cfg.data_path, "studies", cfg.conditions[0] + "_study_dataset.yaml"

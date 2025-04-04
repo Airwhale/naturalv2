@@ -12,6 +12,9 @@ from naturalv2.evals.clinical_trial import (
 )
 
 
+class ListResponse(BaseModel):
+    output: Optional[list[str]]
+
 class TYFilterResponse(BaseModel):
     """Response format for treatment-outcome filter stage"""
 
@@ -201,7 +204,7 @@ def qa_interleaved_enum(q_dct, options_dct, a_enum, to_enum):
     all_interleaved_options = []
     alph = ["a) ", "b) ", "c) ", "d) "]
     for option in a_enum:
-        interleaved_enum = " \n\n## Questions"
+        interleaved_enum = " \n\nMultiple Choice Questions"
         for num in range(len(to_enum)):
             key = to_enum[num]
             interleaved_enum += " \n\nQ: " + q_dct[key]
@@ -255,11 +258,9 @@ def enum_to_dcts(enumerated, to_enum):
     return return_dcts
 
 
-def get_sample_text(dct, dataset):
-    all_keys = list(dct.keys())
-    questions = dataset.get_question_prompt(all_keys)
-    dct = dataset.interpret_samples(dct)
-    return_text = " \n\n## Questions and their correct answers"
+def get_sample_text(a_dct, q_dct):
+    all_keys = list(a_dct.keys())
+    return_text = "\n\nQuestions and their correct answers"
     for key in all_keys:
-        return_text += "\nQ: " + questions[key] + " A: " + str(dct[key]) + "."
+        return_text += "\nQ: " + q_dct[key] + " A: " + str(a_dct[key]) + "."
     return return_text

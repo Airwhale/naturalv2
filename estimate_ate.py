@@ -14,9 +14,10 @@ from pydantic import BaseModel
 from scipy.special import softmax
 from tqdm import tqdm
 
-from naturalv2.evals.svt import SvT
+from naturalv2.evals.experiment import Experiment
 from naturalv2.models.lm import LM, get_message_content, get_prompt_logprobs
 from naturalv2.utils import (
+    RelevanceResponse,
     ImputationsResponse,
     KnownsResponse,
     TYFilterResponse,
@@ -58,7 +59,7 @@ async def _extract_covariates_from_report(
 
 async def extract_covariates(
     input_df: pd.DataFrame,
-    experiment: SvT,
+    experiment: Experiment,
     model_cfg: DictConfig,
     save_path: str,
     extract_type: Literal["relevance", "ty_filter", "knowns", "imputations"],
@@ -71,8 +72,8 @@ async def extract_covariates(
     ----------
     input_df: pd.DataFrame
         Input dataframe with reports
-    experiment: SvT
-        SvT experiment object
+    experiment: Experiment
+        Experiment object
     model_cfg: DictConfig
         Model configuration
     save_path: str
@@ -99,8 +100,8 @@ async def extract_covariates(
 
     model = LM(**model_cfg)
 
-    system_message = {"role": "system", "content": experiment.get_prompt(extract_type)}
-    user_prompt_template = "\n## Input \n>{report}"
+    system_message = {"role": "system", "content": experiment.get_system_prompt(extract_type)} 
+    user_prompt_template = "\nText Report\n>{report}"
 
     out_dicts = []
 
@@ -138,10 +139,10 @@ async def extract_covariates(
         input_df.update(llm_samples_df, overwrite=False)
         llm_samples_df = input_df.copy()
 
-    if extract_type != "ty_filter":
-        llm_samples_df = experiment.discretize(
-            llm_samples_df, hard_filter=False, inf=False
-        )
+    # if extract_type != "ty_filter":
+    #     llm_samples_df = experiment.discretize(
+    #         llm_samples_df, hard_filter=False, inf=False
+    #     )
 
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     llm_samples_df.to_csv(file_path)
@@ -149,7 +150,7 @@ async def extract_covariates(
 
 
 def prepare_conditional_inputs(
-    input_df: pd.DataFrame, experiment: SvT, extract_type: str, reports: list[str]
+    input_df: pd.DataFrame, experiment: Experiment, extract_type: str, reports: list[str]
 ) -> list[str]:
     """Prepare inputs for conditional extraction."""
     if extract_type == "inclusion":
@@ -166,7 +167,7 @@ def prepare_conditional_inputs(
             else experiment.covariate_names + ["treatment"]
         )
         row = row[to_sample].to_dict("records")[0]
-        sample_text = get_sample_text(row, experiment)
+        sample_text = get_sample_text(row, experiment.question_prompts)
         reports[idx] += sample_text
 
     return reports
@@ -190,7 +191,7 @@ def process_remote_model(
 ) -> tuple[np.ndarray, list[int]]:
     """Process inputs with remote LM model."""
     responses = [
-        model(prompt=system_prompt + "\n\n" + llm_input) for llm_input in llm_inputs
+        model(prompt=system_prompt + "\n\nText Report\n" + llm_input) for llm_input in llm_inputs
     ]
 
     logprobs = []
@@ -214,25 +215,27 @@ def process_remote_model(
 
 
 def prepare_for_conditional_extraction(
-    experiment: SvT, to_enum: list[str]
+    experiment: Experiment, to_enum: list[str]
 ) -> tuple[list[str], list[str], list[dict]]:
     """Prepare data structures for conditional extraction."""
-    options = enumerate_strings(experiment.get_options(to_enum))
+    options = enumerate_strings(
+        {key: experiment.options[key] for key in to_enum}
+    )
     interleaved_options = qa_interleaved_enum(
-        experiment.get_question_prompt(to_enum),
-        experiment.get_options(to_enum),
+        {key: experiment.question_prompts[key] for key in to_enum},
+        {key: experiment.options[key] for key in to_enum},
         options,
         to_enum,
     )
     idx_to_feat = enum_to_dcts(options, to_enum)
-    idx_to_feat = [experiment.transform_samples(dct) for dct in idx_to_feat]
+    idx_to_feat = [experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat]
 
     return options, interleaved_options, idx_to_feat
 
 
 def extract_conditionals(
     input_df: pd.DataFrame,
-    experiment: SvT,
+    experiment: Experiment,
     model_cfg: DictConfig,
     save_path: str,
     extract_type: Literal["ty_given_x", "y_given_tx", "inclusion", None],
@@ -245,8 +248,8 @@ def extract_conditionals(
     ----------
     input_df: pd.DataFrame
         Input dataframe with reports
-    experiment: SvT
-        SvT experiment object
+    experiment: Experiment
+        Experiment object
     model_cfg: DictConfig
         Model configuration
     save_path: str
@@ -302,10 +305,10 @@ def extract_conditionals(
         model = LM(**model_cfg)
 
     # Discretize input dataframe
-    input_df = experiment.discretize(input_df, hard_filter=False, inf=True)
+    input_df = experiment.discretize(input_df)
 
     # Get system prompt and prepare options
-    system_prompt = experiment.get_prompt("conditionals")
+    system_prompt = experiment.get_system_prompt("conditionals") 
     _, interleaved_options, idx_to_feat = prepare_for_conditional_extraction(
         experiment, to_enum
     )
@@ -387,7 +390,7 @@ def weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame) -> np.n
 
 
 def calculate_treatment_effects(
-    experiment: SvT,
+    experiment: Experiment,
     estimator,
     conditionals: pd.DataFrame,
     inclusion_probs: pd.DataFrame,
@@ -443,7 +446,8 @@ def save_results(results: list[dict], save_path: str, nct_id: str) -> None:
 @hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     """Main function to estimate average treatment effects."""
-    experiment = SvT(path_to_main=cfg.user.path_to_main)
+    exp_file = os.path.join(cfg.save_path, "experiments", f"{cfg.eval.nct_id}.yaml")
+    experiment = Experiment.from_yaml(exp_file)
     os.makedirs(
         os.path.join(cfg.save_path, "results", f"{experiment.nct_id}"), exist_ok=True
     )
@@ -452,27 +456,27 @@ def main(cfg: DictConfig) -> None:
 
     data_flow = {}
 
-    # Load curated data
+    # Load curated data for the first source in {cfg.sources}
     # TODO: remove subsampling after testing
-    curated_df = pd.read_csv(experiment.curated_data_path, index_col=0).sample(
+    curated_df = pd.read_csv(experiment.source_paths[cfg.sources[0]], index_col=0).sample(
         frac=0.05, random_state=cfg.seed, ignore_index=True
     )
     data_flow["curated"] = len(curated_df)
     logging.info(f"Initial number of curated reports: {len(curated_df)} reports.")
 
-    # # Find reports relevant to the problem setting (uncomment for automated pipeline)
-    # curated_df = asyncio.run(
-    #     extract_covariates(
-    #         curated_df,
-    #         experiment,
-    #         cfg.cheap_model,
-    #         cfg.save_path,
-    #         "relevance",
-    #         response_format=RelevanceResponse,
-    #     )
-    # )
-    # data_flow["relevant"] = len(curated_df)
-    # logger.info(f"After relevance filter: {len(curated_df)} reports.")
+    # Find reports relevant to the problem setting (uncomment for automated pipeline)
+    curated_df = asyncio.run(
+        extract_covariates(
+            curated_df,
+            experiment,
+            cfg.cheap_model,
+            cfg.save_path,
+            "relevance",
+            response_format=RelevanceResponse,
+        )
+    )
+    data_flow["relevant"] = len(curated_df)
+    logging.info(f"After relevance filter: {len(curated_df)} reports.")
 
     # Filter reports that do not contain t,y info
     ty_samples = asyncio.run(
@@ -484,7 +488,7 @@ def main(cfg: DictConfig) -> None:
             "ty_filter",
             response_format=TYFilterResponse,
         )
-    )
+    ) 
     ty_filtered_df = experiment.hard_filter_ty(ty_samples)
     data_flow["ty_filtered"] = len(ty_filtered_df)
     logging.info(f"After treatment-outcome filter: {len(ty_filtered_df)} reports.")
@@ -502,9 +506,7 @@ def main(cfg: DictConfig) -> None:
     )
 
     # Filter reports known to violate inclusion criteria
-    inclusion_filtered = experiment.discretize(
-        samples_with_unknown, hard_filter=True, inf=False
-    )
+    inclusion_filtered = experiment.hard_filter_inclusion(samples_with_unknown)
     data_flow["inclusion_filtered"] = len(inclusion_filtered)
     logging.info(f"After inclusion filter: {len(inclusion_filtered)} reports.")
 
@@ -521,9 +523,9 @@ def main(cfg: DictConfig) -> None:
     )
 
     # Drop rows with missing covariates even after imputation
-    imputed_samples = imputed_samples.dropna(
-        subset=experiment.covariate_names
-    ).reset_index(drop=True)
+    # imputed_samples = imputed_samples.dropna(
+    #     subset=experiment.covariate_names
+    # ).reset_index(drop=True)
     data_flow["final"] = len(imputed_samples)
     logging.info(f"Final: {len(imputed_samples)} reports.")
 
