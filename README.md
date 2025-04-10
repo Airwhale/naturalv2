@@ -10,7 +10,7 @@ Prior to installing the dependencies for this project, it is recommended to inst
 ```bash
 git clone https://github.com/nikitadhawan/naturalv2.git
 cd naturalv2
-uv sync --no-cache --dev
+uv sync --no-cache --dev --no-build-isolation
 ```
 **Note**: Add `--active` to the `uv sync` command if you prefer to use the active virtual environment. Otherwise, the virtual environment will be created in the `.venv` directory inside the project root.
 

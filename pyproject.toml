@@ -3,16 +3,16 @@ name = "naturalv2"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "causallib>=0.9.7",
+    "causallib>=0.10.0",
     "diskcache>=5.6.3",
     "hydra-core>=1.3.2",
-    "litellm>=1.61.9",
+    "litellm>=1.65.5",
     "nest-asyncio>=1.6.0",
     "numpy<2.0.0",
     "pandas>=2.2.3",
     "scipy>=1.15.2",
     "setuptools>=77.0.3",
-    "tenacity>=9.0.0",
+    "tenacity>=9.1.2",
     "tqdm>=4.67.1",
     "wheel>=0.45.1",
 ]
@@ -24,9 +24,10 @@ dev = [
     "pre-commit>=4.1.0",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
-    "ruff>=0.11.2",
-    "torch>=2.5.1",
-    "vec-inf",
+    "ruff>=0.11.5",
+    "torch>=2.6.0",
+    "vec-inf>=0.5.0",
+    "vllm>=0.8.3",
 ]
 
 [tool.ruff]
@@ -76,9 +77,6 @@ ignore-names = ["X*", "setUp"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
-
-[tool.uv.sources]
-vec-inf = { git = "https://github.com/VectorInstitute/vector-inference", branch = "develop" }
 
 [tool.pytest.ini_options]
 markers = ["integration_test: marks tests as integration tests"]
