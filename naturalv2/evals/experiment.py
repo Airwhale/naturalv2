@@ -2,7 +2,6 @@ import os
 from ast import literal_eval
 from typing import Any, Literal, Optional
 
-import numpy as np
 import pandas as pd
 import yaml
 from omegaconf import DictConfig
@@ -20,11 +19,11 @@ from naturalv2.evals.clinical_trial import (
 )
 from naturalv2.models.lm import LM
 from naturalv2.utils import (
+    ListResponse,
     check_binary_endpoint,
     check_noncontrol,
     check_nonplacebo,
     get_nested_value,
-    ListResponse,
 )
 
 
@@ -40,7 +39,7 @@ class Experiment:
         else:
             self.trial_path = os.path.join(data_path, f"nct_reports/{nct_id}.json")
         self.split = split
-        self.studies: list[str] = [] 
+        self.studies: list[str] = []
 
         trial = ClinicalTrial.from_json_file(self.trial_path)
 
@@ -93,9 +92,11 @@ class Experiment:
         self.options.update({"treatment": self.treatment_names})
 
         self.covariate_desc = {cov.title: cov.description for cov in baseline_measures}
-        self.covariate_desc.update({"Duration": "Time period that the patient took treatment for, with units."})
+        self.covariate_desc.update(
+            {"Duration": "Time period that the patient took treatment for, with units."}
+        )
 
-        self.question_prompts: dict[str, str] = {} # TODO
+        self.question_prompts: dict[str, str] = {}  # TODO
 
     def to_yaml(self, filename):
         with open(filename, "w") as file:
@@ -302,9 +303,7 @@ class Experiment:
         self.treatment_desc = {
             treatment.title: treatment.description for treatment in treatments
         }
-        self.outcome_desc = {
-            outcome.title: outcome.description for outcome in outcomes
-        }
+        self.outcome_desc = {outcome.title: outcome.description for outcome in outcomes}
 
     def _set_transforms(self):
         binary_map_num = {"No": 0, "Yes": 1}
@@ -341,16 +340,22 @@ class Experiment:
         return (
             ListResponse.model_validate_json(lm_response).output if lm_response else []
         )
-    
+
     def apply_transform(self, dct, repr_type="numeric"):
         all_keys = list(dct.keys())
         for field in all_keys:
-            field_map = self.numerical_repr[field] if repr_type == "numeric" else self.language_repr[field]
+            field_map = (
+                self.numerical_repr[field]
+                if repr_type == "numeric"
+                else self.language_repr[field]
+            )
             dct[field] = field_map[dct[field]]
         return dct
-    
+
     def get_system_prompt(self, prompt_type, source_name):
-        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
+        base_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
+        )
         prompt_file = os.path.join(base_dir, f"{prompt_type}.txt")
         with open(prompt_file, "r") as f:
             prompt = f.read()
@@ -359,8 +364,15 @@ class Experiment:
             "treatments": str(self.treatment_names + self.treatment_common_names),
             "outcomes": str(self.outcome_names),
             "covariates": str(self.covariate_names),
-            "ty_desc": "".join([f"\n{k}: {v}" for k, v in {**self.treatment_desc, **self.outcome_desc}.items()]),
-            "covariates_desc": "".join([f"\n{k}: {v}" for k, v in self.covariate_desc.items()]),
+            "ty_desc": "".join(
+                [
+                    f"\n{k}: {v}"
+                    for k, v in {**self.treatment_desc, **self.outcome_desc}.items()
+                ]
+            ),
+            "covariates_desc": "".join(
+                [f"\n{k}: {v}" for k, v in self.covariate_desc.items()]
+            ),
             "inclusion_criteria": self.inclusion_criteria,
         }
         return prompt.format(**format_inputs)

@@ -5,7 +5,7 @@ Create a possible profile for this patient with the following fields and represe
 
 {covariate_desc}
 
-Please ensure you fill all the fields with a valid value. Unfilled fields or values like "Unknown" are NOT allowed. 
+Please ensure you fill all the fields with a valid value. Unfilled fields or values like "Unknown" are NOT allowed.
 Note that your completed task should ONLY yield a JSON containing ALL the listed keys alongside their accurate values.
 
 The patient satisfies the following criteria:

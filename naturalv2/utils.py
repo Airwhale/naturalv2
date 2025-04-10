@@ -15,6 +15,7 @@ from naturalv2.evals.clinical_trial import (
 class ListResponse(BaseModel):
     output: Optional[list[str]]
 
+
 class TYFilterResponse(BaseModel):
     """Response format for treatment-outcome filter stage"""
 

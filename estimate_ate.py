@@ -17,9 +17,9 @@ from tqdm import tqdm
 from naturalv2.evals.experiment import Experiment
 from naturalv2.models.lm import LM, get_message_content, get_prompt_logprobs
 from naturalv2.utils import (
-    RelevanceResponse,
     ImputationsResponse,
     KnownsResponse,
+    RelevanceResponse,
     TYFilterResponse,
     enum_to_dcts,
     enumerate_strings,
@@ -100,7 +100,10 @@ async def extract_covariates(
 
     model = LM(**model_cfg)
 
-    system_message = {"role": "system", "content": experiment.get_system_prompt(extract_type)} 
+    system_message = {
+        "role": "system",
+        "content": experiment.get_system_prompt(extract_type),
+    }
     user_prompt_template = "\nText Report\n>{report}"
 
     out_dicts = []
@@ -150,7 +153,10 @@ async def extract_covariates(
 
 
 def prepare_conditional_inputs(
-    input_df: pd.DataFrame, experiment: Experiment, extract_type: str, reports: list[str]
+    input_df: pd.DataFrame,
+    experiment: Experiment,
+    extract_type: str,
+    reports: list[str],
 ) -> list[str]:
     """Prepare inputs for conditional extraction."""
     if extract_type == "inclusion":
@@ -191,7 +197,8 @@ def process_remote_model(
 ) -> tuple[np.ndarray, list[int]]:
     """Process inputs with remote LM model."""
     responses = [
-        model(prompt=system_prompt + "\n\nText Report\n" + llm_input) for llm_input in llm_inputs
+        model(prompt=system_prompt + "\n\nText Report\n" + llm_input)
+        for llm_input in llm_inputs
     ]
 
     logprobs = []
@@ -218,9 +225,7 @@ def prepare_for_conditional_extraction(
     experiment: Experiment, to_enum: list[str]
 ) -> tuple[list[str], list[str], list[dict]]:
     """Prepare data structures for conditional extraction."""
-    options = enumerate_strings(
-        {key: experiment.options[key] for key in to_enum}
-    )
+    options = enumerate_strings({key: experiment.options[key] for key in to_enum})
     interleaved_options = qa_interleaved_enum(
         {key: experiment.question_prompts[key] for key in to_enum},
         {key: experiment.options[key] for key in to_enum},
@@ -228,7 +233,9 @@ def prepare_for_conditional_extraction(
         to_enum,
     )
     idx_to_feat = enum_to_dcts(options, to_enum)
-    idx_to_feat = [experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat]
+    idx_to_feat = [
+        experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat
+    ]
 
     return options, interleaved_options, idx_to_feat
 
@@ -308,7 +315,7 @@ def extract_conditionals(
     input_df = experiment.discretize(input_df)
 
     # Get system prompt and prepare options
-    system_prompt = experiment.get_system_prompt("conditionals") 
+    system_prompt = experiment.get_system_prompt("conditionals")
     _, interleaved_options, idx_to_feat = prepare_for_conditional_extraction(
         experiment, to_enum
     )
@@ -458,9 +465,9 @@ def main(cfg: DictConfig) -> None:
 
     # Load curated data for the first source in {cfg.sources}
     # TODO: remove subsampling after testing
-    curated_df = pd.read_csv(experiment.source_paths[cfg.sources[0]], index_col=0).sample(
-        frac=0.05, random_state=cfg.seed, ignore_index=True
-    )
+    curated_df = pd.read_csv(
+        experiment.source_paths[cfg.sources[0]], index_col=0
+    ).sample(frac=0.05, random_state=cfg.seed, ignore_index=True)
     data_flow["curated"] = len(curated_df)
     logging.info(f"Initial number of curated reports: {len(curated_df)} reports.")
 
@@ -488,7 +495,7 @@ def main(cfg: DictConfig) -> None:
             "ty_filter",
             response_format=TYFilterResponse,
         )
-    ) 
+    )
     ty_filtered_df = experiment.hard_filter_ty(ty_samples)
     data_flow["ty_filtered"] = len(ty_filtered_df)
     logging.info(f"After treatment-outcome filter: {len(ty_filtered_df)} reports.")
