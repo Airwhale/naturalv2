@@ -19,6 +19,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "flashinfer-python<0.2.3",
     "ipykernel>=6.29.5",
     "pip-audit>=2.8.0",
     "pre-commit>=4.1.0",
@@ -81,3 +82,6 @@ lines-after-imports = 2
 [tool.pytest.ini_options]
 markers = ["integration_test: marks tests as integration tests"]
 asyncio_default_fixture_loop_scope = "function"
+
+[[tool.uv.index]]
+url = "https://flashinfer.ai/whl/cu124/torch2.6/"
