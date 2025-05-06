@@ -91,7 +91,9 @@ class Experiment:
             self.options.update({feat: ["No", "Yes"]})
         self.options.update({"treatment": self.treatment_names})
 
-        self.covariate_desc = {cov.title: cov.description for cov in baseline_measures}
+        self.covariate_desc: dict[str, list[str]] = {}
+        if baseline_measures is not None:
+            self.covariate_desc.update({cov.title: cov.description for cov in baseline_measures})
         self.covariate_desc["Duration"] = "Time period that the patient took treatment for, with units."
 
         self.question_prompts: dict[str, str] = {}  
@@ -299,9 +301,13 @@ class Experiment:
         ]
 
         self.treatment_desc = {
-            treatment.title: treatment.description for treatment in treatments
+            treatment.title if isinstance(treatment, MeasureGroup) else treatment.label: treatment.description
+            for treatment in treatments
         }
-        self.outcome_desc = {outcome.title: outcome.description for outcome in outcomes}
+        self.outcome_desc = {
+            outcome.title if isinstance(outcome, OutcomeMeasure) else outcome.measure: outcome.description 
+            for outcome in outcomes
+            }
 
     def _set_transforms(self):
         binary_map_num = {"No": 0, "Yes": 1}
