@@ -34,6 +34,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # fetch full history to allow pushes
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}  # checkout the branch that triggered the workflow
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -52,8 +55,8 @@ jobs:
       - name: Install dependencies and check code
         run: |
           source .venv/bin/activate
-          pre-commit run --all-files --show-diff-on-failure
-          continue-on-error: true
+          pre-commit run --all-files
+        continue-on-error: true
 
       - name: Commit and push changes if any
         if: always()
