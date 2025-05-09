@@ -86,7 +86,7 @@ def _process_condition_trial(
     trial_mesh_set = {mesh.term.lower() for mesh in trial_disease_mesh}
     # Remove "disease" or "diseases" from the set
     trial_mesh_set = {
-        term for term in trial_mesh_set if term != "disease" and term != "diseases"
+        term for term in trial_mesh_set if term not in {"disease", "diseases"}
     }
 
     matching_conditions = [

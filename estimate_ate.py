@@ -488,7 +488,7 @@ def main(cfg: DictConfig) -> None:
     logging.info(f"Initial number of curated reports: {len(curated_df)} reports.")
 
     # Find reports relevant to the problem setting (uncomment for automated pipeline)
-    RelevanceResponse = create_response_format(
+    relevance_response_format = create_response_format(
         "RelevanceResponse", ["relevant"], {"relevant": Literal["Yes", "No"]}
     )
     curated_df = asyncio.run(
@@ -500,7 +500,7 @@ def main(cfg: DictConfig) -> None:
             cfg.cheap_model,
             cfg.save_path,
             "relevance",
-            response_format=RelevanceResponse,
+            response_format=relevance_response_format,
         )
     )
     curated_df = curated_df[curated_df["relevant"].lower() == "yes"]
@@ -508,7 +508,7 @@ def main(cfg: DictConfig) -> None:
     logging.info(f"After relevance filter: {len(curated_df)} reports.")
 
     # Filter out reports that do not contain t,y info
-    TYFilterResponse = create_response_format(
+    ty_filter_response_format = create_response_format(
         "TYFilterResponse", experiment.treatment_names + [outcome]
     )
     ty_samples = asyncio.run(
@@ -520,7 +520,7 @@ def main(cfg: DictConfig) -> None:
             cfg.cheap_model,
             cfg.save_path,
             "ty_filter",
-            response_format=TYFilterResponse,
+            response_format=ty_filter_response_format,
         )
     )
     ty_filtered_df = experiment.hard_filter_ty(ty_samples)
@@ -528,7 +528,7 @@ def main(cfg: DictConfig) -> None:
     logging.info(f"After treatment-outcome filter: {len(ty_filtered_df)} reports.")
 
     # Extract samples from reports, allowing LLM to output "unknown" for missing info
-    KnownsResponse = create_response_format(
+    knowns_response_format = create_response_format(
         "KnownsResponse", experiment.covariate_names
     )
     samples_with_unknown = asyncio.run(
@@ -540,7 +540,7 @@ def main(cfg: DictConfig) -> None:
             cfg.sample_model,
             cfg.save_path,
             "knowns",
-            response_format=KnownsResponse,
+            response_format=knowns_response_format,
         )
     )
 
@@ -550,7 +550,7 @@ def main(cfg: DictConfig) -> None:
     logging.info(f"After inclusion filter: {len(inclusion_filtered)} reports.")
 
     # Impute samples from reports, imputing missing info
-    ImputationsResponse = create_response_format(
+    imputations_response_format = create_response_format(
         "ImputationsResponse", experiment.covariate_names
     )
     imputed_samples = asyncio.run(
@@ -562,7 +562,7 @@ def main(cfg: DictConfig) -> None:
             cfg.sample_model,
             cfg.save_path,
             "imputations",
-            response_format=ImputationsResponse,
+            response_format=imputations_response_format,
         )
     )
 
