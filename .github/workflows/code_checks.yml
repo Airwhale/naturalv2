@@ -25,12 +25,13 @@ on:
       - pyproject.toml
       - '**.ipynb'
 
-permissions:
-  contents: write
-
 jobs:
   run-code-check:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -53,7 +54,7 @@ jobs:
           source .venv/bin/activate
           pre-commit run --all-files --show-diff-on-failure
           continue-on-error: true
-      
+
       - name: Commit and push changes if any
         if: always()
         run: |
