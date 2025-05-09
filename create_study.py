@@ -85,13 +85,15 @@ def _process_condition_trial(
         trial_disease_mesh = []
     trial_mesh_set = {mesh.term.lower() for mesh in trial_disease_mesh}
     # Remove "disease" or "diseases" from the set
-    trial_mesh_set = {term for term in trial_mesh_set if term != "disease" and term != "diseases"}
+    trial_mesh_set = {
+        term for term in trial_mesh_set if term != "disease" and term != "diseases"
+    }
 
     matching_conditions = [
         trial_mesh
         for trial_mesh in trial_mesh_set
-        if any(condition in trial_mesh for condition in conditions_set) or
-        any(trial_mesh in condition for condition in conditions_set)
+        if any(condition in trial_mesh for condition in conditions_set)
+        or any(trial_mesh in condition for condition in conditions_set)
     ]
     if matching_conditions:
         result_date: Optional[str] = (
@@ -252,9 +254,9 @@ def main(cfg: DictConfig) -> None:
     os.makedirs(os.path.join(cfg.save_path, "studies"), exist_ok=True)
     study.to_yaml(
         os.path.join(
-            cfg.save_path, 
-            "studies", 
-            cfg.conditions[0].lower().replace(" ", "_") + "_study.yaml"
+            cfg.save_path,
+            "studies",
+            cfg.conditions[0].lower().replace(" ", "_") + "_study.yaml",
         )
     )
 

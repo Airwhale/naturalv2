@@ -302,7 +302,9 @@ def extract_conditionals(
         save_path,
         experiment.nct_id,
         model_cfg.model,
-        f"{extract_type}_{outcome}_probs" if extract_type == "inclusion" else f"{extract_type}",
+        f"{extract_type}_{outcome}_probs"
+        if extract_type == "inclusion"
+        else f"{extract_type}",
     )
 
     if os.path.exists(file_path):
@@ -355,10 +357,7 @@ def extract_conditionals(
         ]
 
         # Select columns to include in output
-        cols = (
-            experiment.covariate_names
-            + [outcome, "treatment", "report"]
-        )
+        cols = experiment.covariate_names + [outcome, "treatment", "report"]
         rows = batch_df[cols]
 
         # Process inputs based on model type
@@ -416,7 +415,7 @@ def calculate_treatment_effects(
     """Calculate treatment effects for all outcome-treatment pairs."""
     result_dicts = []
 
-    if hasattr(estimator, 'estimator_type'):
+    if hasattr(estimator, "estimator_type"):
         all_ites = estimator.get_ites(conditionals, outcome)
     else:
         all_ites = estimator.get_ites(conditionals)
@@ -471,7 +470,9 @@ def main(cfg: DictConfig) -> None:
         os.path.join(cfg.save_path, "results", f"{experiment.nct_id}"), exist_ok=True
     )
     outcome = cfg.outcome if cfg.outcome is not None else experiment.outcome_names[0]
-    assert outcome in experiment.outcome_names, f"This experiment didn't measure {outcome}."
+    assert outcome in experiment.outcome_names, (
+        f"This experiment didn't measure {outcome}."
+    )
 
     nest_asyncio.apply()
 
@@ -480,17 +481,15 @@ def main(cfg: DictConfig) -> None:
     # Load curated data for the first source in {cfg.sources}
     # TODO: remove subsampling after testing
     source_name = cfg.sources[0]
-    curated_df = pd.read_csv(
-        experiment.source_paths[source_name], index_col=0
-    ).sample(frac=0.05, random_state=cfg.seed, ignore_index=True)
+    curated_df = pd.read_csv(experiment.source_paths[source_name], index_col=0).sample(
+        frac=0.05, random_state=cfg.seed, ignore_index=True
+    )
     data_flow["curated"] = len(curated_df)
     logging.info(f"Initial number of curated reports: {len(curated_df)} reports.")
 
     # Find reports relevant to the problem setting (uncomment for automated pipeline)
     RelevanceResponse = create_response_format(
-        "RelevanceResponse", 
-        ["relevant"], 
-        {"relevant": Literal["Yes", "No"]}
+        "RelevanceResponse", ["relevant"], {"relevant": Literal["Yes", "No"]}
     )
     curated_df = asyncio.run(
         extract_covariates(
@@ -510,8 +509,7 @@ def main(cfg: DictConfig) -> None:
 
     # Filter out reports that do not contain t,y info
     TYFilterResponse = create_response_format(
-        "TYFilterResponse", 
-        experiment.treatment_names + [outcome]
+        "TYFilterResponse", experiment.treatment_names + [outcome]
     )
     ty_samples = asyncio.run(
         extract_covariates(
@@ -530,7 +528,9 @@ def main(cfg: DictConfig) -> None:
     logging.info(f"After treatment-outcome filter: {len(ty_filtered_df)} reports.")
 
     # Extract samples from reports, allowing LLM to output "unknown" for missing info
-    KnownsResponse = create_response_format("KnownsResponse", experiment.covariate_names)
+    KnownsResponse = create_response_format(
+        "KnownsResponse", experiment.covariate_names
+    )
     samples_with_unknown = asyncio.run(
         extract_covariates(
             ty_filtered_df,
@@ -550,7 +550,9 @@ def main(cfg: DictConfig) -> None:
     logging.info(f"After inclusion filter: {len(inclusion_filtered)} reports.")
 
     # Impute samples from reports, imputing missing info
-    ImputationsResponse = create_response_format("ImputationsResponse", experiment.covariate_names)
+    ImputationsResponse = create_response_format(
+        "ImputationsResponse", experiment.covariate_names
+    )
     imputed_samples = asyncio.run(
         extract_covariates(
             inclusion_filtered,

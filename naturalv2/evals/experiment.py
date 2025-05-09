@@ -74,7 +74,7 @@ class Experiment:
             base.title for base in baseline_measures or []
         ] + ["Duration"]
         self.extended_covariate_names: list[str] = [
-            "Inclusion" #, "Dosage"
+            "Inclusion"  # , "Dosage"
         ]  # inclusion-related binary variables
 
         self.inclusion_criteria: Optional[str] = get_nested_value(
@@ -93,10 +93,14 @@ class Experiment:
 
         self.covariate_desc: dict[str, list[str]] = {}
         if baseline_measures is not None:
-            self.covariate_desc.update({cov.title: cov.description for cov in baseline_measures})
-        self.covariate_desc["Duration"] = "Time period that the patient took treatment for, with units."
+            self.covariate_desc.update(
+                {cov.title: cov.description for cov in baseline_measures}
+            )
+        self.covariate_desc["Duration"] = (
+            "Time period that the patient took treatment for, with units."
+        )
 
-        self.question_prompts: dict[str, str] = {}  
+        self.question_prompts: dict[str, str] = {}
         self._set_questions()
 
     def to_yaml(self, filename):
@@ -131,7 +135,9 @@ class Experiment:
             prompt = prompt_dct[attr].format(**{"keyword": name})
             messages = [system_msg, {"role": "user", "content": prompt}]
             lm_response = lm(messages=messages, response_format=ListResponse)
-            common_names.extend(self._parse_lm_response(get_message_content(lm_response)[0]))
+            common_names.extend(
+                self._parse_lm_response(get_message_content(lm_response)[0])
+            )
 
         getattr(self, f"{attr}_common_names").update(
             {source_name: list(set(common_names))}
@@ -301,13 +307,17 @@ class Experiment:
         ]
 
         self.treatment_desc = {
-            treatment.title if isinstance(treatment, MeasureGroup) else treatment.label: treatment.description
+            treatment.title
+            if isinstance(treatment, MeasureGroup)
+            else treatment.label: treatment.description
             for treatment in treatments
         }
         self.outcome_desc = {
-            outcome.title if isinstance(outcome, OutcomeMeasure) else outcome.measure: outcome.description 
+            outcome.title
+            if isinstance(outcome, OutcomeMeasure)
+            else outcome.measure: outcome.description
             for outcome in outcomes
-            }
+        }
 
     def _set_transforms(self):
         binary_map_num = {"No": 0, "Yes": 1}
@@ -337,17 +347,24 @@ class Experiment:
         )
 
     def _set_questions(self):
-        self.question_prompts["Inclusion"] = f"Given the following inclusion and exclusion criteria,\n{self.inclusion_criteria}\n\ndoes the available information in the report satisfy these criteria?"
+        self.question_prompts["Inclusion"] = (
+            f"Given the following inclusion and exclusion criteria,\n{self.inclusion_criteria}\n\ndoes the available information in the report satisfy these criteria?"
+        )
         for cov in self.covariate_names:
-            self.question_prompts.update({
-                cov: f"Which of the following is true about the individual described in the report, with respect to their {cov}?"
-            })
-        self.question_prompts["treatment"] = "What treatment did the individual described in the report take?"
+            self.question_prompts.update(
+                {
+                    cov: f"Which of the following is true about the individual described in the report, with respect to their {cov}?"
+                }
+            )
+        self.question_prompts["treatment"] = (
+            "What treatment did the individual described in the report take?"
+        )
         for outcome in self.outcome_names:
-            self.question_prompts.update({
-                outcome: f"Does the individual described in the report count positively towards the {outcome}?"
-            })
-        return
+            self.question_prompts.update(
+                {
+                    outcome: f"Does the individual described in the report count positively towards the {outcome}?"
+                }
+            )
 
     def _parse_lm_response(self, lm_response: str) -> list[str]:
         return (
@@ -375,7 +392,9 @@ class Experiment:
         outcome_desc = {outcome: self.outcome_desc[outcome]}
         format_inputs = {
             "conditions": str(self.conditions),
-            "treatments": str(self.treatment_names + self.treatment_common_names[source_name]),
+            "treatments": str(
+                self.treatment_names + self.treatment_common_names[source_name]
+            ),
             "outcome": outcome,
             "covariates": str(self.covariate_names),
             "ty_desc": "".join(

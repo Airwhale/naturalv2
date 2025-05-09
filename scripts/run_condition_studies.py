@@ -4,11 +4,11 @@ import os
 import re
 import subprocess
 import sys
-from typing import Any
-import yaml
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
+import yaml
 
 
 logging.basicConfig(
@@ -230,17 +230,21 @@ def run_study(conditions: list[str], args: argparse.Namespace) -> dict[str, Any]
 
 def count_unique_ncts(studies_dir: str) -> int:
     unique_ncts = set()
-    
+
     for yaml_file in Path(studies_dir).glob("**/*.yaml"):
-        with open(yaml_file, 'r') as f:
+        with open(yaml_file, "r") as f:
             study_data = yaml.safe_load(f)
-            
+
             # Extract NCT IDs from train, val, and test trials
-            for trial_list in [study_data['train_trials'], study_data['val_trials'], study_data['test_trials']]:
+            for trial_list in [
+                study_data["train_trials"],
+                study_data["val_trials"],
+                study_data["test_trials"],
+            ]:
                 for trial in trial_list:
                     # Each trial is a dict with one key (the NCT ID)
                     unique_ncts.update(trial.keys())
-    
+
     return len(unique_ncts)
 
 

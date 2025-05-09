@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, List, Type, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, create_model
 
@@ -17,10 +17,8 @@ class ListResponse(BaseModel):
 
 
 def create_response_format(
-        name: str, 
-        keys: List[str], 
-        types: Optional[Dict[str, Type]] = None
-    ) -> BaseModel:
+    name: str, keys: List[str], types: Optional[Dict[str, Type]] = None
+) -> BaseModel:
     "Generate a Pydantic model with fields specified by the given keys."
 
     fields = {key: (types.get(key, Any), ...) for key in keys}
