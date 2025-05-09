@@ -25,6 +25,9 @@ on:
       - pyproject.toml
       - '**.ipynb'
 
+permissions:
+  contents: write
+
 jobs:
   run-code-check:
     runs-on: ubuntu-latest
