@@ -32,14 +32,14 @@ class Experiment:
         self,
         data_path: str,
         nct_id: str,
-        split: Literal["train", "val", "test"] = "train",
+        status: Literal["completed", "active"] = "completed",
     ) -> None:
-        if split == "test":
+        if status == "active":
             self.trial_path = os.path.join(data_path, f"nct_reports_test/{nct_id}.json")
         else:
             self.trial_path = os.path.join(data_path, f"nct_reports/{nct_id}.json")
-        self.split = split
-        self.studies: list[str] = []
+        self.status = status
+        self.studies: list[list[str, str]] = []
 
         trial = ClinicalTrial.from_json_file(self.trial_path)
 
@@ -50,7 +50,7 @@ class Experiment:
             get_nested_value(
                 trial, "protocolSection.statusModule.completionDateStruct.date"
             )
-            if self.split == "test"
+            if self.status == "active"
             else get_nested_value(
                 trial,
                 "protocolSection.statusModule.resultsFirstPostDateStruct.date",
@@ -85,7 +85,7 @@ class Experiment:
         self.treatment_common_names: dict[str, list[str]] = {}
         self.outcome_common_names: dict[str, list[str]] = {}
 
-        self.source_paths: dict[str, str] = {}  # paths to curated data, one per source
+        self.source_paths: dict[str, list] = {}  # list of paths to curated data, one per source
         self.options: dict[str, Any] = {}
         for feat in self.extended_covariate_names + self.outcome_names:
             self.options.update({feat: ["No", "Yes"]})
@@ -194,7 +194,7 @@ class Experiment:
         self.outcome_treatment: list[tuple[str, tuple[str, str]]] = []
         self.treatment_desc, self.outcome_desc = {}, {}
 
-        if self.split == "test":  # use arm information to find outcome-treatment pairs
+        if self.status == "active":  # use arm information to find outcome-treatment pairs
             primary_outcomes: Optional[list[Outcome]] = get_nested_value(
                 trial, "protocolSection.outcomesModule.primaryOutcomes"
             )

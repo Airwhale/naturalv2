@@ -74,37 +74,43 @@ def main(cfg: DictConfig) -> None:
             study_dataset.data_sizes.update({f"{source_name}_cleaned": data_size})
         clean_path = study_dataset.data_paths[f"{source_name}_cleaned"]
 
-        # search for treatment and outcome to curate data for each experiment
+        # Search for treatment and outcome to curate data for each experiment
         os.makedirs(os.path.join(cfg.save_path, "experiments"), exist_ok=True)
-        for nct_id in train_ncts + val_ncts + test_ncts:
-            if f"{source_name}_{nct_id}" not in study_dataset.data_paths:
-                exp_file = os.path.join(cfg.save_path, f"experiments/{nct_id}.yaml")
-                # Load Experiment from exisiting file or create a new one
-                try:
-                    exp = Experiment.from_yaml(exp_file)
-                except:
-                    exp = Experiment(cfg.data_path, nct_id, split="train")
-                # Track the studies of which this Experiment is a part
-                if cfg.conditions[0] not in exp.studies:
-                    exp.studies.append(cfg.conditions[0])
-                # Curate a dataset for this Experiment from {source_name}
-                if source_name in exp.source_paths:
-                    exp_data_path = exp.source_paths[source_name]
-                    exp_data_size = len(pd.read_csv(exp_data_path, index_col=0))
-                else:
-                    for attribute in ["treatment", "outcome"]:
-                        exp.set_common_names(
-                            attribute,
-                            source_name,
-                            cfg.sample_model,
-                            source_dataset.get_common_name_prompts(),
-                        )
-                    exp_data_path, exp_data_size = source_dataset.experiment_data(
-                        exp, study.conditions[0], cfg.filter_by_date, clean_path
+        
+        def curate_exp_data(nct_id, split):
+            exp_file = os.path.join(cfg.save_path, f"experiments/{nct_id}.yaml")
+            # Load Experiment from exisiting file or create a new one
+            try:
+                exp = Experiment.from_yaml(exp_file)
+            except:
+                status = "active" if split == "test" else "completed"
+                exp = Experiment(cfg.data_path, nct_id, status=status)
+            # Track the studies of which this Experiment is a part
+            if cfg.conditions[0] not in exp.studies:
+                exp.studies.append([cfg.conditions[0], split])
+            # Curate a dataset for this Experiment from {source_name}
+            for attribute in ["treatment", "outcome"]:
+                if source_name not in getattr(exp, f"{attribute}_common_names"):
+                    exp.set_common_names(
+                        attribute,
+                        source_name,
+                        cfg.sample_model,
+                        source_dataset.get_common_name_prompts(),
                     )
-                    # Track Experiment data and save to yaml
-                    exp.source_paths[source_name] = exp_data_path
-                    exp.to_yaml(exp_file)
+            exp_data_path, exp_data_size = source_dataset.experiment_data(
+                exp, study.conditions[0], cfg.filter_by_date, clean_path
+            )
+            # Track Experiment data and save to yaml
+            exp.source_paths[source_name].append(exp_data_path)
+            exp.to_yaml(exp_file)
+            return exp_data_path, exp_data_size
+        
+        splits = ["train" for _ in range(len(train_ncts))] + \
+                ["val" for _ in range(len(val_ncts))] + \
+                ["test" for _ in range(len(test_ncts))]
+        for (nct_id, split) in zip(train_ncts + val_ncts + test_ncts, splits):
+            if f"{source_name}_{nct_id}" not in study_dataset.data_paths:
+                exp_data_path, exp_data_size = curate_exp_data(nct_id, split)
                 # Track Experiment data in study dataset
                 study_dataset.data_paths.update(
                     {f"{source_name}_{nct_id}": exp_data_path}

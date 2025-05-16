@@ -163,7 +163,7 @@ class Study:
         self.train_ratio: float = cfg.train_ratio
 
         train_exp = [
-            Experiment(cfg.data_path, nct_id, split="train")
+            Experiment(cfg.data_path, nct_id, status="completed")
             for (nct_id, _) in train_trials
         ]
         self.train_trials = [
@@ -176,7 +176,7 @@ class Study:
         )
 
         val_exp = [
-            Experiment(cfg.data_path, nct_id, split="val") for (nct_id, _) in val_trials
+            Experiment(cfg.data_path, nct_id, status="completed") for (nct_id, _) in val_trials
         ]
         self.val_trials = [
             {exp.nct_id: [exp.title, exp.date] + exp.references}
@@ -188,7 +188,7 @@ class Study:
         )
 
         test_exp = [
-            Experiment(cfg.data_path, nct_id, split="test")
+            Experiment(cfg.data_path, nct_id, status="active")
             for (nct_id, _) in test_trials
         ]
         self.test_trials = [
@@ -199,6 +199,13 @@ class Study:
         self.num_test_to_predict = sum(
             [len(exp.outcome_treatment) for exp in test_exp if exp.outcome_treatment]
         )
+
+        # Collect all baseline measures and their frequency
+        covariates_dict: dict[str, int] = {}
+        for exp in train_exp + val_exp + test_exp:
+            for covariate_name in exp.covariate_names:
+                covariates_dict[covariate_name] = covariates_dict.get(covariate_name, 0) + 1
+        self.covariates = sorted(covariates_dict.items(), key=lambda item: item[1], reverse=True)
 
         self.num_train_trials = len(self.train_trials)
         self.num_val_trials = len(self.val_trials)
