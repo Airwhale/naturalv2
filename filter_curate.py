@@ -76,7 +76,7 @@ def main(cfg: DictConfig) -> None:
 
         # Search for treatment and outcome to curate data for each experiment
         os.makedirs(os.path.join(cfg.save_path, "experiments"), exist_ok=True)
-        
+
         def curate_exp_data(nct_id, split):
             exp_file = os.path.join(cfg.save_path, f"experiments/{nct_id}.yaml")
             # Load Experiment from exisiting file or create a new one
@@ -104,11 +104,13 @@ def main(cfg: DictConfig) -> None:
             exp.source_paths[source_name].append(exp_data_path)
             exp.to_yaml(exp_file)
             return exp_data_path, exp_data_size
-        
-        splits = ["train" for _ in range(len(train_ncts))] + \
-                ["val" for _ in range(len(val_ncts))] + \
-                ["test" for _ in range(len(test_ncts))]
-        for (nct_id, split) in zip(train_ncts + val_ncts + test_ncts, splits):
+
+        splits = (
+            ["train" for _ in range(len(train_ncts))]
+            + ["val" for _ in range(len(val_ncts))]
+            + ["test" for _ in range(len(test_ncts))]
+        )
+        for nct_id, split in zip(train_ncts + val_ncts + test_ncts, splits):
             if f"{source_name}_{nct_id}" not in study_dataset.data_paths:
                 exp_data_path, exp_data_size = curate_exp_data(nct_id, split)
                 # Track Experiment data in study dataset

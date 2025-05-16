@@ -480,14 +480,15 @@ def main(cfg: DictConfig) -> None:
 
     # Load curated data for the first source in {cfg.sources}
     source_name = cfg.sources[0]
-    curated_df = pd.concat([
-        pd.read_csv(path, index_col=0) 
-        for path in experiment.source_paths[source_name]
-    ], ignore_index=True)
-    # TODO: remove subsampling after testing
-    curated_df = curated_df.sample(
-        frac=0.05, random_state=cfg.seed, ignore_index=True
+    curated_df = pd.concat(
+        [
+            pd.read_csv(path, index_col=0)
+            for path in experiment.source_paths[source_name]
+        ],
+        ignore_index=True,
     )
+    # TODO: remove subsampling after testing
+    curated_df = curated_df.sample(frac=0.05, random_state=cfg.seed, ignore_index=True)
     data_flow["curated"] = len(curated_df)
     logging.info(f"Initial number of curated reports: {len(curated_df)} reports.")
 
