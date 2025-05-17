@@ -86,7 +86,9 @@ class Experiment:
         self.treatment_common_names: dict[str, list[str]] = {}
         self.outcome_common_names: dict[str, list[str]] = {}
 
-        self.source_paths: dict[str, list] = {}  # list of paths to curated data, one per source
+        self.source_paths: dict[
+            str, list
+        ] = {}  # list of paths to curated data, one per source
         self.options: dict[str, Any] = {}
         for feat in self.extended_covariate_names + self.outcome_names:
             self.options.update({feat: ["No", "Yes"]})
@@ -195,7 +197,9 @@ class Experiment:
         self.outcome_treatment: list[tuple[str, tuple[str, str]]] = []
         self.treatment_desc, self.outcome_desc = {}, {}
 
-        if self.status == "active":  # use arm information to find outcome-treatment pairs
+        if (
+            self.status == "active"
+        ):  # use arm information to find outcome-treatment pairs
             primary_outcomes: Optional[list[Outcome]] = get_nested_value(
                 trial, "protocolSection.outcomesModule.primaryOutcomes"
             )

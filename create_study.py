@@ -176,7 +176,8 @@ class Study:
         )
 
         val_exp = [
-            Experiment(cfg.data_path, nct_id, status="completed") for (nct_id, _) in val_trials
+            Experiment(cfg.data_path, nct_id, status="completed")
+            for (nct_id, _) in val_trials
         ]
         self.val_trials = [
             {exp.nct_id: [exp.title, exp.date] + exp.references}
@@ -204,8 +205,12 @@ class Study:
         covariates_dict: dict[str, int] = {}
         for exp in train_exp + val_exp + test_exp:
             for covariate_name in exp.covariate_names:
-                covariates_dict[covariate_name] = covariates_dict.get(covariate_name, 0) + 1
-        self.covariates = sorted(covariates_dict.items(), key=lambda item: item[1], reverse=True)
+                covariates_dict[covariate_name] = (
+                    covariates_dict.get(covariate_name, 0) + 1
+                )
+        self.covariates = sorted(
+            covariates_dict.items(), key=lambda item: item[1], reverse=True
+        )
 
         self.num_train_trials = len(self.train_trials)
         self.num_val_trials = len(self.val_trials)
