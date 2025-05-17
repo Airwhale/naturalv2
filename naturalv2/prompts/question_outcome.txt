@@ -1,0 +1,1 @@
+Does the individual described in the report count positively towards: {outcome}?

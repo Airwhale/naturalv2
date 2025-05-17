@@ -11,6 +11,7 @@ from naturalv2.sources.reddit_utils import (
     rule_based_filter,
     subreddit_relevance_llm,
 )
+from naturalv2.utils import load_prompt
 
 
 class RedditSource:
@@ -130,12 +131,14 @@ class RedditSource:
         return save_path, len(exp_df)
 
     def get_common_name_prompts(self):
-        system_prompt = "You are a helpful medical assistant who can translate medical terminology into common terms."
-        t_prompt = "\n\nWhat are common brand names or terms that people use when discussing the treatment, {keyword}, specifically when posting on Reddit?"
-        o_prompt = "\n\nWhat are key common terms that people must use when discussing the outcome, {keyword}, specifically when posting on Reddit?"
-        final_prompt = "\n\nReturn only a Python list of at most 5 individual words, without any other text or formatting."
+        base_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
+        )
+        system_prompt = load_prompt(base_dir, "common_name_system")
+        t_prompt = load_prompt(base_dir, "common_name_treatment").format(source="Reddit")
+        o_prompt = load_prompt(base_dir, "common_name_outcome").format(source="Reddit")
         return {
             "system": system_prompt,
-            "treatment": t_prompt + final_prompt,
-            "outcome": o_prompt + final_prompt,
+            "treatment": t_prompt,
+            "outcome": o_prompt,
         }

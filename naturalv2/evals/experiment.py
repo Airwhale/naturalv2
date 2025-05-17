@@ -24,6 +24,7 @@ from naturalv2.utils import (
     check_noncontrol,
     check_nonplacebo,
     get_nested_value,
+    load_prompt
 )
 
 
@@ -347,24 +348,22 @@ class Experiment:
         )
 
     def _set_questions(self):
-        self.question_prompts["Inclusion"] = (
-            f"Given the following inclusion and exclusion criteria,\n{self.inclusion_criteria}\n\ndoes the available information in the report satisfy these criteria?"
+        base_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
         )
+        
+        inclusion_prompt = load_prompt(base_dir, "question_inclusion")
+        self.question_prompts["Inclusion"] = inclusion_prompt.format(
+            inclusion_criteria=self.inclusion_criteria
+        )
+        covariate_prompt = load_prompt(base_dir, "question_covariate")
         for cov in self.covariate_names:
-            self.question_prompts.update(
-                {
-                    cov: f"Which of the following is true about the individual described in the report, with respect to their {cov}?"
-                }
-            )
-        self.question_prompts["treatment"] = (
-            "What treatment did the individual described in the report take?"
-        )
+            self.question_prompts[cov] = covariate_prompt.format(covariate=cov)
+        treatment_prompt = load_prompt(base_dir, "question_treatment")
+        self.question_prompts["treatment"] = treatment_prompt
+        outcome_prompt = load_prompt(base_dir, "question_outcome")
         for outcome in self.outcome_names:
-            self.question_prompts.update(
-                {
-                    outcome: f"Does the individual described in the report count positively towards the {outcome}?"
-                }
-            )
+            self.question_prompts[outcome] = outcome_prompt.format(outcome=outcome)
 
     def _parse_lm_response(self, lm_response: str) -> list[str]:
         return (
@@ -386,9 +385,7 @@ class Experiment:
         base_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
         )
-        prompt_file = os.path.join(base_dir, f"{prompt_type}.txt")
-        with open(prompt_file, "r") as f:
-            prompt = f.read()
+        prompt = load_prompt(base_dir, prompt_type)
         outcome_desc = {outcome: self.outcome_desc[outcome]}
         format_inputs = {
             "conditions": str(self.conditions),
