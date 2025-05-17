@@ -1,5 +1,5 @@
-import re
 import os
+import re
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, create_model
@@ -79,7 +79,7 @@ class ImputationsResponse(BaseModel):
 def load_prompt(base_dir, prompt_type):
     with open(os.path.join(base_dir, f"{prompt_type}.txt"), "r") as f:
         return f.read()
-            
+
 
 def check_nonplacebo(intervention_names: Optional[list[str]]) -> bool:
     nonplacebo_interventions = [

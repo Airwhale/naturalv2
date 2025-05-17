@@ -24,7 +24,7 @@ from naturalv2.utils import (
     check_noncontrol,
     check_nonplacebo,
     get_nested_value,
-    load_prompt
+    load_prompt,
 )
 
 
@@ -355,7 +355,7 @@ class Experiment:
         base_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
         )
-        
+
         inclusion_prompt = load_prompt(base_dir, "question_inclusion")
         self.question_prompts["Inclusion"] = inclusion_prompt.format(
             inclusion_criteria=self.inclusion_criteria

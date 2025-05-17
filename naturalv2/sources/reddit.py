@@ -135,7 +135,9 @@ class RedditSource:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
         )
         system_prompt = load_prompt(base_dir, "common_name_system")
-        t_prompt = load_prompt(base_dir, "common_name_treatment").format(source="Reddit")
+        t_prompt = load_prompt(base_dir, "common_name_treatment").format(
+            source="Reddit"
+        )
         o_prompt = load_prompt(base_dir, "common_name_outcome").format(source="Reddit")
         return {
             "system": system_prompt,
