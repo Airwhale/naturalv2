@@ -92,19 +92,20 @@ def main(cfg: DictConfig) -> None:
     elif cfg.split == "test":
         ncts = [list(trial.keys())[0] for trial in study.test_trials]
     else:
-        raise ValueError(f"Invalid split: {cfg.split}. Must be 'train', 'val', or 'test'.")
+        raise ValueError(
+            f"Invalid split: {cfg.split}. Must be 'train', 'val', or 'test'."
+        )
 
     for nct_id in ncts:
         exp_file = os.path.join(cfg.save_path, "experiments", f"{nct_id}.yaml")
         experiment = Experiment.from_yaml(exp_file)
         os.makedirs(
-            os.path.join(cfg.save_path, "results", f"{experiment.nct_id}"), exist_ok=True
+            os.path.join(cfg.save_path, "results", f"{experiment.nct_id}"),
+            exist_ok=True,
         )
 
         for outcome in experiment.outcome_names:
-
             for source_name in cfg.sources:
-
                 pipeline = instantiate(
                     cfg.pipeline,
                     experiment=experiment,
@@ -128,11 +129,15 @@ def main(cfg: DictConfig) -> None:
                     ignore_index=True,
                 )
                 # TODO: remove subsampling after testing
-                curated_df = curated_df.sample(frac=0.05, random_state=cfg.seed, ignore_index=True)
-                
+                curated_df = curated_df.sample(
+                    frac=0.05, random_state=cfg.seed, ignore_index=True
+                )
+
                 pipeline.data_flow["source_name"] = source_name
                 pipeline.data_flow["initial_curated"] = len(curated_df)
-                logging.info(f"Initial number of curated reports: {len(curated_df)} reports.")
+                logging.info(
+                    f"Initial number of curated reports: {len(curated_df)} reports."
+                )
 
                 extractions = pipeline.run(curated_df)
 
