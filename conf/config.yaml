@@ -30,7 +30,7 @@ data_path: ${user.data_path}
 date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}
 load_model: True
 filter_by_date: True
-outcome:
+split: train
 
 pipeline_stages:
   - _target_: naturalv2.pipeline.sample_extraction.RelevanceFilterStage

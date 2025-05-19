@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
+from create_study import Study
 from naturalv2.evals.experiment import Experiment
 
 
@@ -30,7 +31,6 @@ def calculate_treatment_effects(
     outcome: str,
     estimator,
     extractions: pd.DataFrame,
-    data_flow: dict[str, int],
 ) -> list[dict]:
     """Calculate treatment effects for all outcome-treatment pairs."""
     result_dicts = []
@@ -61,7 +61,6 @@ def calculate_treatment_effects(
                     results.update({"true_ate": true_ate, "abs_error": error})
                     logging.info(f"True ATE: {true_ate}")
                     logging.info(f"Absolute Error: {error}")
-                results.update(data_flow)
                 result_dicts.append(results)
 
     return result_dicts
@@ -82,50 +81,69 @@ def save_results(results: list[dict], save_path: str, nct_id: str) -> None:
 @hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     """Main function to estimate average treatment effects."""
-    exp_file = os.path.join(cfg.save_path, "experiments", f"{cfg.eval.nct_id}.yaml")
-    experiment = Experiment.from_yaml(exp_file)
-    os.makedirs(
-        os.path.join(cfg.save_path, "results", f"{experiment.nct_id}"), exist_ok=True
+    study_file = os.path.join(
+        cfg.save_path, "studies", cfg.conditions[0] + "_study.yaml"
     )
-    source_name = cfg.sources[0]
-    outcome = cfg.outcome or experiment.outcome_names[0]
+    study = Study.from_yaml(study_file)
+    if cfg.split == "train":
+        ncts = [list(trial.keys())[0] for trial in study.train_trials]
+    elif cfg.split == "val":
+        ncts = [list(trial.keys())[0] for trial in study.val_trials]
+    elif cfg.split == "test":
+        ncts = [list(trial.keys())[0] for trial in study.test_trials]
+    else:
+        raise ValueError(f"Invalid split: {cfg.split}. Must be 'train', 'val', or 'test'.")
 
-    pipeline = instantiate(
-        cfg.pipeline,
-        experiment=experiment,
-        source_name=source_name,
-        estimator_type=cfg.estimator._target_.split(".")[-1],
-        outcome=outcome,
-        save_path=cfg.save_path,
-    )
-    for stage_config in cfg.pipeline_stages:
-        stage = instantiate(stage_config)
-        pipeline.add_stage(stage)
+    for nct_id in ncts:
+        exp_file = os.path.join(cfg.save_path, "experiments", f"{nct_id}.yaml")
+        experiment = Experiment.from_yaml(exp_file)
+        os.makedirs(
+            os.path.join(cfg.save_path, "results", f"{experiment.nct_id}"), exist_ok=True
+        )
 
-    nest_asyncio.apply()
+        for outcome in experiment.outcome_names:
 
-    # Load curated data for the first source in {cfg.sources}
-    curated_df = pd.concat(
-        [
-            pd.read_csv(path, index_col=0)
-            for path in experiment.source_paths[source_name]
-        ],
-        ignore_index=True,
-    )
-    # TODO: remove subsampling after testing
-    curated_df = curated_df.sample(frac=0.05, random_state=cfg.seed, ignore_index=True)
-    pipeline.data_flow["initial_curated"] = len(curated_df)
-    logging.info(f"Initial number of curated reports: {len(curated_df)} reports.")
+            for source_name in cfg.sources:
 
-    extractions = pipeline.run(curated_df)
+                pipeline = instantiate(
+                    cfg.pipeline,
+                    experiment=experiment,
+                    source_name=source_name,
+                    estimator_type=cfg.estimator._target_.split(".")[-1],
+                    outcome=outcome,
+                    save_path=cfg.save_path,
+                )
+                for stage_config in cfg.pipeline_stages:
+                    stage = instantiate(stage_config)
+                    pipeline.add_stage(stage)
 
-    # Calculate and save treatment effects
-    estimator = instantiate(cfg.estimator, experiment=experiment)
-    results = calculate_treatment_effects(
-        experiment, pipeline.config.outcome, estimator, extractions, pipeline.data_flow
-    )
+                nest_asyncio.apply()
 
-    save_results(results, cfg.save_path, experiment.nct_id)
+                # Load curated data for the first source in {cfg.sources}
+                curated_df = pd.concat(
+                    [
+                        pd.read_csv(path, index_col=0)
+                        for path in experiment.source_paths[source_name]
+                    ],
+                    ignore_index=True,
+                )
+                # TODO: remove subsampling after testing
+                curated_df = curated_df.sample(frac=0.05, random_state=cfg.seed, ignore_index=True)
+                
+                pipeline.data_flow["source_name"] = source_name
+                pipeline.data_flow["initial_curated"] = len(curated_df)
+                logging.info(f"Initial number of curated reports: {len(curated_df)} reports.")
+
+                extractions = pipeline.run(curated_df)
+
+                # Calculate and save treatment effects
+                estimator = instantiate(cfg.estimator, experiment=experiment)
+                results = calculate_treatment_effects(
+                    experiment, pipeline.config.outcome, estimator, extractions
+                )
+                results.update(pipeline.data_flow)
+
+                save_results(results, cfg.save_path, experiment.nct_id)
 
 
 if __name__ == "__main__":
