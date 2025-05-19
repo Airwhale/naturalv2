@@ -125,19 +125,16 @@ async def extract_covariates(
 
 class RelevanceFilterStage(PipelineStage):
     """Stage for filtering relevant reports."""
-    
-    def __init__(self, model_cfg: DictConfig):
 
+    def __init__(self, model_cfg: DictConfig):
         self.model_cfg = model_cfg
-        
+
     def process(self, data: pd.DataFrame) -> pd.DataFrame:
         self.response_format = create_response_format(
-            "RelevanceResponse", 
-            ["relevant"], 
-            {"relevant": Literal["Yes", "No"]}
+            "RelevanceResponse", ["relevant"], {"relevant": Literal["Yes", "No"]}
         )
         filtered_data = asyncio.run(
-                extract_covariates(
+            extract_covariates(
                 data,
                 self.experiment,
                 self.source_name,
@@ -145,27 +142,26 @@ class RelevanceFilterStage(PipelineStage):
                 self.model_cfg,
                 self.save_path,
                 "relevance",
-                response_format=self.response_format
+                response_format=self.response_format,
             )
         )
         self.data = filtered_data[filtered_data["relevant"].lower() == "yes"]
         logging.info(f"After relevance filter: {len(self.data)} reports.")
         return self.data
-        
+
     def get_stats(self) -> Dict[str, int]:
         return {"relevant": len(self.data)}
 
 
 class TreatmentOutcomeFilterStage(PipelineStage):
     """Stage for filtering reports with treatment and outcome information."""
-    
+
     def __init__(self, model_cfg: DictConfig):
         self.model_cfg = model_cfg
-        
+
     def process(self, data: pd.DataFrame) -> pd.DataFrame:
         self.response_format = create_response_format(
-            "TYFilterResponse",
-            self.experiment.treatment_names + [self.outcome]
+            "TYFilterResponse", self.experiment.treatment_names + [self.outcome]
         )
         ty_samples = asyncio.run(
             extract_covariates(
@@ -176,28 +172,26 @@ class TreatmentOutcomeFilterStage(PipelineStage):
                 self.model_cfg,
                 self.save_path,
                 "ty_filter",
-                response_format=self.response_format
+                response_format=self.response_format,
             )
         )
         self.data = self.experiment.hard_filter_ty(ty_samples)
         logging.info(f"After treatment-outcome filter: {len(self.data)} reports.")
         return self.data
-        
+
     def get_stats(self) -> Dict[str, int]:
         return {"ty_filtered": len(self.data)}
-    
+
 
 class KnownsStage(PipelineStage):
     """Stage for extracting knowns information, allowing 'Unknown' for missing info."""
-    
+
     def __init__(self, model_cfg: DictConfig):
-        
         self.model_cfg = model_cfg
-        
+
     def process(self, data: pd.DataFrame) -> pd.DataFrame:
         self.response_format = create_response_format(
-            "KnownsResponse",
-            self.experiment.covariate_names
+            "KnownsResponse", self.experiment.covariate_names
         )
         self.data = asyncio.run(
             extract_covariates(
@@ -208,28 +202,27 @@ class KnownsStage(PipelineStage):
                 self.model_cfg,
                 self.save_path,
                 "knowns",
-                response_format=self.response_format
+                response_format=self.response_format,
             )
         )
         self.data = self.experiment.hard_filter_inclusion(data)
         logging.info(f"After inclusion filter: {len(self.data)} reports.")
         return self.data
-        
+
     def get_stats(self) -> Dict[str, int]:
         return {"inclusion_filtered": len(self.data)}
 
 
 class ImputationsStage(PipelineStage):
     """Stage for imputing missing information."""
-    
+
     def __init__(self, model_cfg: DictConfig):
-        
         self.model_cfg = model_cfg
-        
+
     def process(self, data: pd.DataFrame) -> pd.DataFrame:
         self.response_format = create_response_format(
             "ImputationsResponse",
-            self.experiment.covariate_names #TODO: include treatment according ot extract_type
+            self.experiment.covariate_names,  # TODO: include treatment according ot extract_type
         )
         self.data = asyncio.run(
             extract_covariates(
@@ -240,7 +233,7 @@ class ImputationsStage(PipelineStage):
                 self.model_cfg,
                 self.save_path,
                 "imputations",
-                response_format=self.response_format
+                response_format=self.response_format,
             )
         )
         # Drop rows with missing covariates even after imputation
@@ -249,7 +242,6 @@ class ImputationsStage(PipelineStage):
         # ).reset_index(drop=True)
         logging.info(f"Final: {len(self.data)} reports after imputation.")
         return self.data
-        
+
     def get_stats(self) -> Dict[str, int]:
         return {"final": len(self.data)}
-    

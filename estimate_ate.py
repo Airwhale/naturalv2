@@ -11,6 +11,7 @@ from omegaconf import DictConfig
 
 from naturalv2.evals.experiment import Experiment
 
+
 load_dotenv(".env")
 
 
@@ -18,7 +19,8 @@ def weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame) -> np.n
     """Weight ITEs by inclusion probabilities."""
     # ites has shape [num_treatments, num_datapoints]
     probs = inclusion_probs.apply(
-        lambda row: [float(prob) for prob in row["inclusion_probs"][1:-1].split()][1], axis=1
+        lambda row: [float(prob) for prob in row["inclusion_probs"][1:-1].split()][1],
+        axis=1,
     ).to_numpy()
     return np.average(ites, axis=1, weights=probs)
 
@@ -37,9 +39,7 @@ def calculate_treatment_effects(
         all_ites = estimator.get_ites(extractions, outcome)
     else:
         all_ites = estimator.get_ites(extractions)
-    weighted_effects = weight_by_inclusion(
-        all_ites, extractions
-    )  # len: num_treatments
+    weighted_effects = weight_by_inclusion(all_ites, extractions)  # len: num_treatments
 
     for i, treat1 in enumerate(experiment.treatment_names):
         for j, treat2 in enumerate(experiment.treatment_names):
@@ -101,7 +101,7 @@ def main(cfg: DictConfig) -> None:
     for stage_config in cfg.pipeline_stages:
         stage = instantiate(stage_config)
         pipeline.add_stage(stage)
-    
+
     nest_asyncio.apply()
 
     # Load curated data for the first source in {cfg.sources}

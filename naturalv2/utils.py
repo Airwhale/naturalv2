@@ -78,7 +78,7 @@ class ImputationsResponse(BaseModel):
 
 def load_prompt(base_dir, prompt_type):
     with open(os.path.join(base_dir, f"{prompt_type}.txt"), "r") as f:
-        return f.read()  
+        return f.read()
 
 
 def get_save_path(

@@ -19,6 +19,7 @@ from naturalv2.utils import (
     qa_interleaved_enum,
 )
 
+
 if TYPE_CHECKING:  # so that script can run without installing vllm, unless required
     from naturalv2.models.vllm import VLLM
 
@@ -258,16 +259,15 @@ def extract_conditionals(
 
 class ConditionalExtractionStage(PipelineStage):
     """Stage for imputing missing information."""
-    
-    def __init__(self, model_cfg: DictConfig):
 
+    def __init__(self, model_cfg: DictConfig):
         self.model_cfg = model_cfg
         self.extract_type_map = {
             "NaturalIPW": "ty_given_x",
             "NaturalOI": "y_given_tx",
             "NaturalMC": None,
         }
-        
+
     def process(self, data: pd.DataFrame) -> pd.DataFrame:
         self.extract_type = self.extract_type_map.get(self.estimator_type)
         self.data = extract_conditionals(
@@ -277,30 +277,28 @@ class ConditionalExtractionStage(PipelineStage):
             self.outcome,
             self.model_cfg,
             self.save_path,
-            extract_type=self.extract_type
+            extract_type=self.extract_type,
         )
         logging.info(
-            f"Extracted {self.extract_type} conditionals "
-            f"from {len(self.data)} reports."
+            f"Extracted {self.extract_type} conditionals from {len(self.data)} reports."
         )
         return self.data
-        
+
     def get_stats(self) -> Dict[str, int]:
         return {"conditionals_extracted": len(self.data)}
-    
+
 
 class InclusionProbStage(PipelineStage):
     """Stage for imputing missing information."""
-    
+
     def __init__(self, model_cfg: DictConfig):
-       
         self.model_cfg = model_cfg
         self.extract_type_map = {
             "NaturalIPW": "ty_given_x",
             "NaturalOI": "y_given_tx",
             "NaturalMC": None,
         }
-        
+
     def process(self, data: pd.DataFrame) -> pd.DataFrame:
         self.extract_type = self.extract_type_map.get(self.estimator_type)
         self.data = extract_conditionals(
@@ -310,14 +308,12 @@ class InclusionProbStage(PipelineStage):
             self.outcome,
             self.model_cfg,
             self.save_path,
-            extract_type=self.extract_type
+            extract_type=self.extract_type,
         )
         logging.info(
-            f"Extracted {self.extract_type} conditionals "
-            f"from {len(self.data)} reports."
+            f"Extracted {self.extract_type} conditionals from {len(self.data)} reports."
         )
         return self.data
-        
+
     def get_stats(self) -> Dict[str, int]:
         return {"inclusion_probs": len(self.data)}
-    
