@@ -78,7 +78,23 @@ class ImputationsResponse(BaseModel):
 
 def load_prompt(base_dir, prompt_type):
     with open(os.path.join(base_dir, f"{prompt_type}.txt"), "r") as f:
-        return f.read()
+        return f.read()  
+
+
+def get_save_path(
+    base_path: str,
+    nct_id: str,
+    model_name: str,
+    extract_type: str,
+    outcome: str,
+) -> str:
+    """Generate save path for extracted data."""
+    return os.path.join(
+        base_path,
+        "results",
+        f"{nct_id}",
+        f"{model_name.replace('/', '-')}_{extract_type}_{outcome}.csv",
+    )
 
 
 def check_nonplacebo(intervention_names: Optional[list[str]]) -> bool:

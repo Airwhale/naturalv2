@@ -1,4 +1,5 @@
 defaults:
+  - pipeline: natural
   - user: ${oc.env:USER}
   - model@cheap_model: openai
   - model@sample_model: openai
@@ -8,7 +9,6 @@ defaults:
   - source@pubmed: pubmed
   - estimator: natural_ipw
   - _self_
-
 
 seed: 42
 train_ratio: 0.6
@@ -31,3 +31,22 @@ date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}
 load_model: True
 filter_by_date: True
 outcome:
+
+pipeline_stages:
+  - _target_: naturalv2.pipeline.sample_extraction.RelevanceFilterStage
+    model_cfg: ${cheap_model}
+
+  - _target_: naturalv2.pipeline.sample_extraction.TreatmentOutcomeFilterStage
+    model_cfg: ${cheap_model}
+  
+  - _target_: naturalv2.pipeline.sample_extraction.KnownsStage
+    model_cfg: ${sample_model}
+  
+  - _target_: naturalv2.pipeline.sample_extraction.ImputationsStage
+    model_cfg: ${sample_model}
+  
+  - _target_: naturalv2.pipeline.conditional_extraction.ConditionalExtractionStage
+    model_cfg: ${probs_model}
+  
+  - _target_: naturalv2.pipeline.conditional_extraction.InclusionProbStage
+    model_cfg: ${probs_model}

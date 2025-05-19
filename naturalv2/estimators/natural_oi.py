@@ -31,7 +31,7 @@ class NaturalOI:
                     py1_given_xt = np.array(
                         [
                             sum([j * prob[j] for j in range(len(prob))])
-                            for prob in subset_t["probs"]
+                            for prob in subset_t["y_given_tx_probs"]
                         ]
                     )
                     outcome_conditionals[i, t] = np.mean(py1_given_xt)
@@ -46,15 +46,15 @@ class NaturalOI:
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
         feat_dicts = [self.experiment.transform_samples(dct) for dct in idx_to_feat]
 
-        conditionals.loc[:, "probs"] = conditionals.apply(
+        conditionals.loc[:, "y_given_tx_probs"] = conditionals.apply(
             lambda row: np.array(
-                [float(prob) for prob in row["probs"][1:-1].split()]
+                [float(prob) for prob in row["y_given_tx_probs"][1:-1].split()]
             ).reshape(self.conditional_shape),
             axis=1,
         )
         # choose probs corresponding to {outcome}
-        # conditionals.loc[:, "probs"] = conditionals.apply(
-        #     lambda row: row["probs"][2 * outcome_idx : 2 * (outcome_idx + 1)], axis=1
+        # conditionals.loc[:, "y_given_tx_probs"] = conditionals.apply(
+        #     lambda row: row["y_given_tx_probs"][2 * outcome_idx : 2 * (outcome_idx + 1)], axis=1
         # )
 
         self.outcome_conditionals = self.compute_outcome_cond(conditionals)

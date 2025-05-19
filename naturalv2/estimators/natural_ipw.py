@@ -27,8 +27,8 @@ class NaturalIPW:
                 prop_scores = [0 for _ in range(self.num_treat)]
             else:
                 # marginalize out Y
-                propensity = subset[["probs"]].apply(
-                    lambda row: np.sum(row["probs"], axis=-1), axis=1
+                propensity = subset[["ty_given_x_probs"]].apply(
+                    lambda row: np.sum(row["ty_given_x_probs"], axis=-1), axis=1
                 )
                 # average over posts
                 prop_scores = []
@@ -48,21 +48,21 @@ class NaturalIPW:
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
         feat_dicts = [self.experiment.transform_samples(dct) for dct in idx_to_feat]
 
-        conditionals.loc[:, "probs"] = conditionals.apply(
+        conditionals.loc[:, "ty_given_x_probs"] = conditionals.apply(
             lambda row: np.array(
-                [float(prob) for prob in row["probs"][1:-1].split()]
+                [float(prob) for prob in row["ty_given_x_probs"][1:-1].split()]
             ).reshape(self.conditional_shape),
             axis=1,
         )
         # choose probs corresponding to {outcome}
-        # conditionals.loc[:, "probs"] = conditionals.apply(
-        #     lambda row: row["probs"][:, 2 * outcome_idx : 2 * (outcome_idx + 1)], axis=1
+        # conditionals.loc[:, "ty_given_x_probs"] = conditionals.apply(
+        #     lambda row: row["ty_given_x_probs"][:, 2 * outcome_idx : 2 * (outcome_idx + 1)], axis=1
         # )
 
         self.prop_score_lst = self.compute_prop_score(conditionals)
         all_ites = np.zeros((self.num_treat, len(conditionals)))
         for i, (_, row) in enumerate(conditionals.iterrows()):  # Fixed PLW2901
-            probs = row["probs"]
+            probs = row["ty_given_x_probs"]
             x = row[self.covariate_names].to_dict()
             # enumerate treatments
             for t in range(self.num_treat):
