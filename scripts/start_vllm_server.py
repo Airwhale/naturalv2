@@ -56,12 +56,14 @@ def _display_slurm_job_details(
     job_name: str,
     nodes: int,
     ntasks_per_node: int,
+    account: Optional[str],
     cpus_per_task: int,
     mem_per_cpu_gb: int,
     gpus_per_node: Optional[int],
     partition: str,
     qos: Optional[str],
     time: str,
+    nodelist: Optional[str],
     constraint: Optional[str],
     exclude: Optional[str],
     setup: Optional[list[str]],
@@ -76,12 +78,14 @@ def _display_slurm_job_details(
     table.add_row("Job Name", job_name, style="bold green")
     table.add_row("Nodes", str(nodes))
     table.add_row("Tasks per Node", str(ntasks_per_node))
+    table.add_row("Account", account or "N/A")
     table.add_row("CPUs per Task", str(cpus_per_task))
     table.add_row("Memory per CPU (GB)", str(mem_per_cpu_gb))
     table.add_row("GPUs per Node", str(gpus_per_node) or "N/A")
     table.add_row("Partition", partition or "N/A")
     table.add_row("Time Limit", time)
     table.add_row("QOS", qos or "N/A")
+    table.add_row("Nodelist", nodelist or "N/A")
     table.add_row(
         "Constraint", "\n".join(constraint.split(",")) if constraint else "N/A"
     )
@@ -183,11 +187,13 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
     nodes: int = 1,
     ntasks_per_node: int = 1,
     gpus_per_node: Optional[int] = None,
+    account: Optional[str] = None,
     cpus_per_task: int = 1,
     mem_per_cpu_gb: int = 1,
     partition: Optional[str] = None,
     qos: Optional[str] = None,
     time: str = "00:30:00",
+    nodelist: Optional[str] = None,
     constraint: Optional[str] = None,
     exclude: Optional[str] = None,
     log_folder: Optional[str] = None,
@@ -212,6 +218,8 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
         Number of tasks to invoke on each node. Ignored if ``local=True``.
     gpus_per_node : int, optional
         Number of GPUs required per allocated node. Ignored if ``local=True``.
+    account : str, optional
+        SLURM account name. Ignored if ``local=True``.
     cpus_per_task : int, default=1
         Number of CPUs required per task. Ignored if ``local=True``.
     mem_per_cpu_gb : int, default=1
@@ -223,6 +231,8 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
         SLURM quality of service. Ignored if ``local=True``.
     time : str, default="00:30:00"
         SLURM time limit in the format HH:MM:SS. Ignored if ``local=True``.
+    nodelist : str, optional
+        Specific list of hosts to run the job on. Ignored if ``local=True``.
     constraint : str, optional, default=None
         List of constraints for SLURM job submission. Ignored if ``local=True``.
     exclude : str, optional, default=None
@@ -280,12 +290,14 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
         if (
             log_folder != "outputs/%j"
             or job_name != "vllm_server"
+            or account is not None
             or cpus_per_task != 1
             or ntasks_per_node != 1
             or nodes != 1
             or partition is not None
             or qos is not None
             or time != "00:30:00"
+            or nodelist is not None
             or constraint is not None
             or exclude is not None
             or mem_per_cpu_gb != 1
@@ -367,6 +379,10 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
         slurm_params["slurm_qos"] = qos
     if gpus_per_node:
         slurm_params["slurm_gres"] = f"gpu:{gpus_per_node}"
+    if account:
+        slurm_params["slurm_account"] = account
+    if nodelist:
+        slurm_params["slurm_nodelist"] = nodelist
     if constraint:
         slurm_params["slurm_constraint"] = constraint
     if exclude:
@@ -418,6 +434,13 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
     help="folder to store logs",
 )
 @click.option(
+    "-A",
+    "--account",
+    type=str,
+    required=False,
+    help="SLURM account name; required unless --local is set",
+)
+@click.option(
     "-c",
     "--cpus-per-task",
     type=int,
@@ -466,6 +489,13 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
     help="SLURM time limit in the format HH:MM:SS; ignored if --local is set",
 )
 @click.option(
+    "-w",
+    "--nodelist",
+    type=str,
+    required=False,
+    help="specific list of hosts to run the job on; ignored if --local is set",
+)
+@click.option(
     "-C",
     "--constraint",
     type=str,
@@ -505,6 +535,7 @@ def cli_main(
     ctx: click.Context,
     local: bool,
     log_folder: str,
+    account: str,
     cpus_per_task: int,
     job_name: str,
     ntasks_per_node: int,
@@ -512,6 +543,7 @@ def cli_main(
     partition: str,
     qos: str,
     time: str,
+    nodelist: str,
     constraint: str,
     exclude: str,
     mem_per_cpu_gb: int,
@@ -528,6 +560,7 @@ def cli_main(
             vllm_args=list(ctx.args),
             local=local,
             log_folder=log_folder,
+            account=account,
             cpus_per_task=cpus_per_task,
             job_name=job_name,
             ntasks_per_node=ntasks_per_node,
@@ -535,6 +568,7 @@ def cli_main(
             partition=partition,
             qos=qos,
             time=time,
+            nodelist=nodelist,
             constraint=constraint,
             exclude=exclude,
             mem_per_cpu_gb=mem_per_cpu_gb,
@@ -545,23 +579,25 @@ def cli_main(
 
         if job:
             _display_slurm_job_details(
-                job,
-                log_folder,
-                job_name,
-                nodes,
-                ntasks_per_node,
-                cpus_per_task,
-                mem_per_cpu_gb,
-                gpus_per_node,
-                partition,
-                qos,
-                time,
-                constraint,
-                exclude,
-                setup,
-                env_vars,
-                ctx.args,
-                console,
+                job=job,
+                log_folder=log_folder,
+                job_name=job_name,
+                nodes=nodes,
+                ntasks_per_node=ntasks_per_node,
+                account=account,
+                cpus_per_task=cpus_per_task,
+                mem_per_cpu_gb=mem_per_cpu_gb,
+                gpus_per_node=gpus_per_node,
+                partition=partition,
+                qos=qos,
+                time=time,
+                nodelist=nodelist,
+                constraint=constraint,
+                exclude=exclude,
+                setup=setup,
+                env_vars=env_vars,
+                args=ctx.args,
+                console=console,
             )
         elif local:
             _display_local_execution_details(env_vars, ctx.args, console)
