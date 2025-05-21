@@ -1,14 +1,15 @@
 import os
+from typing import Union
 import yaml
-import pandas as pd
 from dotenv import load_dotenv
-
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 from create_study import Study
 from naturalv2.evals.experiment import Experiment
+from naturalv2.sources.pubmed import PubMedSet
+from naturalv2.sources.reddit import RedditSource
 
 # ruff: noqa
 
@@ -20,18 +21,18 @@ class StudyDataset:
         self,
         conditions: list[str],
         sources: list[str],
-    ):
+    ) -> None:
         self.conditions = list(conditions)
         self.sources = list(sources)
         self.data_sizes = {}
         self.data_paths = {}
 
-    def to_yaml(self, filename):
+    def to_yaml(self, filename: str) -> None:
         with open(filename, "w") as file:
             yaml.safe_dump(self.__dict__, file)
 
     @classmethod
-    def from_yaml(cls, filename):
+    def from_yaml(cls, filename: str) -> "StudyDataset":
         with open(filename, "r") as file:
             data = yaml.safe_load(file)
         study_dataset = cls.__new__(cls)
@@ -58,7 +59,7 @@ def main(cfg: DictConfig) -> None:
         study_dataset = StudyDataset(study.conditions, cfg.sources)
 
     for source_name in cfg.sources:
-        source_dataset = instantiate(cfg[source_name])
+        source_dataset: Union[RedditSource, PubMedSet] = instantiate(cfg[source_name])
 
         # search for keyword list + download
         if f"{source_name}_condition_filtered" not in study_dataset.data_paths:

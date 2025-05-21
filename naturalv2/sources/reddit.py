@@ -1,8 +1,13 @@
+import logging
 import os
+from typing import Literal
 
 import pandas as pd
+from omegaconf import DictConfig
 
+from naturalv2.evals.experiment import Experiment
 from naturalv2.models.lm import LM
+from naturalv2.sources.anonymizer import Anonymizer
 from naturalv2.sources.reddit_utils import (
     date_filter,
     download_sub_data,
@@ -14,15 +19,24 @@ from naturalv2.sources.reddit_utils import (
 from naturalv2.utils import load_prompt
 
 
+logger = logging.getLogger(__name__)
+
+
 class RedditSource:
-    def __init__(self, data_path, match_method, lm_cfg):
+    def __init__(
+        self,
+        data_path: str,
+        match_method: Literal["string_match", "llm"],
+        lm_cfg: DictConfig,
+    ):
         self.data_path = data_path
         self.match_method = match_method
         self.lm_cfg = lm_cfg
 
         self.subs_about = get_sub_about_info(self.data_path)
+        self._anonymizer = Anonymizer()
 
-    def condition_filter(self, keywords):
+    def condition_filter(self, keywords: list[str]) -> list[str]:
         self.relevant_subs = []
         for row in self.subs_about.iterrows():
             sub_name, desc, public_desc = row[1].to_list()
@@ -30,28 +44,38 @@ class RedditSource:
             if self.match_method == "string_match":
                 if any(keyword.lower() in desc.lower() for keyword in keywords):
                     self.relevant_subs.append(sub_name)
-                    print(f"{sub_name} is relevant.")
+                    logger.info(f"{sub_name} is relevant.")
             elif self.match_method == "llm":
                 lm = LM(**self.lm_cfg)
                 answer = subreddit_relevance_llm(desc, keywords, lm)
                 if answer.lower().startswith("yes"):
                     self.relevant_subs.append(sub_name)
-                    print(f"{sub_name} is relevant.")
-        print(len(self.relevant_subs), "relevant subreddits found!")
+                    logger.info(f"{sub_name} is relevant.")
+        logger.info(f"{len(self.relevant_subs)} relevant subreddits found!")
 
         condition_data_paths = []
         for sub in self.relevant_subs:
             submissions_path = os.path.join(self.data_path, f"{sub}_submissions.csv")
             comments_path = os.path.join(self.data_path, f"{sub}_comments.csv")
             if not os.path.exists(submissions_path):
-                download_sub_data(sub, "submissions", self.data_path)
+                download_sub_data(
+                    sub,
+                    "submissions",
+                    self.data_path,
+                    anonymizer_instance=self._anonymizer,
+                )
             if not os.path.exists(comments_path):
-                download_sub_data(sub, "comments", self.data_path)
+                download_sub_data(
+                    sub,
+                    "comments",
+                    self.data_path,
+                    anonymizer_instance=self._anonymizer,
+                )
             condition_data_paths.extend([submissions_path, comments_path])
 
         return condition_data_paths
 
-    def clean_data(self, study_name):
+    def clean_data(self, study_name: str) -> tuple[str, int]:
         os.makedirs(os.path.join(self.data_path, study_name), exist_ok=True)
         save_path = os.path.join(self.data_path, f"{study_name}/reddit_cleaned.csv")
         if os.path.exists(save_path):
@@ -77,7 +101,13 @@ class RedditSource:
         rule_filtered_df.to_csv(save_path)
         return save_path, len(rule_filtered_df)
 
-    def experiment_data(self, exp, study_name, filter_by_date, clean_data_path):
+    def experiment_data(
+        self,
+        exp: Experiment,
+        study_name: str,
+        filter_by_date: bool,
+        clean_data_path: str,
+    ) -> tuple[str, int]:
         # check treatment/outcome mention, filter by date
         save_path = os.path.join(
             self.data_path, f"{study_name}/reddit_{exp.nct_id}.csv"
@@ -130,7 +160,7 @@ class RedditSource:
         exp_df.to_csv(save_path)
         return save_path, len(exp_df)
 
-    def get_common_name_prompts(self):
+    def get_common_name_prompts(self) -> dict[str, str]:
         base_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
         )
