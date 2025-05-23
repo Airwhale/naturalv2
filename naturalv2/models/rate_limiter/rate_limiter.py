@@ -9,6 +9,9 @@ from typing import Any, Optional, Union
 from naturalv2.models.rate_limiter._bucket import Bucket
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class RateLimiterAcquisitionHandle:
     estimated_tokens: int
@@ -166,9 +169,7 @@ class RateLimiter:
                 # if so, consume the tokens and return the handle
                 if self._has_capacity(bucket_token_pairs, current_time):
                     self._consume_all(bucket_token_pairs, current_time)
-                    logging.debug(
-                        f"Acquired {estimated_tokens} tokens without waiting."
-                    )
+                    logger.debug(f"Acquired {estimated_tokens} tokens without waiting.")
 
                     self._notify_waiters()  # wake waiters in case there is more capacity
                     return RateLimiterAcquisitionHandle(estimated_tokens)
@@ -182,16 +183,14 @@ class RateLimiter:
                             self._waiters,
                             (estimated_tokens, current_time, wait_future),
                         )
-                        logging.debug(
+                        logger.debug(
                             f"Added {estimated_tokens} tokens to the wait queue "
                             f"at {current_time:.2f}s."
                         )
 
                         self._notify_waiters()  # in case there is more capacity
                     except RuntimeError as e:
-                        logging.error(
-                            f"Failed to get loop to create waiter future: {e}"
-                        )
+                        logger.error(f"Failed to get loop to create waiter future: {e}")
                         return None
                 else:  # already waiting, process after lock release
                     pass
@@ -202,7 +201,7 @@ class RateLimiter:
 
                     return RateLimiterAcquisitionHandle(estimated_tokens)
                 except asyncio.CancelledError:
-                    logging.warning(
+                    logger.warning(
                         f"Waiting for ~{estimated_tokens} tokens was cancelled."
                     )
                     async with self._lock:
@@ -256,7 +255,7 @@ class RateLimiter:
             delta != 0 or response_headers is not None or is_failure_release
         )
         if log_adjustment:
-            logging.debug(
+            logger.debug(
                 f"Adjusting usage: Est={estimated_tokens}, Act={actual_tokens}, "
                 f"Delta={delta if not is_failure_release else 'N/A (Failure Release)'}, "
                 f"Headers={'Yes' if response_headers else 'No'}"
@@ -271,7 +270,7 @@ class RateLimiter:
             if is_failure_release:
                 for key, bucket in self._request_buckets.items():
                     bucket.adjust_bucket_level(1, current_time)
-                    logging.debug(
+                    logger.debug(
                         f"Returned 1 request token to bucket '{key}' due to failure."
                     )
                 needs_notify = True
@@ -281,7 +280,7 @@ class RateLimiter:
                     bucket.adjust_bucket_level(delta, current_time)
 
                 if delta > 0:  # tokens were returned
-                    logging.debug(f"Returned {delta} tokens to token bucket(s).")
+                    logger.debug(f"Returned {delta} tokens to token bucket(s).")
                     needs_notify = True
 
             # try to get rate limit information from the response headers
@@ -329,7 +328,7 @@ class RateLimiter:
                 )
 
             if needs_notify:
-                logging.debug("State changed after adjustment, notifying waiters.")
+                logger.debug("State changed after adjustment, notifying waiters.")
                 self._notify_waiters()
 
     def _get_bucket_token_pairs(
@@ -360,7 +359,7 @@ class RateLimiter:
             is_tokens_consumed = bucket.consume_tokens(tokens, current_time)
 
             if not is_tokens_consumed:
-                logging.warning(
+                logger.warning(
                     f"Failed to consume {tokens} tokens from bucket '{bucket}'."
                 )
 
@@ -369,7 +368,7 @@ class RateLimiter:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            logging.error("Could not get running event loop to notify waiters.")
+            logger.error("Could not get running event loop to notify waiters.")
             return
 
         if self._timer_handle:  # reset the timer
@@ -387,7 +386,7 @@ class RateLimiter:
 
             bucket_token_pairs = self._get_bucket_token_pairs(tokens_needed)
             if self._has_capacity(bucket_token_pairs, current_time):
-                logging.debug(
+                logger.debug(
                     f"Waking up waiter for ~{tokens_needed} tokens with available capacity."
                 )
                 heapq.heappop(self._waiters)
@@ -402,7 +401,7 @@ class RateLimiter:
                     )
                     delay = max(delay, wait_needed)
 
-                logging.debug(
+                logger.debug(
                     f"Waiter for ~{tokens_needed} tokens still waiting, "
                     f"next refill in {delay:.4f}s."
                 )
@@ -419,9 +418,9 @@ class RateLimiter:
             try:
                 loop = asyncio.get_running_loop()
                 self._timer_handle = loop.call_later(delay, self._wake_next_timer)
-                logging.debug(f"Scheduled timer for {delay:.4f}s")
+                logger.debug(f"Scheduled timer for {delay:.4f}s")
             except RuntimeError:
-                logging.error("Cannot schedule timer: No running event loop.")
+                logger.error("Cannot schedule timer: No running event loop.")
 
     def _wake_next_timer(self) -> None:
         """Wake up the next waiter when the timer fires."""
@@ -429,13 +428,13 @@ class RateLimiter:
 
         async def do_notify():  # for acquiring lock in async context
             async with self._lock:
-                logging.debug("Timer fired, notifying waiters.")
+                logger.debug("Timer fired, notifying waiters.")
                 self._notify_waiters()
 
         try:
             asyncio.create_task(do_notify())
         except RuntimeError:
-            logging.warning(
+            logger.warning(
                 "Failed to create task for timer callback - loop likely closing."
             )
 
@@ -470,7 +469,7 @@ def _parse_rate_limit_info_from_response_headers(
             elif "x-ratelimit-reset-tokens" in key:
                 tokens_reset = _parse_reset_time(value, current_time)
         except ValueError:
-            logging.error(f"Failed to parse rate limit info: {header}={value}")
+            logger.error(f"Failed to parse rate limit info: {header}={value}")
             continue
 
     return {
@@ -530,7 +529,7 @@ def _parse_reset_time(header_value: str, current_time: float) -> Optional[float]
 
         # Ensure no non-whitespace characters exist *between* valid matches
         if start != last_match_end:
-            logging.debug(
+            logger.debug(
                 f"Invalid duration format: Unexpected characters "
                 f"'{header_value[last_match_end:start]}' before '{match.group()}'"
             )
@@ -540,7 +539,7 @@ def _parse_reset_time(header_value: str, current_time: float) -> Optional[float]
             val = float(num_str)
         except ValueError:
             # Should not happen with the regex, but safeguard
-            logging.debug(f"Invalid number '{num_str}' in duration string.")
+            logger.debug(f"Invalid number '{num_str}' in duration string.")
             return None
 
         unit_lower = unit.lower()
@@ -560,7 +559,7 @@ def _parse_reset_time(header_value: str, current_time: float) -> Optional[float]
     # If last_match_end doesn't reach the end of the string, there's trailing text.
     if not found_match or last_match_end != len(header_value):
         if found_match:  # Only log trailing chars if we found at least one match
-            logging.debug(
+            logger.debug(
                 f"Invalid duration format: Trailing characters "
                 f"'{header_value[last_match_end:]}'"
             )

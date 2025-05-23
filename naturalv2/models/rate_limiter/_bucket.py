@@ -4,6 +4,9 @@ import time
 from typing import Optional
 
 
+logger = logging.getLogger(__name__)
+
+
 class Bucket:
     """A fixed-capacity bucket that refills at a constant rate.
 
@@ -233,24 +236,24 @@ class Bucket:
                 self._server_reset_time is not None
                 and self._server_reset_time > current_time
             ):
-                logging.debug(
+                logger.debug(
                     f"Rate is zero, but server reset time known: {self._server_reset_time:.2f}"
                 )
                 wait_needed = self._server_reset_time - current_time
                 wait_time = max(0.0, wait_needed) + 1e-9
-                logging.debug(
+                logger.debug(
                     f"Calculated wait based on server reset time: {wait_time:.2f}s"
                 )
                 return wait_time
 
-            logging.warning(
+            logger.warning(
                 "Bucket refill rate is zero and no future reset time known, "
                 "will wait indefinitely."
             )
             return float("inf")
 
         time_needed = (shortfall / effective_rate) + 1e-9
-        logging.debug(
+        logger.debug(
             f"Calculating wait based on effective rate {effective_rate:.2f}: {time_needed:.2f}s"
         )
 
@@ -260,7 +263,7 @@ class Bucket:
         ):  # server reset time is in the future, don't wake before it
             time_until_reset = self._server_reset_time - current_time
             if time_needed < time_until_reset and avilable_tokens <= 0:
-                logging.debug(
+                logger.debug(
                     f"Adjusting wait time to server reset time: {time_until_reset:.2f}s"
                 )
                 return max(0.0, time_until_reset) + 1e-9
@@ -337,13 +340,13 @@ class Bucket:
             and self.time_period > 0
         ):
             self._last_sync_rate = float(server_token_limit) / self.time_period
-            logging.debug(
+            logger.debug(
                 f"Estimated server refill rate at: {self._last_sync_rate:.2f}/s "
                 "based on response headers."
             )
         else:
             self._last_sync_rate = None
-            logging.debug("Could not estimate server rate from sync headers.")
+            logger.debug("Could not estimate server rate from sync headers.")
 
     def _get_effective_rate(self, current_time: float) -> float:
         """Return the effective refill rate of the bucket.
@@ -355,11 +358,11 @@ class Bucket:
             self._last_sync_rate is not None
             and (current_time - self._last_sync_time) < self.SYNC_RATE_VALIDITY_DURATION
         ):
-            logging.debug("Using estimated server refill rate.")
+            logger.debug("Using estimated server refill rate.")
             return self._last_sync_rate
 
         if self._last_sync_rate is not None:
-            logging.debug("Sync rate expired, reverting to default, local rate.")
+            logger.debug("Sync rate expired, reverting to default, local rate.")
             self._last_sync_rate = None
 
         return self._rate_per_second
@@ -376,7 +379,7 @@ class Bucket:
             self._server_reset_time is not None
             and current_time >= self._server_reset_time
         ):
-            logging.debug(
+            logger.debug(
                 f"Server reset time passed at {current_time:.2f}. Resetting bucket to full."
             )
             self._tokens = float(self.capacity)

@@ -19,6 +19,7 @@ from rich.table import Table
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+logger = logging.getLogger(__name__)
 
 
 def _check_vllm_installed() -> None:
@@ -145,13 +146,13 @@ def _start_vllm_server(
 ) -> None:
     """Start the vLLM server with the given arguments."""
     for key in env_keys_for_logging:
-        logging.info(
+        logger.info(
             f"Environment variable '{key}' : '{os.environ.get(key, '<< Not Set >>')}'"
         )
 
     vllm_args = list(args)
     hostname = socket.gethostname()
-    logging.info(f"Starting vLLM server on host: {hostname} with args: {vllm_args}")
+    logger.info(f"Starting vLLM server on host: {hostname} with args: {vllm_args}")
 
     command = ["vllm", "serve", model_name]
 
@@ -161,7 +162,7 @@ def _start_vllm_server(
     while i < len(vllm_args):
         arg = vllm_args[i]
         if arg == "--host":
-            logging.warning(
+            logger.warning(
                 f"User provided '{arg} {vllm_args[i + 1]}'. "
                 "Overriding with '--host 0.0.0.0' for SLURM job accessibility."
             )
@@ -173,12 +174,12 @@ def _start_vllm_server(
     command.extend(["--host", "0.0.0.0"])
     command.extend(filtered_vllm_args)
 
-    logging.info(
+    logger.info(
         f"Starting vLLM server with command: {' '.join(shlex.quote(str(s)) for s in command)}"
     )
 
     subprocess.run(command, check=True, text=True, stderr=subprocess.STDOUT)
-    logging.info("vLLM server started successfully.")
+    logger.info("vLLM server started successfully.")
 
 
 def launch_vllm_server(  # noqa: PLR0912, PLR0915
@@ -282,7 +283,7 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
     if env_vars:
         str_env_vars = {k: str(v) for k, v in env_vars.items()}
         launch_env_vars.update(str_env_vars)
-        logging.debug(f"Environment variables to set/override: {env_vars}")
+        logger.debug(f"Environment variables to set/override: {env_vars}")
     env_keys_for_logging = list(str_env_vars.keys())
 
     if local:
@@ -303,18 +304,18 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
             or mem_per_cpu_gb != 1
             or gpus_per_node is not None
         ):
-            logging.warning(
+            logger.warning(
                 "Ignoring SLURM options because --local is set. Running locally."
             )
 
         # warn if 'setup' is set
         if setup:
-            logging.warning(
+            logger.warning(
                 "Ignoring setup commands because --local is set. Running locally."
             )
 
         command = ["vllm", "serve", vllm_model] + vllm_args
-        logging.info(
+        logger.info(
             f"Running vLLM server locally with command: {' '.join(shlex.quote(str(s)) for s in command)}"
         )
 
@@ -322,20 +323,18 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
 
         # handle signals - SIGINT, SIGTERM
         def signal_handler(signum, frame):
-            logging.info(f"Received signal {signum}, attempting graceful shutdown...")
+            logger.info(f"Received signal {signum}, attempting graceful shutdown...")
             if process and process.poll() is None:
-                logging.info(f"Sending SIGTERM to process {process.pid}")
+                logger.info(f"Sending SIGTERM to process {process.pid}")
                 process.terminate()
                 try:
                     process.wait(timeout=10)
-                    logging.info("vLLM server terminated gracefully.")
+                    logger.info("vLLM server terminated gracefully.")
                 except TimeoutError:
-                    logging.warning(
-                        "vLLM server did not terminate in time, killing it."
-                    )
+                    logger.warning("vLLM server did not terminate in time, killing it.")
                     process.kill()
                     process.wait()
-                    logging.info("vLLM server killed.")
+                    logger.info("vLLM server killed.")
                     sys.exit(128 + signum)
 
         signal.signal(signal.SIGINT, signal_handler)
@@ -343,17 +342,17 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
 
         try:
             process = subprocess.Popen(command, env=launch_env_vars)
-            logging.info(
+            logger.info(
                 f"vLLM server started with PID {process.pid}. Press Ctrl+C to stop."
             )
             return_code = process.wait()
 
             if return_code != 0:
-                logging.error(f"vLLM server exited with error code {return_code}.")
+                logger.error(f"vLLM server exited with error code {return_code}.")
             else:
-                logging.info("vLLM server exited successfully.")
+                logger.info("vLLM server exited successfully.")
         except KeyboardInterrupt:
-            logging.info("vLLM server interrupted by user.")
+            logger.info("vLLM server interrupted by user.")
             signal_handler(signal.SIGINT, None)
             sys.exit(0)
 
@@ -395,8 +394,8 @@ def launch_vllm_server(  # noqa: PLR0912, PLR0915
 
     if setup_cmds:
         slurm_params["slurm_setup"] = setup_cmds
-        logging.debug(f"Setup commands to run before the job: {setup}")
-    logging.debug(f"Submitting job to SLURM with parameters: {slurm_params}")
+        logger.debug(f"Setup commands to run before the job: {setup}")
+    logger.debug(f"Submitting job to SLURM with parameters: {slurm_params}")
 
     if log_folder is None:
         log_folder = "outputs/%j"

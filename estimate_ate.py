@@ -15,6 +15,8 @@ from naturalv2.evals.experiment import Experiment
 
 load_dotenv(".env")
 
+logger = logging.getLogger(__name__)
+
 
 def weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame) -> np.ndarray:
     """Weight ITEs by inclusion probabilities."""
@@ -51,7 +53,7 @@ def calculate_treatment_effects(
                     "treatments": f"{treat2}-{treat1}",
                     "pred_ate": pred_ate,
                 }
-                logging.info(f"Predicted ATE: {pred_ate}")
+                logger.info(f"Predicted ATE: {pred_ate}")
                 if experiment.split != "test":
                     effect_idx = experiment.outcome_treatment.index(
                         (outcome, (treat1, treat2))
@@ -59,8 +61,8 @@ def calculate_treatment_effects(
                     true_ate = experiment.effect_sizes[effect_idx]
                     error = abs(pred_ate - true_ate)
                     results.update({"true_ate": true_ate, "abs_error": error})
-                    logging.info(f"True ATE: {true_ate}")
-                    logging.info(f"Absolute Error: {error}")
+                    logger.info(f"True ATE: {true_ate}")
+                    logger.info(f"Absolute Error: {error}")
                 result_dicts.append(results)
 
     return result_dicts
@@ -135,7 +137,7 @@ def main(cfg: DictConfig) -> None:
 
                 pipeline.data_flow["source_name"] = source_name
                 pipeline.data_flow["initial_curated"] = len(curated_df)
-                logging.info(
+                logger.info(
                     f"Initial number of curated reports: {len(curated_df)} reports."
                 )
 
