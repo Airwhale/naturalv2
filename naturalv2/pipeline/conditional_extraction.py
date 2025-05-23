@@ -54,24 +54,72 @@ def prepare_conditional_inputs(
 
 
 def process_local_model(
-    model: "VLLM", reports: list[str], interleaved_options: list[str]
+    model: "VLLM",
+    experiment: Experiment,
+    reports: list[str],
+    outcome: str,
+    source_name: str,
+    num_reports: int,
+    num_options: int,
+    length_norm: bool,
 ) -> tuple[np.ndarray, list[int]]:
     """Process inputs with local VLLM model."""
-    probs, sample_indices, _ = model.compute_input_probs(reports, interleaved_options)
+    responses = [
+        model.get_completions(
+            prompt=experiment.build_prompt_for_report(
+                "conditionals",
+                outcome=outcome,
+                source_name=source_name,
+                report=report,
+                return_format="prompt",
+            )
+        )
+        for report in reports
+    ]
+    prompt_log_probs = model.get_prompt_logprobs(responses)
+
+    logprobs = []
+    for prompt_logprob in prompt_log_probs:
+        if not prompt_logprob:
+            continue
+
+        logprob = sum(prompt_logprob)
+        if length_norm:
+            logprob = logprob / len(prompt_logprob)
+
+        logprobs.append(logprob)
+
+    probs = softmax(
+        np.array(logprobs).reshape((num_reports, num_options)),
+        axis=1,
+    )
+    sample_indices = [np.random.choice(len(prob), p=prob) for prob in probs]
+
     return probs, sample_indices
 
 
 def process_remote_model(
     model: LM,
-    system_prompt: str,
+    experiment: Experiment,
     llm_inputs: list[str],
+    outcome: str,
+    source_name: str,
     num_reports: int,
     num_options: int,
     length_norm: bool,
 ) -> tuple[np.ndarray, list[int]]:
     """Process inputs with remote LM model."""
+
     responses = [
-        model(prompt=system_prompt + "\n\nText Report\n" + llm_input)
+        model.call_sync(
+            prompt=experiment.build_prompt_for_report(
+                "conditionals",
+                outcome=outcome,
+                source_name=source_name,
+                report=llm_input,
+                return_format="prompt",
+            )
+        )
         for llm_input in llm_inputs
     ]
 
@@ -194,14 +242,9 @@ def extract_conditionals(
     # Discretize input dataframe
     input_df = experiment.discretize(input_df)
 
-    # Get system prompt and prepare options
-    system_prompt = experiment.get_system_prompt("conditionals", outcome, source_name)
     _, interleaved_options, idx_to_feat = prepare_for_conditional_extraction(
         experiment, to_enum
     )
-
-    if local:
-        model.system_prompt = system_prompt
 
     llm_probs_df = pd.DataFrame()
 
@@ -227,16 +270,25 @@ def extract_conditionals(
         # Process inputs based on model type
         if local:
             probs, sample_indices = process_local_model(
-                model, reports, interleaved_options
+                model=model,
+                experiment=experiment,
+                reports=llm_inputs,
+                outcome=outcome,
+                source_name=source_name,
+                num_reports=len(reports),
+                num_options=len(interleaved_options),
+                length_norm=length_norm,
             )
         else:
             probs, sample_indices = process_remote_model(
-                model,
-                system_prompt,
-                llm_inputs,
-                len(reports),
-                len(interleaved_options),
-                length_norm,
+                model=model,
+                experiment=experiment,
+                llm_inputs=llm_inputs,
+                outcome=outcome,
+                source_name=source_name,
+                num_reports=len(reports),
+                num_options=len(interleaved_options),
+                length_norm=length_norm,
             )
 
         # Prepare results for saving

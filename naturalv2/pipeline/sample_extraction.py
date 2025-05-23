@@ -74,23 +74,16 @@ async def extract_covariates(
 
     model = build_lm_instance_from_cfg(model_cfg)
 
-    system_message = {
-        "role": "system",
-        "content": experiment.get_system_prompt(extract_type, outcome, source_name),
-    }
-    user_prompt_template = "\nText Report\n>{report}"
-
     out_dicts = []
 
     def _get_messages(reports: list[str]) -> list[list[dict[str, str]]]:
         return [
-            [
-                system_message,
-                {
-                    "role": "user",
-                    "content": user_prompt_template.format(report=report),
-                },
-            ]
+            experiment.build_prompt_for_report(
+                prompt_type=extract_type,
+                outcome=outcome,
+                source_name=source_name,
+                report=report,
+            )
             for report in reports
         ]
 

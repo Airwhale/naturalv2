@@ -402,11 +402,18 @@ class Experiment:
             dct[field] = field_map[dct[field]]
         return dct
 
-    def get_system_prompt(self, prompt_type: str, outcome: str, source_name: str):
+    def build_prompt_for_report(
+        self,
+        prompt_type: str,
+        outcome: str,
+        source_name: str,
+        report: str,
+        return_format: Literal["prompt", "messages"] = "messages",
+    ):
         base_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
         )
-        prompt: str = load_prompt(base_dir, prompt_type, return_format="prompt")
+
         outcome_desc = {outcome: self.outcome_desc[outcome]}
         format_inputs = {
             "conditions": str(self.conditions),
@@ -425,5 +432,10 @@ class Experiment:
                 [f"\n{k}: {v}" for k, v in self.covariate_desc.items()]
             ),
             "inclusion_criteria": self.inclusion_criteria,
+            "report": report,
         }
-        return prompt.format(**format_inputs)
+
+        prompt: str = load_prompt(
+            base_dir, prompt_type, return_format=return_format, **format_inputs
+        )
+        return prompt
