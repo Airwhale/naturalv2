@@ -2339,6 +2339,7 @@ dependencies = [
     { name = "pandas", extra = ["compression", "feather", "parquet"] },
     { name = "presidio-analyzer" },
     { name = "presidio-anonymizer" },
+    { name = "presidio-structured" },
     { name = "scipy" },
     { name = "setuptools" },
     { name = "tenacity" },
@@ -2374,6 +2375,7 @@ requires-dist = [
     { name = "pandas", extras = ["parquet", "feather", "compression"], specifier = ">=2.2.3" },
     { name = "presidio-analyzer", specifier = ">=2.2.358" },
     { name = "presidio-anonymizer", specifier = ">=2.2.358" },
+    { name = "presidio-structured", specifier = ">=0.0.5a0" },
     { name = "scipy", specifier = ">=1.15.2" },
     { name = "setuptools", specifier = ">=80.8.0" },
     { name = "tenacity", specifier = ">=9.1.2" },
@@ -3205,6 +3207,19 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/21/f00a2d321ef264e67e83a3bb8476efc97296be84bb260507fb984852e03c/presidio_anonymizer-2.2.358-py3-none-any.whl", hash = "sha256:54c7e26cfc7dc7887551774f97ef9070b011feea420fba3d0d0dde9689650432", size = 31283, upload-time = "2025-03-18T09:38:25.375Z" },
+]
+
+[[package]]
+name = "presidio-structured"
+version = "0.0.5a0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pandas" },
+    { name = "presidio-analyzer" },
+    { name = "presidio-anonymizer" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/4b/21e64533383b93e60d3141e80fa2bfdb8cbf1c33eba7ecf0ff2e3b8a4991/presidio_structured-0.0.5a0-py3-none-any.whl", hash = "sha256:f4c7c3d72dbc294153e9cee4c9af92a6a90c311a6543071dc5d8b7a3830ba445", size = 11521, upload-time = "2025-03-18T09:38:29.524Z" },
 ]
 
 [[package]]

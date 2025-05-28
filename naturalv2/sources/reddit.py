@@ -1,8 +1,14 @@
 import logging
 import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
+from typing import Optional
 
 import pandas as pd
+import psutil
 from omegaconf import DictConfig
+from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 
 from naturalv2.evals.experiment import Experiment
 from naturalv2.sources.anonymizer import Anonymizer
@@ -21,20 +27,35 @@ logger = logging.getLogger(__name__)
 
 class RedditSource:
     def __init__(
-        self, data_path: str, lm_cfg: DictConfig, anonymize: bool = True
+        self,
+        data_path: str,
+        lm_cfg: DictConfig,
+        max_download_workers: Optional[int] = None,
+        anonymize: bool = True,
+        anonymizer_score_threshold: float = 0.7,
+        anonymizer_batch_size: int = 1,
     ) -> None:
         self.data_path = data_path
         self.lm_cfg = lm_cfg
+        self.anonymize = anonymize
+        self.anonymizer_score_threshold = anonymizer_score_threshold
+        self.anonymizer_batch_size = anonymizer_batch_size
+
+        if max_download_workers is None:
+            max_download_workers = max(1, (psutil.cpu_count(logical=False) or 1) // 2)
+
+        self.max_download_workers = max_download_workers
 
         os.makedirs(self.data_path, exist_ok=True)
 
-        self.anonymize = anonymize
         if anonymize:
-            self._anonymizer = Anonymizer()
+            self._anonymizer = Anonymizer(score_threshold=anonymizer_score_threshold)
 
     def condition_filter(self, keywords: list[str]) -> list[str]:
+        # get information about subreddits
         subs_about = get_sub_about_info(self.data_path)
 
+        # use keywords to filter subreddits based on their description
         self.relevant_subs = []
         for row in subs_about.iterrows():
             sub_name, desc, public_desc = row[1].to_list()
@@ -47,55 +68,107 @@ class RedditSource:
         logger.info(f"{len(self.relevant_subs)} relevant subreddits found!")
 
         condition_data_paths = []
+        subs_to_filter = []
         for sub in self.relevant_subs:
-            submissions_path = os.path.join(self.data_path, f"{sub}_submissions.csv")
-            comments_path = os.path.join(self.data_path, f"{sub}_comments.csv")
-            if not os.path.exists(submissions_path):
-                download_sub_data(
-                    sub,
-                    "submissions",
-                    self.data_path,
-                    anonymizer_instance=self._anonymizer if self.anonymize else None,
-                )
-            if not os.path.exists(comments_path):
-                download_sub_data(
-                    sub,
-                    "comments",
-                    self.data_path,
-                    anonymizer_instance=self._anonymizer if self.anonymize else None,
-                )
+            sub_path = os.path.join(self.data_path, f"{sub}_submissions.csv")
+            comment_path = os.path.join(self.data_path, f"{sub}_comments.csv")
+            if os.path.exists(sub_path) and os.path.exists(comment_path):
+                condition_data_paths.extend([sub_path, comment_path])
+            else:
+                subs_to_filter.append(sub)
 
-            condition_data_paths.extend([submissions_path, comments_path])
+        if set(self.relevant_subs) == set(subs_to_filter):
+            # all data have been downloaded
+            logger.info("All relevant subreddit data has already been downloaded.")
+            return condition_data_paths
+
+        n_downloaded = len(self.relevant_subs) - len(subs_to_filter)
+        logger.info(
+            f"{n_downloaded} relevant subreddits already downloaded, "
+            f"{len(subs_to_filter)} remaining to download."
+        )
+
+        if self.max_download_workers > 1:
+            results = process_map(
+                partial(
+                    _download_submissions_and_comments,
+                    data_path=self.data_path,
+                    anonymizer=self._anonymizer,
+                    batch_size=self.anonymizer_batch_size,
+                ),
+                subs_to_filter,
+                max_workers=self.max_download_workers,
+                desc=f"Downloading Reddit data [{self.max_download_workers} workers]",
+                chunksize=1,
+                position=0,
+                leave=True,
+                disable=len(subs_to_filter) == 0,  # disable if no subs to download
+            )
+            for submissions_path, comments_path in results:
+                condition_data_paths.extend([submissions_path, comments_path])
+        else:  # single-threaded download; avoids multiprocessing overhead
+            for sub in subs_to_filter:
+                submissions_path, comments_path = _download_submissions_and_comments(
+                    sub, self.data_path, self._anonymizer, self.anonymizer_batch_size
+                )
+                condition_data_paths.extend([submissions_path, comments_path])
 
         return condition_data_paths
 
     def clean_data(self, study_name: str) -> tuple[str, int]:
-        os.makedirs(
-            os.path.join(self.data_path, study_name.lower().replace(" ", "_")),
-            exist_ok=True,
-        )
-        save_path = os.path.join(self.data_path, f"{study_name}/reddit_cleaned.csv")
+        study_dir = os.path.join(self.data_path, study_name.lower().replace(" ", "_"))
+        os.makedirs(study_dir, exist_ok=True)
+
+        subs_to_clean = self.relevant_subs
+
+        save_path = os.path.join(study_dir, "reddit_cleaned.csv")
         if os.path.exists(save_path):
-            cleaned_data = pd.read_csv(save_path, index_col=0)
-            return save_path, len(cleaned_data)
+            cleaned_data = pd.read_csv(save_path, index_col=0, low_memory=False)
+            cleaned_subs = cleaned_data["subreddit"].unique()
 
-        rule_filtered_df = pd.DataFrame()
-        for sub in self.relevant_subs:
-            submissions = pd.read_csv(
-                os.path.join(self.data_path, f"{sub}_submissions.csv"), index_col=0
-            )
-            comments = pd.read_csv(
-                os.path.join(self.data_path, f"{sub}_comments.csv"), index_col=0
-            )
+            if set(cleaned_subs) == set(self.relevant_subs):
+                logger.info(
+                    f"Cleaned data already exists at {save_path}. Returning existing data."
+                )
+                return save_path, len(cleaned_data)
 
-            submissions = rule_based_filter(submissions, "selftext")
-            comments = rule_based_filter(comments, "body")
-
-            merged_df = get_context_post_df(submissions, comments)
-            rule_filtered_df = pd.concat(
-                [rule_filtered_df, merged_df], ignore_index=True
+            logger.info(
+                f"Cleaned data exists but not for all relevant subreddits. "
+                f"Cleaning {set(self.relevant_subs) - set(cleaned_subs)} remaining "
+                "subreddits."
             )
-            rule_filtered_df.to_csv(save_path)
+            subs_to_clean = list(set(self.relevant_subs) - set(cleaned_subs))
+            rule_filtered_df = cleaned_data
+        else:
+            rule_filtered_df = pd.DataFrame()
+
+        with (
+            tqdm(
+                total=len(subs_to_clean),
+                desc="Cleaning Reddit data",
+                unit="subreddit",
+                disable=len(subs_to_clean) == 0,  # disable if no subs to clean
+            ) as pbar,
+            ProcessPoolExecutor(
+                min(8, psutil.cpu_count(logical=False) or 1)
+            ) as executor,
+        ):
+            futures = {
+                executor.submit(_clean_sub_data, self.data_path, sub): sub
+                for sub in subs_to_clean
+            }
+            for future in as_completed(futures):
+                sub = futures[future]
+                try:
+                    merged_df = future.result()
+                    rule_filtered_df = pd.concat(
+                        [rule_filtered_df, merged_df], ignore_index=True
+                    )
+                    rule_filtered_df.to_csv(save_path)
+                except Exception as e:
+                    logger.error(f"Error processing subreddit {sub}: {e}")
+                finally:
+                    pbar.update(1)
 
         rule_filtered_df = rule_filtered_df.drop_duplicates("post")
         rule_filtered_df.to_csv(save_path)
@@ -110,53 +183,109 @@ class RedditSource:
     ) -> tuple[str, int]:
         # check treatment/outcome mention, filter by date
         save_path = os.path.join(
-            self.data_path, f"{study_name}/reddit_{exp.nct_id}.csv"
+            self.data_path,
+            f"{study_name.lower().replace(' ', '_')}/reddit_{exp.nct_id}.csv",
         )
         if os.path.exists(save_path):
             exp_df = pd.read_csv(save_path, index_col=0)
             return save_path, len(exp_df)
 
         clean_data = pd.read_csv(clean_data_path, index_col=0)
-        exp_df = pd.DataFrame(columns=clean_data.columns)
         treatment_names = exp.treatment_common_names["reddit"]
         outcome_names = exp.outcome_common_names["reddit"]
 
-        for _, row in clean_data.iterrows():
-            t_matches = [
-                x
-                for x in treatment_names
-                if x in row["subreddit"].lower()
-                or x in row["title"].lower()
-                or x in row["post"].lower()
-            ]
-            if isinstance(row["initial_post"], str) and not pd.isna(
-                row["initial_post"]
-            ):
-                t_matches += [
-                    x for x in treatment_names if x in row["initial_post"].lower()
-                ]
-            t_matches = set(t_matches)
-            o_matches = [
-                x
-                for x in outcome_names
-                if x in row["subreddit"].lower()
-                or x in row["title"].lower()
-                or x in row["post"].lower()
-            ]
-            if isinstance(row["initial_post"], str) and not pd.isna(
-                row["initial_post"]
-            ):
-                o_matches += [
-                    x for x in outcome_names if x in row["initial_post"].lower()
-                ]
-            o_matches = set(o_matches)
-            if len(t_matches) > 0 and len(o_matches) > 0:
-                row["treatments"] = list(t_matches)
-                row["outcomes"] = list(o_matches)
-                exp_df = pd.concat([exp_df, pd.DataFrame([row])], ignore_index=True)
+        # Pre-process: convert all text columns to lowercase once
+        clean_data = clean_data.copy()
+        clean_data["subreddit_lower"] = clean_data["subreddit"].str.lower()
+        clean_data["title_lower"] = clean_data["title"].str.lower()
+        clean_data["post_lower"] = clean_data["post"].str.lower()
 
-        if filter_by_date:
+        # Handle initial_post column (may contain NaN values)
+        clean_data["initial_post_lower"] = (
+            clean_data["initial_post"].fillna("").astype(str).str.lower()
+        )
+
+        # Convert treatment and outcome names to lowercase once
+        treatment_names_lower = [name.lower() for name in treatment_names]
+        outcome_names_lower = [name.lower() for name in outcome_names]
+
+        # Fully vectorized approach using pandas string operations
+        def find_matches(df, names_list):
+            """Find matches using fully vectorized pandas operations"""
+            # Combine all text columns into one
+            combined_text: pd.Series = (
+                df["subreddit_lower"]
+                + " "
+                + df["title_lower"]
+                + " "
+                + df["post_lower"]
+                + " "
+                + df["initial_post_lower"]
+            )
+
+            matches_list = []
+            for name in names_list:
+                # Use vectorized string contains
+                mask = combined_text.str.contains(name, regex=False, na=False)
+                matches_list.append(mask)
+
+            # For each row, collect which names matched
+            row_matches = []
+            for i in range(len(df)):
+                matches = [
+                    names_list[j] for j, mask in enumerate(matches_list) if mask.iloc[i]
+                ]
+                row_matches.append(set(matches))
+
+            return row_matches
+
+        # Find treatment and outcome matches
+        treatment_matches = find_matches(clean_data, treatment_names_lower)
+        outcome_matches = find_matches(clean_data, outcome_names_lower)
+
+        # Filter rows that have both treatment and outcome matches
+        valid_indices = []
+        valid_treatments = []
+        valid_outcomes = []
+
+        for i, (t_matches, o_matches) in enumerate(
+            zip(treatment_matches, outcome_matches)
+        ):
+            if len(t_matches) > 0 and len(o_matches) > 0:
+                valid_indices.append(i)
+                # Convert back to original case for storage
+                valid_treatments.append(list(t_matches))
+                valid_outcomes.append(list(o_matches))
+
+        if not valid_indices:
+            # No matches found, return empty DataFrame
+            exp_df = pd.DataFrame(
+                columns=list(clean_data.columns) + ["treatments", "outcomes"]
+            )
+        else:
+            # Create filtered DataFrame efficiently
+            exp_df = clean_data.iloc[valid_indices].copy()
+
+            # Remove the temporary lowercase columns
+            exp_df = exp_df.drop(
+                columns=[
+                    "subreddit_lower",
+                    "title_lower",
+                    "post_lower",
+                    "initial_post_lower",
+                ]
+            )
+
+            # Add treatment and outcome columns
+            exp_df["treatments"] = valid_treatments
+            exp_df["outcomes"] = valid_outcomes
+
+            # Reset index
+            exp_df = exp_df.reset_index(drop=True)
+
+        if filter_by_date and not exp_df.empty:
             exp_df = date_filter(exp_df, exp.date)
+
         exp_df.to_csv(save_path)
         return save_path, len(exp_df)
 
@@ -171,3 +300,46 @@ class RedditSource:
             base_dir, "common_name_outcome", return_format="messages", source="Reddit"
         )
         return {"treatment": t_prompt, "outcome": o_prompt}
+
+
+def _download_submissions_and_comments(
+    sub: str, data_path: str, anonymizer: Optional[Anonymizer], batch_size: int
+) -> tuple[str, str]:
+    submissions_path = os.path.join(data_path, f"{sub}_submissions.csv")
+    comments_path = os.path.join(data_path, f"{sub}_comments.csv")
+    if not os.path.exists(submissions_path):
+        download_sub_data(
+            sub,
+            "submissions",
+            data_path,
+            anonymizer_instance=anonymizer,
+            batch_size=batch_size,
+        )
+    if not os.path.exists(comments_path):
+        download_sub_data(
+            sub,
+            "comments",
+            data_path,
+            anonymizer_instance=anonymizer,
+            batch_size=batch_size,
+        )
+
+    return submissions_path, comments_path
+
+
+def _clean_sub_data(data_path: str, sub: str) -> pd.DataFrame:
+    submissions = pd.read_csv(
+        os.path.join(data_path, f"{sub}_submissions.csv"),
+        index_col=0,
+        low_memory=False,
+    )
+    submissions = rule_based_filter(submissions, "selftext")
+
+    comments = pd.read_csv(
+        os.path.join(data_path, f"{sub}_comments.csv"),
+        index_col=0,
+        low_memory=False,
+    )
+    comments = rule_based_filter(comments, "body")
+
+    return get_context_post_df(submissions, comments)

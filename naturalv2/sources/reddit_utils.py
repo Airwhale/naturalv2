@@ -81,6 +81,8 @@ def download_sub_data(
     data_type: Literal["submissions", "comments"],
     data_path: str,
     anonymizer_instance: Optional["Anonymizer"] = None,
+    batch_size: int = 1,
+    num_workers: int = 1,
 ) -> None:
     if data_type not in ["submissions", "comments"]:
         raise ValueError(
@@ -91,12 +93,21 @@ def download_sub_data(
 
     os.makedirs(data_path, exist_ok=True)
 
-    _ = wget.download(
-        "https://the-eye.eu/redarcs/files/{}_{}.zst".format(subreddit, data_type),
-        out=data_path,
-    )
+    save_path = os.path.join(data_path, "{}_{}.csv".format(subreddit, data_type))
+    if os.path.exists(save_path):
+        logger.warning(
+            f"File {save_path} already exists. Skipping download for {subreddit} {data_type}."
+        )
+        return
 
     file_path = os.path.join(data_path, "{}_{}.zst".format(subreddit, data_type))
+    if not os.path.exists(file_path):
+        _ = wget.download(
+            "https://the-eye.eu/redarcs/files/{}_{}.zst".format(subreddit, data_type),
+            out=data_path,
+            bar=None,
+        )
+
     file_lines = 0
     bad_lines = 0
     data = []
@@ -109,8 +120,7 @@ def download_sub_data(
             bad_lines += 1
         file_lines += 1
 
-    save_path = os.path.join(data_path, "{}_{}.csv".format(subreddit, data_type))
-    df = pd.DataFrame(data, copy=False).convert_dtypes(dtype_backend="pyarrow")
+    df = pd.DataFrame(data, copy=False)
 
     # remove deleted posts or comments
     df = (
@@ -123,28 +133,13 @@ def download_sub_data(
     if anonymizer_instance is not None:
         df = anonymizer_instance.anonymize_dataframe(
             df,
-            cols=[
-                "author_flair_text",
-                "author_flair_richtext",
-                "author_fullname",
-                "author_patreon_flair",
-                "awarders",
-                "banned_by",
-                "link_flair_text",
-                "link_flair_richtext",
-                "removal_reason",
-                "removed_by",
-                "selftext",
-                "title",
-            ]
+            exclude_cols=["permalink", "created_utc", "subreddit", "score", "author"],
+            unstructured_text_cols=["selftext", "title"]
             if data_type == "submissions"
-            else [
-                "author_flair_text",
-                "author_flair_richtext",
-                "author_fullname",
-                "author_patreon_flair",
-                "body",
-            ],
+            else ["body"],
+            data_source_name=f"{subreddit}_{data_type}",
+            batch_size=batch_size,
+            num_workers=num_workers,
         )
 
     df.to_csv(save_path)
@@ -263,9 +258,13 @@ def get_sub_about_info(data_path: str) -> pd.DataFrame:
                 if row_data is not None:
                     rows.append(row_data)
 
-        return pd.DataFrame(
+        df = pd.DataFrame(
             rows, columns=["sub", "description", "public_description"], copy=False
         ).convert_dtypes(dtype_backend="pyarrow")
+        df.drop_duplicates(subset=["sub"], inplace=True)
+        df.sort_values(by="sub", inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        return df
 
     # filter out already downloaded subreddits from subs_list
     # NOTE: A json file is always saved, regardless of whether there was an error
@@ -319,6 +318,8 @@ def get_sub_about_info(data_path: str) -> pd.DataFrame:
         )
         about_df = pd.concat([partial_df, new_df], ignore_index=True)
         about_df = about_df.drop_duplicates(subset=["sub"])
+        about_df.sort_values(by="sub", inplace=True)
+        about_df.reset_index(drop=True, inplace=True)
         about_df.to_csv(about_csv_path)
 
     return about_df
@@ -355,38 +356,49 @@ def rule_based_filter(post_df: pd.DataFrame, text_field: str) -> pd.DataFrame:
     # remove rows where the text field is not of type str
     idx = post_df[text_field].apply(lambda x: isinstance(x, str))
     post_df = post_df.loc[idx]
+
+    # remove rows where the permalink is not of type str
     idx = post_df["permalink"].apply(lambda x: isinstance(x, str))
     post_df = post_df.loc[idx]
+
     # remove rows without a score
     post_df = post_df.loc[post_df["score"] != None]
+
     # remove rows where the submission is deleted or removed
     post_df = post_df.loc[post_df[text_field] != "[deleted]"]
     post_df = post_df.loc[post_df[text_field] != "[removed]"]
+
     # remove very short comments
     if text_field == "body":
         idx = post_df[text_field].apply(lambda x: len(x.split()) >= 10)
         post_df = post_df.loc[idx]
+
     # remove posts with "bot" in the author's name
     idx = post_df["author"].apply(lambda x: "bot" not in x.lower())
     post_df = post_df.loc[idx]
+
     for i, row in post_df.iterrows():
-        body = row[text_field]
+        body: str = row[text_field]
+
         # unescape some common html tags
         body = body.replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")
         body = body.replace("\n", " ").replace("\t", " ")
         body = body.strip()
+
         # drop if there is no space in first 2048 characters
         try:
             _ = body[: body.rindex(" ", 0, 2048)]
         except ValueError:
             post_df = post_df.drop([i])
             continue
+
         # drop everything with less than 50% alphabetic characters; space counts
         length_characters = float(len(body))
         filtered = [c for c in body if c.isalpha()]
         if float(len(filtered)) / length_characters < 0.5:
             post_df = post_df.drop([i])
             continue
+
     return post_df
 
 
@@ -423,7 +435,87 @@ def rule_based_filter(post_df: pd.DataFrame, text_field: str) -> pd.DataFrame:
 def get_context_post_df(
     submissions: pd.DataFrame, comments: pd.DataFrame
 ) -> pd.DataFrame:
-    merged_df = pd.DataFrame(
+    submissions = submissions.copy()
+    submissions["date_created"] = submissions["created_utc"].astype(int).map(get_date)
+    submissions["submission_permalink"] = submissions["permalink"].map(
+        get_submission_permalink
+    )
+
+    comments = comments.copy()
+    comments["permalink_processed"] = comments["permalink"].map(get_comment_permalink)
+    comments["date_created"] = comments["created_utc"].astype(int).map(get_date)
+
+    comments_grouped = comments.groupby("permalink_processed")
+
+    all_results = []
+    for _, submission in submissions.iterrows():
+        submission_permalink = submission["submission_permalink"]
+
+        if submission_permalink in comments_grouped.groups:
+            submission_comments = comments_grouped.get_group(submission_permalink)
+
+            # Separate author replies from other comments
+            author_mask = submission_comments["author"] == submission["author"]
+            author_comments = submission_comments[author_mask]
+            other_comments = submission_comments[~author_mask]
+
+            # Build submission text with author replies
+            submission_text = str(submission["selftext"])
+            author_replies_list = author_comments["body"].tolist()
+
+            if author_replies_list:
+                submission_text += (
+                    "\n\nThe author also replied with the following in the thread:"
+                )
+                for reply in author_replies_list:
+                    submission_text += "\n> " + str(reply)
+        else:
+            other_comments = pd.DataFrame()
+            author_replies_list = []
+            submission_text = str(submission["selftext"])
+
+        submission_row = {
+            "subreddit": submission["subreddit"],
+            "title": submission["title"],
+            "initial_post": "",
+            "post": submission_text,
+            "score": int(submission["score"]),
+            "date_created": submission["date_created"],
+            "permalink": submission_permalink,
+            "author_replies": author_replies_list,
+        }
+        all_results.append(submission_row)
+
+        if not other_comments.empty:
+            comment_rows = {
+                "subreddit": [submission["subreddit"]] * len(other_comments),
+                "title": [submission["title"]] * len(other_comments),
+                "initial_post": [submission_text] * len(other_comments),
+                "post": other_comments["body"].astype(str).tolist(),
+                "score": other_comments["score"].astype(str).tolist(),
+                "date_created": other_comments["date_created"].tolist(),
+                "permalink": other_comments["permalink"].tolist(),
+                "author_replies": [[]] * len(other_comments),
+            }
+
+            # Convert to list of dicts for consistency
+            for i in range(len(other_comments)):
+                all_results.append(
+                    {
+                        "subreddit": comment_rows["subreddit"][i],
+                        "title": comment_rows["title"][i],
+                        "initial_post": comment_rows["initial_post"][i],
+                        "post": comment_rows["post"][i],
+                        "score": comment_rows["score"][i],
+                        "date_created": comment_rows["date_created"][i],
+                        "permalink": comment_rows["permalink"][i],
+                        "author_replies": comment_rows["author_replies"][i],
+                    }
+                )
+
+    if all_results:
+        return pd.DataFrame(all_results)
+    return pd.DataFrame(
         columns=[
             "subreddit",
             "title",
@@ -437,63 +529,6 @@ def get_context_post_df(
             "author_replies",
         ]
     )
-    comments["permalink_processed"] = comments["permalink"].map(
-        lambda x: get_comment_permalink(x)
-    )
-    for _, submission in submissions.iterrows():
-        subreddit = submission["subreddit"]
-        title = submission["title"]
-        submission_text = submission["selftext"]
-        score = int(submission["score"])
-        created_utc = int(submission["created_utc"])
-        date_created = get_date(created_utc)
-        submission_permalink = get_submission_permalink(submission["permalink"])
-        submission_comments = comments[
-            comments["permalink_processed"] == submission_permalink
-        ]
-        submission_author_comments = submission_comments[
-            submission_comments["author"] == submission["author"]
-        ]
-        submission_comments = submission_comments.drop(submission_author_comments.index)
-        if len(submission_author_comments["body"].to_list()) > 0:
-            submission_text += (
-                "\n\nThe author also replied with the following in the thread:"
-            )
-            for reply in submission_author_comments["body"].to_list():
-                submission_text += "\n> " + reply
-        to_append = [
-            {
-                "subreddit": subreddit,
-                "title": title,
-                "initial_post": "",
-                "post": submission_text,
-                "score": score,
-                "date_created": date_created,
-                "permalink": submission_permalink,
-                "author_replies": submission_author_comments["body"].to_list(),
-            }
-        ]
-        to_append += [
-            {
-                "subreddit": subreddit,
-                "title": title,
-                "initial_post": submission_text,
-                "post": str(submission_comments.iloc[j]["body"]),
-                "score": str(submission_comments.iloc[j]["score"]),
-                "date_created": get_date(
-                    int(submission_comments.iloc[j]["created_utc"])
-                ),
-                "permalink": submission_comments.iloc[j]["permalink"],
-                "author_replies": [],
-            }
-            for j in range(len(submission_comments))
-        ]
-        # to_append = check_treatment_mention(to_append, treatment_names)
-        # to_append = check_outcome_mention(to_append, outcome_words)
-        if len(to_append) > 0:
-            df_to_append = pd.DataFrame.from_dict(to_append)
-            merged_df = pd.concat([merged_df, df_to_append], ignore_index=True)
-    return merged_df
 
 
 def get_reddit_synonyms(keywords: str, lm: LM) -> list[str]:
