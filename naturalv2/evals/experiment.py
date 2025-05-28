@@ -7,8 +7,6 @@ from typing import Any, Literal, Optional
 
 import pandas as pd
 import yaml
-from omegaconf import DictConfig
-
 from naturalv2.evals.clinical_trial import (
     ArmGroup,
     BaselineMeasure,
@@ -29,7 +27,7 @@ from naturalv2.utils import (
     get_nested_value,
     load_prompt,
 )
-
+from omegaconf import DictConfig
 
 logger = logging.getLogger(__name__)
 
