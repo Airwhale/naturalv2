@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from string import Template
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, create_model
@@ -113,9 +114,12 @@ def load_prompt(
 
         system_role_dict = {"role": "system", "content": system_prompt}
 
-    user_prompt_template: str = prompt_data["user_prompt_template"].format(
-        **user_prompt_format_kwargs
-    )
+    user_prompt_template: str = prompt_data["user_prompt_template"]
+    if user_prompt_format_kwargs:
+        user_prompt_template = Template(user_prompt_template).safe_substitute(
+            **user_prompt_format_kwargs
+        )
+
     logger.debug(
         f"User prompt template loaded from {prompt_type}.json: {user_prompt_template}"
     )

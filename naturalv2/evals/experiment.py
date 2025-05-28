@@ -2,6 +2,7 @@ import copy
 import logging
 import os
 from ast import literal_eval
+from string import Template
 from typing import Any, Literal, Optional
 
 import pandas as pd
@@ -140,8 +141,10 @@ class Experiment:
         common_names = []
         for name in getattr(self, f"{attr}_names"):
             messages = copy.deepcopy(prompt_dct[attr])
-            messages[1]["content"] = messages[1]["content"].format(**{"keyword": name})
-            lm_response = lm(messages=messages, response_format=ListResponse)
+            messages[0]["content"] = Template(messages[0]["content"]).safe_substitute(
+                keyword=name
+            )
+            lm_response = lm.call_sync(messages=messages, response_format=ListResponse)
             parsed_response = extract_list_response(lm_response)
             if parsed_response:
                 common_names.extend(parsed_response[0])
@@ -357,34 +360,31 @@ class Experiment:
             {cov: dict(enumerate(self.options[cov])) for cov in self.covariate_names}
         )
 
-    def _set_questions(self):
+    def _set_questions(self) -> None:
         base_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
         )
 
-        inclusion_prompt: str = load_prompt(
-            base_dir, "question_inclusion", return_format="prompt"
-        )
-        self.question_prompts["Inclusion"] = inclusion_prompt.format(
-            inclusion_criteria=self.inclusion_criteria
+        self.question_prompts["Inclusion"] = load_prompt(
+            base_dir,
+            "question_inclusion",
+            return_format="prompt",
+            inclusion_criteria=self.inclusion_criteria,
         )
 
-        covariate_prompt: str = load_prompt(
-            base_dir, "question_covariate", return_format="prompt"
-        )
         for cov in self.covariate_names:
-            self.question_prompts[cov] = covariate_prompt.format(covariate=cov)
+            self.question_prompts[cov] = load_prompt(
+                base_dir, "question_covariate", return_format="prompt", covariate=cov
+            )
 
-        treatment_prompt: str = load_prompt(
+        self.question_prompts["treatment"] = load_prompt(
             base_dir, "question_treatment", return_format="prompt"
         )
-        self.question_prompts["treatment"] = treatment_prompt
 
-        outcome_prompt: str = load_prompt(
-            base_dir, "question_outcome", return_format="prompt"
-        )
         for outcome in self.outcome_names:
-            self.question_prompts[outcome] = outcome_prompt.format(outcome=outcome)
+            self.question_prompts[outcome] = load_prompt(
+                base_dir, "question_outcome", return_format="prompt", outcome=outcome
+            )
 
     def _parse_lm_response(self, lm_response: str) -> list[str]:
         return (
