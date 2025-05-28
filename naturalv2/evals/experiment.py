@@ -363,28 +363,29 @@ class Experiment:
         )
 
         inclusion_prompt: str = load_prompt(
-            base_dir, "question_inclusion", return_format="prompt"
+            base_dir,
+            "question_inclusion",
+            return_format="prompt",
+            inclusion_criteria=self.inclusion_criteria,
         )
-        self.question_prompts["Inclusion"] = inclusion_prompt.format(
-            inclusion_criteria=self.inclusion_criteria
-        )
+        self.question_prompts["Inclusion"] = inclusion_prompt
 
-        covariate_prompt: str = load_prompt(
-            base_dir, "question_covariate", return_format="prompt"
-        )
         for cov in self.covariate_names:
-            self.question_prompts[cov] = covariate_prompt.format(covariate=cov)
+            covariate_prompt: str = load_prompt(
+                base_dir, "question_covariate", return_format="prompt", covariate=cov
+            )
+            self.question_prompts[cov] = covariate_prompt
 
         treatment_prompt: str = load_prompt(
             base_dir, "question_treatment", return_format="prompt"
         )
         self.question_prompts["treatment"] = treatment_prompt
 
-        outcome_prompt: str = load_prompt(
-            base_dir, "question_outcome", return_format="prompt"
-        )
         for outcome in self.outcome_names:
-            self.question_prompts[outcome] = outcome_prompt.format(outcome=outcome)
+            outcome_prompt: str = load_prompt(
+                base_dir, "question_outcome", return_format="prompt", outcome=outcome
+            )
+            self.question_prompts[outcome] = outcome_prompt
 
     def _parse_lm_response(self, lm_response: str) -> list[str]:
         return (
