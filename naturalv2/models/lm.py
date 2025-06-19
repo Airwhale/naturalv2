@@ -76,6 +76,7 @@ class LLMParams(TypedDict, total=False):
     #: Whether or not to drop incompatible params, e.g. `seed` for Gemini models.
     drop_params: Optional[bool]
 
+
 class LM:
     """An interface for OpenAI-compatible LLM providers.
 
