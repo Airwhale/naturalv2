@@ -73,6 +73,8 @@ class LLMParams(TypedDict, total=False):
     #: This is useful for testing and debugging.
     mock_response: Optional[Union[str, ModelResponse, Exception]]
 
+    #: Whether or not to drop incompatible params, e.g. `seed` for Gemini models.
+    drop_params: Optional[bool]
 
 class LM:
     """An interface for OpenAI-compatible LLM providers.
