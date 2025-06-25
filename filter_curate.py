@@ -205,7 +205,7 @@ class _DataCurator:
             try:
                 exp = Experiment.from_yaml(exp_file)
                 logger.debug(f"Loaded existing experiment: {nct_id}")
-            except FileNotFoundError:
+            except (FileNotFoundError, ValueError):
                 status = "active" if split == "test" else "completed"
                 exp = Experiment(self.cfg.data_path, nct_id, status=status)
                 logger.debug(f"Created new experiment: {nct_id}")

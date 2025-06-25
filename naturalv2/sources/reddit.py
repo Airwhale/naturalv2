@@ -1,5 +1,6 @@
 """Module for downloading and processing Reddit data."""
 
+import datetime
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -15,7 +16,6 @@ from tqdm.contrib.concurrent import process_map
 from naturalv2.evals.experiment import Experiment
 from naturalv2.sources.anonymizer import Anonymizer
 from naturalv2.sources.reddit_utils import (
-    _date_filter,
     _get_context_post_df,
     download_sub_data,
     get_sub_about_info,
@@ -253,10 +253,10 @@ class RedditSource:
         Returns
         -------
         tuple[str, int]
-            Path to the curated experiment data file and the number of valid posts.
+            Path to the curated experiment data file and the number of valid posts
+            that mention both treatments and outcomes.
 
         """
-        # check treatment/outcome mention, filter by date
         save_path = os.path.join(
             self.data_path,
             f"{study_name.lower().replace(' ', '_')}/reddit_{experiment.nct_id}.csv",
@@ -265,109 +265,139 @@ class RedditSource:
             exp_df = pd.read_csv(save_path, index_col=0)
             return save_path, len(exp_df)
 
-        clean_data = pd.read_csv(clean_data_path, index_col=0)
-        treatment_names = experiment.treatment_common_names["reddit"]
-        outcome_names = experiment.outcome_common_names["reddit"]
+        treatment_names = [
+            name.lower() for name in experiment.treatment_common_names["reddit"]
+        ]
+        outcome_names = [
+            name.lower() for name in experiment.outcome_common_names["reddit"]
+        ]
 
-        # Pre-process: convert all text columns to lowercase once
-        clean_data = clean_data.copy()
-        clean_data["subreddit_lower"] = clean_data["subreddit"].str.lower()
-        clean_data["title_lower"] = clean_data["title"].str.lower()
-        clean_data["post_lower"] = clean_data["post"].str.lower()
+        # Prepare date filter
+        date_cutoff = None
+        if filter_by_date and experiment.date:
+            try:
+                date_obj = datetime.datetime.strptime(experiment.date, "%Y-%m-%d")
+            except ValueError:
+                date_obj = datetime.datetime.strptime(experiment.date, "%Y-%m")
 
-        # Handle initial_post column (may contain NaN values)
-        clean_data["initial_post_lower"] = (
-            clean_data["initial_post"].fillna("").astype(str).str.lower()
+            # Convert to UTC timestamp
+            date_cutoff = int(
+                date_obj.replace(tzinfo=datetime.timezone.utc).timestamp()
+            )
+
+        chunk_size = 5000
+        valid_count = 0
+        row_index = 0
+        first_chunk = True
+
+        for chunk in pd.read_csv(clean_data_path, index_col=0, chunksize=chunk_size):
+            processed_chunk = self._process_and_filter_chunk(
+                chunk, treatment_names, outcome_names, date_cutoff
+            )
+
+            if not processed_chunk.empty:
+                processed_chunk.index = range(
+                    row_index, row_index + len(processed_chunk)
+                )
+                row_index += len(processed_chunk)
+
+                # Write header only for first chunk
+                processed_chunk.to_csv(
+                    save_path, mode="w" if first_chunk else "a", header=first_chunk
+                )
+                valid_count += len(processed_chunk)
+                first_chunk = False
+
+        if valid_count == 0:
+            columns = pd.read_csv(clean_data_path, nrows=0).columns.tolist()
+            empty_df = pd.DataFrame(columns=columns + ["treatments", "outcomes"])
+            empty_df.to_csv(save_path)
+            logger.warning(f"No valid matches found for experiment {experiment.nct_id}")
+
+        return save_path, valid_count
+
+    def _process_and_filter_chunk(
+        self,
+        chunk: pd.DataFrame,
+        treatment_names: list,
+        outcome_names: list,
+        date_cutoff: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """Process chunk and apply all filters in one pass."""
+        chunk = chunk.fillna("")
+
+        # Date filter first
+        if date_cutoff:
+
+            def parse_date(date_str):
+                try:
+                    dt = datetime.datetime.strptime(date_str, "%B %d, %Y")
+                    return int(dt.replace(tzinfo=datetime.timezone.utc).timestamp())
+                except:
+                    return float("inf")
+
+            timestamps = chunk["date_created"].map(parse_date)
+            date_mask = timestamps <= date_cutoff
+            chunk = chunk[date_mask]
+
+            if chunk.empty:
+                return pd.DataFrame()
+
+        # Vectorized text matching
+        combined_text = (
+            chunk["subreddit"].astype(str)
+            + " "
+            + chunk["title"].astype(str)
+            + " "
+            + chunk["post"].astype(str)
+            + " "
+            + chunk["initial_post"].astype(str)
+        ).str.lower()
+
+        # Create boolean masks for treatments and outcomes
+        treatment_masks = [
+            combined_text.str.contains(name, regex=False, na=False)
+            for name in treatment_names
+        ]
+        outcome_masks = [
+            combined_text.str.contains(name, regex=False, na=False)
+            for name in outcome_names
+        ]
+
+        # Combine masks
+        has_treatment = (
+            pd.concat(treatment_masks, axis=1).any(axis=1)
+            if treatment_masks
+            else pd.Series([False] * len(chunk))
+        )
+        has_outcome = (
+            pd.concat(outcome_masks, axis=1).any(axis=1)
+            if outcome_masks
+            else pd.Series([False] * len(chunk))
         )
 
-        # Convert treatment and outcome names to lowercase once
-        treatment_names_lower = [name.lower() for name in treatment_names]
-        outcome_names_lower = [name.lower() for name in outcome_names]
+        valid_mask = has_treatment & has_outcome
 
-        # Fully vectorized approach using pandas string operations
-        def find_matches(df, names_list):
-            """Find matches using fully vectorized pandas operations"""
-            # Combine all text columns into one
-            combined_text: pd.Series = (
-                df["subreddit_lower"]
-                + " "
-                + df["title_lower"]
-                + " "
-                + df["post_lower"]
-                + " "
-                + df["initial_post_lower"]
-            )
+        if not valid_mask.any():
+            return pd.DataFrame()
 
-            matches_list = []
-            for name in names_list:
-                # Use vectorized string contains
-                mask = combined_text.str.contains(name, regex=False, na=False)
-                matches_list.append(mask)
+        # Get valid rows and find specific matches
+        result = chunk[valid_mask].copy()
+        valid_combined_text = combined_text[valid_mask]
 
-            # For each row, collect which names matched
-            row_matches = []
-            for i in range(len(df)):
-                matches = [
-                    names_list[j] for j, mask in enumerate(matches_list) if mask.iloc[i]
-                ]
-                row_matches.append(set(matches))
+        treatments_list = []
+        outcomes_list = []
 
-            return row_matches
+        for text in valid_combined_text:
+            found_treatments = [name for name in treatment_names if name in text]
+            found_outcomes = [name for name in outcome_names if name in text]
+            treatments_list.append(found_treatments)
+            outcomes_list.append(found_outcomes)
 
-        # Find treatment and outcome matches
-        treatment_matches = find_matches(clean_data, treatment_names_lower)
-        outcome_matches = find_matches(clean_data, outcome_names_lower)
+        result["treatments"] = treatments_list
+        result["outcomes"] = outcomes_list
 
-        # Filter rows that have both treatment and outcome matches
-        valid_indices = []
-        valid_treatments = []
-        valid_outcomes = []
-
-        for i, (t_matches, o_matches) in enumerate(
-            zip(treatment_matches, outcome_matches)
-        ):
-            if len(t_matches) > 0 and len(o_matches) > 0:
-                valid_indices.append(i)
-                # Convert back to original case for storage
-                valid_treatments.append(list(t_matches))
-                valid_outcomes.append(list(o_matches))
-
-        if not valid_indices:
-            # No matches found, return empty DataFrame
-            exp_df = pd.DataFrame(
-                columns=list(clean_data.columns) + ["treatments", "outcomes"]
-            )
-            logger.warning(
-                f"No valid treatment/outcome matches found for experiment {experiment.nct_id}. "
-                "Returning empty DataFrame."
-            )
-        else:
-            # Create filtered DataFrame efficiently
-            exp_df = clean_data.iloc[valid_indices].copy()
-
-            # Remove the temporary lowercase columns
-            exp_df = exp_df.drop(
-                columns=[
-                    "subreddit_lower",
-                    "title_lower",
-                    "post_lower",
-                    "initial_post_lower",
-                ]
-            )
-
-            # Add treatment and outcome columns
-            exp_df["treatments"] = valid_treatments
-            exp_df["outcomes"] = valid_outcomes
-
-            # Reset index
-            exp_df = exp_df.reset_index(drop=True)
-
-        if filter_by_date and not exp_df.empty:
-            exp_df = _date_filter(exp_df, experiment.date)
-            exp_df.reset_index(drop=True, inplace=True)
-
-        exp_df.to_csv(save_path)
-        return save_path, len(exp_df)
+        return result.reset_index(drop=True)
 
     @staticmethod
     def get_common_name_prompts() -> dict[str, list[dict[str, str]]]:
@@ -381,10 +411,10 @@ class RedditSource:
         base_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
         )
-        t_prompt = load_prompt(
+        t_prompt: list[dict[str, str]] = load_prompt(
             base_dir, "common_name_treatment", return_format="messages", source="Reddit"
         )
-        o_prompt = load_prompt(
+        o_prompt: list[dict[str, str]] = load_prompt(
             base_dir, "common_name_outcome", return_format="messages", source="Reddit"
         )
         return {"treatment": t_prompt, "outcome": o_prompt}

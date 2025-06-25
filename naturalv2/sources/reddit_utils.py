@@ -405,21 +405,6 @@ def _get_comment_permalink(permalink: str) -> str:
     return "/" + permalink.split("/")[-3] + "/"
 
 
-def _get_utc_timestamp(date_str: str) -> int:
-    dt = datetime.datetime.strptime(date_str, "%B %d, %Y")
-    dt = dt.replace(tzinfo=datetime.timezone.utc)
-    return int(dt.timestamp())
-
-
-def _date_filter(df: pd.DataFrame, date_str: str) -> pd.DataFrame:
-    """Filters the DataFrame based on the date created column."""
-    date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-    utc_date_cutoff = int(date_obj.replace(tzinfo=datetime.timezone.utc).timestamp())
-
-    idx = df["date_created"].apply(lambda x: _get_utc_timestamp(x) <= utc_date_cutoff)
-    return df[idx]
-
-
 def _get_date(utc_timestamp: float) -> str:
     dt = datetime.datetime.fromtimestamp(utc_timestamp, tz=datetime.timezone.utc)
     return dt.strftime("%B %d, %Y")
