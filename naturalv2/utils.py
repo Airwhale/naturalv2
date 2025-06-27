@@ -3,7 +3,7 @@ import logging
 import os
 import re
 from string import Template
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, create_model
 
@@ -24,69 +24,23 @@ class ListResponse(BaseModel):
 
 
 def create_response_format(
-    name: str, keys: List[str], types: Optional[Dict[str, Type]] = None
+    name: str, keys: list[str], types: Optional[dict[str, Type]] = None
 ) -> BaseModel:
     "Generate a Pydantic model with fields specified by the given keys."
 
+    if types is None:
+        types = dict.fromkeys(keys, Any)
+
     fields = {key: (types.get(key, Any), ...) for key in keys}
+
     return create_model(name, **fields)
-
-
-class TYFilterResponse(BaseModel):
-    """Response format for treatment-outcome filter stage"""
-
-    start_weight: Union[float, Literal["Unknown"]]
-    end_weight: Union[float, Literal["Unknown"]]
-    weight_unit: Literal["kg", "lb", "Unknown"]
-    weight_change: Union[float, Literal["Unknown"]]
-    percentage_weight_change: Union[float, Literal["Unknown"]]
-    treatment: Literal["Semaglutide", "Tirzepatide", "Other", "Unknown"]
-
-
-class KnownsResponse(BaseModel):
-    t2dm: Literal["Yes", "No", "Unknown"]
-    metformin: Literal["Yes", "No", "Unknown"]
-    bmi: Union[float, Literal["Unknown"]]
-    age: Union[int, Literal["Unknown"]]
-    sex: Literal["Male", "Female", "Unknown"]
-    start_HbA1c: Union[float, Literal["Unknown"]]  # noqa: N815
-    end_HbA1c: Union[float, Literal["Unknown"]]  # noqa: N815
-    country: Union[str, Literal["Unknown"]]
-    start_weight: Union[float, Literal["Unknown"]]
-    end_weight: Union[float, Literal["Unknown"]]
-    weight_unit: Literal["kg", "lb", "Unknown"]
-    weight_change: Union[float, Literal["Unknown"]]
-    percentage_weight_change: Union[float, Literal["Unknown"]]
-    duration_days: Union[int, Literal["Unknown"]]
-    treatment: Literal[
-        "Semaglutide",
-        "Tirzepatide",
-        "Ozempic",
-        "Wegovy",
-        "Rybelsus",
-        "Mounjaro",
-        "Zepbound",
-        "Unknown",
-    ]
-    dosage: Union[float, Literal["Unknown"]]
-    target_achieved: Literal["Yes", "No", "Unknown"]
-
-
-class ImputationsResponse(BaseModel):
-    bmi: Union[float, Literal["Unknown"]]
-    age: Union[int, Literal["Unknown"]]
-    sex: Literal["Male", "Female", "Unknown"]
-    start_HbA1c: Union[float, Literal["Unknown"]]  # noqa: N815
-    country: Union[str, Literal["Unknown"]]
-    start_weight: Union[float, Literal["Unknown"]]
-    duration_days: Union[int, Literal["Unknown"]]
 
 
 def load_prompt(
     base_dir: str,
     prompt_type: str,
     return_format: Optional[Literal["messages", "prompt"]] = None,
-    **user_prompt_format_kwargs: dict[str, str],
+    **user_prompt_format_kwargs: Any,
 ) -> Union[str, list[dict[str, str]]]:
     if return_format not in ["messages", "prompt", None]:
         raise ValueError("return_format must be either 'messages', 'prompt', or None.")
@@ -156,14 +110,16 @@ def get_save_path(
     nct_id: str,
     model_name: str,
     extract_type: str,
-    outcome: str,
+    outcome: Optional[str] = None,
 ) -> str:
     """Generate save path for extracted data."""
     return os.path.join(
         base_path,
         "results",
         f"{nct_id}",
-        f"{model_name.replace('/', '-')}_{extract_type}_{outcome}.csv",
+        f"{model_name.replace('/', '-')}_{extract_type}.csv"
+        if outcome is None
+        else f"{model_name.replace('/', '-')}_{extract_type}_{outcome}.csv",
     )
 
 
