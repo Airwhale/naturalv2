@@ -222,7 +222,7 @@ class RedditSource:
                 finally:
                     pbar.update(1)
 
-        rule_filtered_df = rule_filtered_df.drop_duplicates("post")
+        rule_filtered_df = rule_filtered_df.drop_duplicates("report")
         rule_filtered_df.to_csv(save_path)
         return save_path, len(rule_filtered_df)
 
@@ -310,7 +310,9 @@ class RedditSource:
 
         if valid_count == 0:
             columns = pd.read_csv(clean_data_path, nrows=0).columns.tolist()
-            empty_df = pd.DataFrame(columns=columns + ["treatments", "outcomes"])
+            empty_df = pd.DataFrame(
+                columns=columns + ["treatments_mentioned", "outcome_words"]
+            )
             empty_df.to_csv(save_path)
             logger.warning(f"No valid matches found for experiment {experiment.nct_id}")
 
@@ -349,7 +351,7 @@ class RedditSource:
             + " "
             + chunk["title"].astype(str)
             + " "
-            + chunk["post"].astype(str)
+            + chunk["report"].astype(str)
             + " "
             + chunk["initial_post"].astype(str)
         ).str.lower()
@@ -394,8 +396,8 @@ class RedditSource:
             treatments_list.append(found_treatments)
             outcomes_list.append(found_outcomes)
 
-        result["treatments"] = treatments_list
-        result["outcomes"] = outcomes_list
+        result["treatments_mentioned"] = treatments_list
+        result["outcome_words"] = outcomes_list
 
         return result.reset_index(drop=True)
 
