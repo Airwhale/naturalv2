@@ -3,7 +3,7 @@ import logging
 import os
 import re
 from string import Template
-from typing import Any, Literal, Optional, Type, Union
+from typing import Any, Literal
 
 from pydantic import BaseModel, create_model
 
@@ -20,18 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 class ListResponse(BaseModel):
-    output: Optional[list[str]]
+    output: list[str] | None
 
 
 def create_response_format(
-    name: str, keys: list[str], types: Optional[dict[str, Type]] = None
+    name: str, keys: list[str], types: dict[str, Any] | None = None
 ) -> BaseModel:
     "Generate a Pydantic model with fields specified by the given keys."
 
     if types is None:
         types = dict.fromkeys(keys, Any)
 
-    fields = {key: (types.get(key, Any), ...) for key in keys}
+    fields = {key: (types.get(key, Any)) for key in keys}
 
     return create_model(name, **fields)
 
@@ -39,9 +39,9 @@ def create_response_format(
 def load_prompt(
     base_dir: str,
     prompt_type: str,
-    return_format: Optional[Literal["messages", "prompt"]] = None,
+    return_format: Literal["messages", "prompt"] | None = None,
     **user_prompt_format_kwargs: Any,
-) -> Union[str, list[dict[str, str]]]:
+) -> str | list[dict[str, str]]:
     if return_format not in ["messages", "prompt", None]:
         raise ValueError("return_format must be either 'messages', 'prompt', or None.")
 
@@ -62,7 +62,7 @@ def load_prompt(
 
     # 'system_prompt_template' is optional, but if it exists, construct and return
     # a list of dictionaries with 'role' and 'content' keys
-    system_prompt: Optional[str] = prompt_data.get("system_prompt_template")
+    system_prompt: str | None = prompt_data.get("system_prompt_template")
     if system_prompt:
         logger.debug(f"System prompt loaded from {prompt_type}.json: {system_prompt}")
 
@@ -110,7 +110,7 @@ def get_save_path(
     nct_id: str,
     model_name: str,
     extract_type: str,
-    outcome: Optional[str] = None,
+    outcome: str | None = None,
 ) -> str:
     """Generate save path for extracted data."""
     return os.path.join(
@@ -123,14 +123,14 @@ def get_save_path(
     )
 
 
-def check_nonplacebo(intervention_names: Optional[list[str]]) -> bool:
+def check_nonplacebo(intervention_names: list[str] | None) -> bool:
     nonplacebo_interventions = [
         name for name in (intervention_names or []) if "placebo" not in name.lower()
     ]
     return len(nonplacebo_interventions) > 0
 
 
-def check_noncontrol(intervention_type: Optional[ArmGroupType]) -> bool:
+def check_noncontrol(intervention_type: ArmGroupType | None) -> bool:
     return intervention_type != ArmGroupType.NO_INTERVENTION
 
 
@@ -177,7 +177,7 @@ def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
         == DesignAllocation.RANDOMIZED
     ):
         stats["randomized"] = 1
-        arm_groups: Optional[list[ArmGroup]] = get_nested_value(
+        arm_groups: list[ArmGroup] | None = get_nested_value(
             trial, "protocolSection.armsInterventionsModule.armGroups"
         )
         noncontrol_arms = [
@@ -194,7 +194,7 @@ def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
                 stats["nonhealthy"] = 1
                 binary = False
 
-                endpoints: Optional[list[Outcome]] = get_nested_value(
+                endpoints: list[Outcome] | None = get_nested_value(
                     trial, "protocolSection.outcomesModule.primaryOutcomes"
                 )
                 for endpoint in endpoints or []:
@@ -207,7 +207,7 @@ def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
     return stats, False
 
 
-def get_nested_value(data: Any, path: str) -> Optional[Any]:
+def get_nested_value(data: Any, path: str) -> Any | None:
     """
     Gets a value from a deeply nested data structure using a path string.
 
