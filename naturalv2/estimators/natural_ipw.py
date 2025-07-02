@@ -15,7 +15,8 @@ class NaturalIPW:
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
         feat_dicts = [
-            self.experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat
+            self.experiment.apply_transform(dct, repr_type="numeric")
+            for dct in idx_to_feat
         ]
         prop_score_lst = []
 
@@ -49,7 +50,8 @@ class NaturalIPW:
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
         feat_dicts = [
-            self.experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat
+            self.experiment.apply_transform(dct, repr_type="numeric")
+            for dct in idx_to_feat
         ]
 
         conditionals.loc[:, "ty_given_x_probs"] = conditionals.apply(
