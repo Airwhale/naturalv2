@@ -347,11 +347,18 @@ def download_sub_data(
 
     file_path = os.path.join(data_path, "{}_{}.zst".format(subreddit, data_type))
     if not os.path.exists(file_path):
-        _ = wget.download(
-            "https://the-eye.eu/redarcs/files/{}_{}.zst".format(subreddit, data_type),
-            out=data_path,
-            bar=None,
-        )
+        # Go to TMPDIR if set, otherwise stay current working directory, since wget doesn't respect TMPDIR
+        tmpdir = os.environ.get("TMPDIR", os.getcwd())
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            _ = wget.download(
+                "https://the-eye.eu/redarcs/files/{}_{}.zst".format(subreddit, data_type),
+                out=data_path,
+                bar=None,
+            )
+        finally:
+            os.chdir(original_cwd)
 
     file_lines = 0
     bad_lines = 0
