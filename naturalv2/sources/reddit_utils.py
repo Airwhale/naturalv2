@@ -353,7 +353,9 @@ def download_sub_data(
         try:
             os.chdir(tmpdir)
             _ = wget.download(
-                "https://the-eye.eu/redarcs/files/{}_{}.zst".format(subreddit, data_type),
+                "https://the-eye.eu/redarcs/files/{}_{}.zst".format(
+                    subreddit, data_type
+                ),
                 out=data_path,
                 bar=None,
             )
