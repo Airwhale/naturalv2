@@ -15,7 +15,8 @@ class NaturalOI:
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
         feat_dicts = [
-            self.experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat
+            self.experiment.apply_transform(dct, repr_type="numeric")
+            for dct in idx_to_feat
         ]
 
         outcome_conditionals = np.zeros((len(feat_dicts), self.num_treat))
@@ -47,7 +48,8 @@ class NaturalOI:
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
         feat_dicts = [
-            self.experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat
+            self.experiment.apply_transform(dct, repr_type="numeric")
+            for dct in idx_to_feat
         ]
 
         conditionals.loc[:, "y_given_tx_probs"] = conditionals.apply(
