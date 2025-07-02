@@ -14,7 +14,9 @@ class NaturalIPW:
     def compute_prop_score(self, conditionals):
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
-        feat_dicts = [self.experiment.transform_samples(dct) for dct in idx_to_feat]
+        feat_dicts = [
+            self.experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat
+        ]
         prop_score_lst = []
 
         for i in range(len(feat_dicts)):
@@ -46,7 +48,9 @@ class NaturalIPW:
         # outcome_idx = self.experiment.outcome_names.index(outcome)
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
-        feat_dicts = [self.experiment.transform_samples(dct) for dct in idx_to_feat]
+        feat_dicts = [
+            self.experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat
+        ]
 
         conditionals.loc[:, "ty_given_x_probs"] = conditionals.apply(
             lambda row: np.array(

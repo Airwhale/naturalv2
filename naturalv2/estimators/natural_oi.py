@@ -14,7 +14,9 @@ class NaturalOI:
     def compute_outcome_cond(self, conditionals):
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
-        feat_dicts = [self.experiment.transform_samples(dct) for dct in idx_to_feat]
+        feat_dicts = [
+            self.experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat
+        ]
 
         outcome_conditionals = np.zeros((len(feat_dicts), self.num_treat))
 
@@ -44,7 +46,9 @@ class NaturalOI:
         # outcome_idx = self.experiment.outcome_names.index(outcome)
         options = enumerate_strings(self.experiment.get_options(self.covariate_names))
         idx_to_feat = enum_to_dcts(options, self.covariate_names)
-        feat_dicts = [self.experiment.transform_samples(dct) for dct in idx_to_feat]
+        feat_dicts = [
+            self.experiment.apply_transform(dct, repr_type="numeric") for dct in idx_to_feat
+        ]
 
         conditionals.loc[:, "y_given_tx_probs"] = conditionals.apply(
             lambda row: np.array(
