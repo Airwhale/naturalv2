@@ -1,9 +1,12 @@
-import json
+import ast
+import gzip 
 import logging
 import os
+import pandas as pd
 import re
 from string import Template
 from typing import Any, Literal
+import xml.etree.ElementTree as ET
 
 from pydantic import BaseModel, create_model
 
@@ -257,6 +260,61 @@ def get_nested_value(data: Any, path: str) -> Any | None:
 
     return current
 
+
+def get_drugbank_aliases(data_path: str, drug_name: str) -> list[str]:
+    alias_path = os.path.join(data_path, "drugbank_aliases.csv")
+    if os.path.exists(alias_path):
+        aliases_df = pd.read_csv(alias_path, index_col=0)
+    else:
+        file_path = os.path.join(data_path, "full_database.xml.gz")
+        with gzip.open(file_path, "rt") as xml_file:
+            tree = ET.parse(xml_file)
+            root = tree.getroot()
+            ns = '{http://www.drugbank.ca}' 
+            aliases_dicts = []
+
+            for drug in root.findall(ns + 'drug'):
+                aliases = []
+                
+                name_elem = drug.find(ns + 'name')
+                if name_elem is not None and name_elem.text:
+                    aliases.append(name_elem.text.strip().lower())
+                
+                synonyms_elem = drug.find(ns + 'synonyms')
+                if synonyms_elem is not None:
+                    for syn_elem in synonyms_elem.findall(ns + 'synonym'):
+                        if syn_elem.text:
+                            aliases.append(syn_elem.text.strip().lower())
+                
+                products_elem = drug.find(ns + 'products')
+                if products_elem is not None:
+                    for product_elem in products_elem.findall(ns + 'product'):
+                        name_elem = product_elem.find(ns + 'name')
+                        if name_elem is not None and name_elem.text:
+                            aliases.append(name_elem.text.strip().lower())
+                
+                intl_brands_elem = drug.find(ns + 'international-brands')
+                if intl_brands_elem is not None:
+                    for intl_brand_elem in intl_brands_elem.findall(ns + 'international-brand'):
+                        name_elem = intl_brand_elem.find(ns + 'name')
+                        if name_elem is not None and name_elem.text:
+                            aliases.append(name_elem.text.strip().lower())
+                
+                aliases = list(set(aliases))
+                aliases_dicts.append({
+                    "aliases": str(aliases)
+                })
+        aliases_df = pd.DataFrame(aliases_dicts)
+        aliases_df.to_csv(alias_path)
+
+    aliases = []
+    for idx, row in aliases_df.iterrows():
+        aliases_list = ast.literal_eval(row["aliases"])
+        if any(drug_name.lower() == alias.lower() for alias in aliases_list):
+            aliases = aliases_list
+            break
+            
+    return aliases
 
 def qa_interleaved_enum(q_dct, options_dct, a_enum, to_enum):
     all_interleaved_options = []
