@@ -1,6 +1,7 @@
 """Module for downloading and processing Reddit data."""
 
 import datetime
+import json
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -8,12 +9,14 @@ from functools import partial
 from typing import Optional
 
 import pandas as pd
+import praw
 import psutil
 from omegaconf import DictConfig
 from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from naturalv2.evals.experiment import Experiment
+from naturalv2.models.lm import build_lm_instance_from_cfg, extract_list_response
 from naturalv2.sources.anonymizer import Anonymizer
 from naturalv2.sources.reddit_utils import (
     _get_context_post_df,
@@ -21,7 +24,7 @@ from naturalv2.sources.reddit_utils import (
     get_sub_about_info,
     rule_based_filter,
 )
-from naturalv2.utils import load_prompt
+from naturalv2.utils import ListResponse, load_prompt
 
 
 logger = logging.getLogger(__name__)
@@ -73,8 +76,23 @@ class RedditSource:
         self._subs_data_dir = os.path.join(self.data_path, "subs_data")
         os.makedirs(self._subs_data_dir, exist_ok=True)
 
+        self._anonymizer = None
         if anonymize:
             self._anonymizer = Anonymizer(score_threshold=anonymizer_score_threshold)
+
+    def get_subreddits_from_llm(self, llm_input):
+        lm = build_lm_instance_from_cfg(self.lm_cfg)
+
+        messages: list[dict[str, str]] = load_prompt(
+            base_dir="naturalv2/prompts",
+            prompt_type="condition_subreddits",
+            return_format="messages",
+            **llm_input,
+        )
+
+        response = lm.call_sync(messages=messages, response_format=ListResponse)
+        subreddits = extract_list_response(response)
+        return subreddits[0]
 
     def condition_filter(self, keywords: list[str]) -> list[str]:
         """Filter subreddits based on keywords in their description.
@@ -89,19 +107,44 @@ class RedditSource:
         list[str]
             List of paths to the downloaded data files for relevant subreddits.
         """
-        # get information about subreddits
         subs_about = get_sub_about_info(self.data_path)
+        pushshift_subreddits = subs_about["sub"].to_list()
+        reddit = praw.Reddit(
+            client_id=os.environ.get("PRAW_CLIENT_ID"),
+            client_secret=os.environ.get("PRAW_CLIENT_SECRET"),
+            password=os.environ.get("PRAW_PWD"),
+            username=os.environ.get("PRAW_USERNAME"),
+            user_agent=os.environ.get("PRAW_AGENT"),
+        )
 
-        # use keywords to filter subreddits based on their description
-        self.relevant_subs = []
-        for row in subs_about.iterrows():
-            sub_name, desc, public_desc = row[1].to_list()
-            sub_info = f"Subreddit: r/{sub_name}.\nDescription: {desc}\nPublic description: {public_desc}"
+        self.relevant_subs = set()
+        condition_subreddits: dict[str, list[str]] = {}
+        for word in keywords:
+            if word not in condition_subreddits:
+                subreddits = [
+                    subreddit.display_name
+                    for subreddit in reddit.subreddits.search(word)
+                ]
+                relevant_subs = set(subreddits).intersection(pushshift_subreddits)
+                llm_input = []
+                for subreddit in relevant_subs:
+                    posts = [
+                        "**Title**: " + submission.title + "\n\n" + "**Post content**: " + submission.selftext[:1000]
+                        for submission in reddit.subreddit(subreddit).search(word)
+                    ][:5]
+                    llm_input.append({"subreddit": subreddit, "example_posts": posts})
+                llm_input = {
+                    "condition": word,
+                    "input": json.dumps(llm_input, indent=4) #TODO: thinking budget
+                }
+                relevant_subs = self.get_subreddits_from_llm(llm_input)
+                condition_subreddits[word] = relevant_subs
+            else:
+                relevant_subs = condition_subreddits[word]
+            
+            self.relevant_subs.update(relevant_subs)
 
-            if any(keyword.lower() in sub_info.lower() for keyword in keywords):
-                self.relevant_subs.append(sub_name)
-                logger.info(f"Keyword matching found subreddit r/{sub_name}")
-
+        self.relevant_subs = list(self.relevant_subs)
         logger.info(f"{len(self.relevant_subs)} relevant subreddits found!")
 
         condition_data_paths = []

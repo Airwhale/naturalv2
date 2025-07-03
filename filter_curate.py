@@ -409,7 +409,7 @@ class _DataCurator:
 
         for result in llm_results.values():
             if result.success and result.common_names:
-                grouped[result.nct_id][result.attribute].extend(result.common_names)
+                grouped[result.nct_id][result.attribute].extend(result.common_names + [result.name]) # include original attribute name 
 
         # Remove duplicates and convert to regular dict
         final_grouped: dict[str, dict[str, list[str]]] = {}
@@ -659,6 +659,7 @@ async def _curate_experiments(
         + ["test"] * len(test_ncts)
     )
     all_ncts = train_ncts + val_ncts + test_ncts
+    splits, all_ncts = ["train"] * 11, train_ncts[:5] + train_ncts[-5:] + ["NCT03828539"] #TODO: remove after testing
 
     # Prepare experiment tasks (no LLM tasks yet)
     logger.info(
@@ -714,6 +715,18 @@ def main(cfg: DictConfig) -> None:
     val_ncts = [list(trial.keys())[0] for trial in study.val_trials]
     test_ncts = [list(trial.keys())[0] for trial in study.test_trials]
 
+    splits = (
+        ["train"] * len(train_ncts) + ["val"] * len(val_ncts) + ["test"] * len(test_ncts)
+    )
+    all_ncts = train_ncts + val_ncts + test_ncts
+    splits, all_ncts = ["train"] * 11, train_ncts[:5] + train_ncts[-5:] + ["NCT03828539"] #TODO: remove after testing
+    condition_keywords = set()
+    for nct_id, split in zip(all_ncts, splits):
+        status = "active" if split == "test" else "completed"
+        exp = Experiment("/mfs1/u/nikita/naturalv2/", nct_id, status=status)
+        condition_keywords.update(exp.conditions if exp.conditions else [])    
+    condition_keywords = list(condition_keywords)
+
     # create study dataset
     study_dataset_file = os.path.join(
         cfg.data_path,
@@ -735,10 +748,7 @@ def main(cfg: DictConfig) -> None:
             )
 
             if f"{source_name}_condition_filtered" not in study_dataset.data_paths:
-                keywords = _get_keywords_from_llm(
-                    study, source_name, cfg[source_name].lm_cfg
-                )
-                condition_filter_paths = source_dataset.condition_filter(keywords)
+                condition_filter_paths = source_dataset.condition_filter(condition_keywords)
                 study_dataset.data_paths.update(
                     {f"{source_name}_condition_filtered": condition_filter_paths}
                 )
