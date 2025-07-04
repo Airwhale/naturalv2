@@ -728,11 +728,9 @@ class Experiment:
         # Persist the transforms for later use
         # NOTE: This helps in the case where the experiment is run multiple times
         # so that transforms are available after the first run.
-        self.to_yaml(
-            str(
-                Path(self.trial_path).parents[1] / "experiments" / f"{self.nct_id}.yaml"
-            )
-        )
+        exp_dir = Path(self.trial_path).parents[1] / "experiments"
+        exp_dir.mkdir(mode=755, parents=True, exist_ok=True)
+        self.to_yaml(str(exp_dir / f"{self.nct_id}.yaml"))
 
     def _set_questions(self) -> None:
         """Set the prompts for each feature in the experiment."""
