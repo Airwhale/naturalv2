@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from ast import literal_eval
 
 import hydra
 import numpy as np
@@ -68,8 +69,7 @@ def weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame) -> np.n
     """
     # ites has shape [num_treatments, num_datapoints]
     probs = inclusion_probs.apply(
-        lambda row: [float(prob) for prob in row["inclusion_probs"][1:-1].split()][1],
-        axis=1,
+        lambda row: literal_eval(row["inclusion_probs"])[1], axis=1
     ).to_numpy()
     return np.average(ites, axis=1, weights=probs)
 
@@ -101,10 +101,11 @@ def calculate_treatment_effects(
     """
     result_dicts = []
 
-    if hasattr(estimator, "estimator_type"):
-        all_ites = estimator.get_ites(extractions, outcome)
+    if isinstance(estimator, NaturalMC):
+        all_ites = estimator.get_individual_treatment_effects(extractions, outcome)
     else:
-        all_ites = estimator.get_ites(extractions)
+        all_ites = estimator.get_individual_treatment_effects(extractions)
+
     weighted_effects = weight_by_inclusion(all_ites, extractions)  # len: num_treatments
 
     for i, treat1 in enumerate(experiment.treatment_names):
@@ -120,7 +121,7 @@ def calculate_treatment_effects(
                 logger.info(f"Predicted ATE: {pred_ate}")
                 if experiment.status == "completed":
                     effect_idx = experiment.outcome_treatment.index(
-                        (outcome, (treat1, treat2))
+                        [outcome, [treat1, treat2]]
                     )
                     true_ate = experiment.effect_sizes[effect_idx]
                     error = abs(pred_ate - true_ate)
@@ -237,7 +238,8 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                 _save_results(results, cfg.save_path, experiment.nct_id)
             except Exception as e:
                 logger.error(
-                    f"Error processing {nct_id} with source '{source_name}' and outcome '{outcome}': {e}"
+                    f"Error processing {nct_id} with source '{source_name}' and outcome '{outcome}': {e}",
+                    exc_info=True,
                 )
                 continue
 

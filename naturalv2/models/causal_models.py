@@ -1,5 +1,32 @@
+from dataclasses import dataclass
+
+import pandas as pd
 from causallib.estimation import IPW, MarginalOutcomeEstimator, Standardization
 from sklearn.linear_model import LinearRegression, LogisticRegression
+
+
+@dataclass
+class CausalData:
+    """Data container for causal estimation."""
+
+    X: pd.DataFrame
+    T: pd.Series
+    Y: pd.Series
+
+    def __post_init__(self):
+        """Validate data after initialization."""
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate data consistency."""
+        if len(self.X) != len(self.T) or len(self.T) != len(self.Y):
+            raise ValueError("X, T, and Y must have the same length")
+
+        if self.X.isnull().any().any():
+            raise ValueError("X contains missing values")
+
+        if self.T.isnull().any() or self.Y.isnull().any():
+            raise ValueError("T or Y contains missing values")
 
 
 class DifferenceInMeans(object):
@@ -10,19 +37,17 @@ class DifferenceInMeans(object):
         self.outcome_y = True
         self.model = self.model_class(learner=self.learner)
 
-    def fit(self, data):
-        xs, ts, ys = data
+    def fit(self, data: CausalData) -> None:
         if self.fit_y:
-            self.model.fit(xs, ts, ys)
+            self.model.fit(data.X, data.T, data.Y)
         else:
-            self.model.fit(xs, ts)
+            self.model.fit(data.X, data.T)
 
-    def get_effect(self, data):
-        xs, ts, ys = data
+    def estimate_individual_outcomes(self, data: CausalData) -> pd.Series:
         if self.outcome_y:
-            outcomes = self.model.estimate_population_outcome(xs, ts, ys)
+            outcomes = self.model.estimate_population_outcome(data.X, data.T, data.Y)
         else:
-            outcomes = self.model.estimate_population_outcome(xs, ts)
+            outcomes = self.model.estimate_population_outcome(data.X, data.T)
         return self.model.estimate_effect(outcomes[1], outcomes[0])["diff"]
 
 
@@ -35,12 +60,11 @@ class IPSW(DifferenceInMeans):
         self.outcome_y = True
         self.model = self.model_class(learner=self.learner)
 
-    def estimate_individual_outcomes(self, data):
+    def estimate_individual_outcomes(self, data: CausalData) -> pd.Series:
         # ITE doesn't quite make sense for a MC version of IPW - we return y/P(T=t|x) for each unit.
-        xs, ts, ys = data
-        ipw_scores = self.model.compute_weights(xs, ts)
-        ipw_scores *= len(xs) / sum(ipw_scores)  # Hajek estmator
-        return ys * ipw_scores
+        ipw_scores = self.model.compute_weights(data.X, data.T)
+        ipw_scores *= len(data.X) / sum(ipw_scores)  # Hajek estmator
+        return data.Y * ipw_scores
 
 
 class OutcomeImputation(DifferenceInMeans):
@@ -52,6 +76,7 @@ class OutcomeImputation(DifferenceInMeans):
         self.outcome_y = False
         self.model = self.model_class(learner=self.learner)
 
-    def estimate_individual_outcomes(self, data):
-        xs, ts, _ = data
-        return self.model.estimate_individual_outcome(xs, ts, treatment_values=None)
+    def estimate_individual_outcomes(self, data: CausalData) -> pd.Series:
+        return self.model.estimate_individual_outcome(
+            data.X, data.T, treatment_values=None
+        )
