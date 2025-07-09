@@ -1,5 +1,6 @@
 import ast
 import gzip 
+import json
 import logging
 import os
 import pandas as pd
@@ -310,9 +311,13 @@ def get_drugbank_aliases(data_path: str, drug_name: str) -> list[str]:
     aliases = []
     for idx, row in aliases_df.iterrows():
         aliases_list = ast.literal_eval(row["aliases"])
-        if any(drug_name.lower() == alias.lower() for alias in aliases_list):
-            aliases = aliases_list
-            break
+        if any(
+            drug_name.lower() == alias.lower() 
+            # or drug_name.lower() in alias.lower() 
+            # or alias.lower() in drug_name.lower()
+            for alias in aliases_list
+        ):
+            aliases += aliases_list
             
     return aliases
 

@@ -246,7 +246,7 @@ class TreatmentOutcomeFilterStage(SampleExtractionStage):
             ty_samples,
             t_col=TREAMENT_COL_NAME,
             y_col=OUTCOME_COL_NAME,
-            outcome=context.outcome,
+            # outcome=context.outcome,
         )
         logger.info(f"After treatment-outcome filter: {len(self.data)} reports.")
         return self.data

@@ -207,9 +207,9 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     ignore_index=True,
                 )
                 # TODO: remove subsampling after testing
-                curated_df = curated_df.sample(
-                    frac=0.05, random_state=cfg.seed, ignore_index=True
-                )
+                # curated_df = curated_df.sample(
+                #     frac=0.05, random_state=cfg.seed, ignore_index=True
+                # )
                 logger.info(
                     f"Initial number of curated reports: {len(curated_df)} reports."
                 )

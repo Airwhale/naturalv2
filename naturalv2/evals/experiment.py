@@ -23,6 +23,7 @@ from naturalv2.utils import (
     check_binary_endpoint,
     check_noncontrol,
     check_nonplacebo,
+    get_drugbank_aliases,
     get_nested_value,
     load_prompt,
 )
@@ -38,6 +39,7 @@ class Experiment:
         nct_id: str,
         status: Literal["completed", "active"] = "completed",
     ) -> None:
+        self.data_path = data_path
         if status == "active":
             self.trial_path = os.path.join(data_path, f"nct_reports_test/{nct_id}.json")
         else:
@@ -347,6 +349,9 @@ class Experiment:
             treatment.title if isinstance(treatment, MeasureGroup) else treatment.label
             for treatment in treatments
         ]
+        for drug_name in self.treatment_names:
+            self.treatment_names += get_drugbank_aliases(self.data_path, drug_name) 
+
         self.outcome_names: list[str] = [
             outcome.title if isinstance(outcome, OutcomeMeasure) else outcome.measure
             for outcome in outcomes
