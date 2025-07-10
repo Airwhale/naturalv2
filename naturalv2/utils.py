@@ -5,6 +5,7 @@ import logging
 import os
 import pandas as pd
 import re
+from itertools import product
 from string import Template
 from typing import Any, Literal
 import xml.etree.ElementTree as ET
@@ -349,39 +350,23 @@ def concatenate_q(dct):
     return all_qs
 
 
-def enumerate_strings(dct, string=True):
-    keys = list(dct.keys())
-    keys.reverse()
-    num = len(keys)
-    all_enumerated = dct[keys[0]]
-    all_enumerated = ["A" + str(num) + ": " + e for e in all_enumerated]
-    for key in keys[1:]:
-        num -= 1
-        cur_len = len(all_enumerated)
-        all_enumerated *= len(dct[key])
-        for j in range(len(dct[key])):
-            all_enumerated[j * cur_len : (j + 1) * cur_len] = [
-                dct[key][j] + ", " + e
-                for e in all_enumerated[j * cur_len : (j + 1) * cur_len]
-            ]
-        all_enumerated = ["A" + str(num) + ": " + e for e in all_enumerated]
-    return all_enumerated
+def enumerate_strings(string_map: dict[str, list[str]]) -> list[str]:
+    combinations = product(*list(string_map.values()))
+    result = []
+    for combo in combinations:
+        labeled = [f"A{i + 1}: {v}" for i, v in enumerate(combo)]
+        result.append(", ".join(labeled))
+    return result
 
 
-def enum_to_dcts(enumerated, to_enum):
+def convert_enum_to_dicts(
+    enumerated: list[str], enum_keys: list[str]
+) -> list[dict[str, str]]:
     return_dcts = []
     for elem in enumerated:
         separate = [i.split(":") for i in elem.split(",")]
         dct = {}
-        for field in range(len(to_enum)):
-            dct[to_enum[field]] = separate[field][1][1:]
+        for field in range(len(enum_keys)):
+            dct[enum_keys[field]] = separate[field][1][1:]
         return_dcts.append(dct)
     return return_dcts
-
-
-def get_sample_text(a_dct, q_dct):
-    all_keys = list(a_dct.keys())
-    return_text = "\n\nQuestions and their correct answers"
-    for key in all_keys:
-        return_text += "\nQ: " + q_dct[key] + " A: " + str(a_dct[key]) + "."
-    return return_text

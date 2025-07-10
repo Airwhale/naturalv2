@@ -1,25 +1,32 @@
 import numpy as np
+import pandas as pd
 
-from naturalv2.utils import enum_to_dcts, enumerate_strings
+from naturalv2.evals.experiment import Experiment
+from naturalv2.pipeline import TREATMENT_COL_NAME
+from naturalv2.utils import convert_enum_to_dicts, enumerate_strings
 
 
 class NaturalOI:
-    def __init__(self, experiment):
+    def __init__(self, experiment: Experiment):
         self.experiment = experiment
         self.covariate_names = experiment.covariate_names
-        self.num_treat = len(experiment.treatment_names)
-        # self.num_out = len(experiment.outcome_names)
-        self.conditional_shape = [2]  # binary outcomes
+        self._num_treat = len(experiment.treatment_names)
+        self._conditional_shape = [2]  # binary outcomes
 
-    def compute_outcome_cond(self, conditionals):
-        options = enumerate_strings(self.experiment.get_options(self.covariate_names))
-        idx_to_feat = enum_to_dcts(options, self.covariate_names)
+    def _compute_outcome_conditionals(self, conditionals: pd.DataFrame) -> np.ndarray:
+        options = enumerate_strings(
+            {
+                covariate: self.experiment.options[covariate]
+                for covariate in self.experiment.covariate_names
+            }
+        )
+        idx_to_feat = convert_enum_to_dicts(options, self.covariate_names)
         feat_dicts = [
             self.experiment.apply_transform(dct, repr_type="numeric")
             for dct in idx_to_feat
         ]
 
-        outcome_conditionals = np.zeros((len(feat_dicts), self.num_treat))
+        outcome_conditionals = np.zeros((len(feat_dicts), self._num_treat))
 
         for i in range(len(feat_dicts)):
             features = feat_dicts[i]
@@ -27,8 +34,8 @@ class NaturalOI:
             # restrict posts using sampled features
             for key in self.covariate_names:
                 subset = subset.loc[subset[key] == features[key]]
-            for t in range(self.num_treat):
-                subset_t = subset.loc[subset["treatment"] == t]
+            for t in range(self._num_treat):
+                subset_t = subset.loc[subset[TREATMENT_COL_NAME] == t]
 
                 if len(subset_t) > 0:
                     py1_given_xt = np.array(
@@ -41,12 +48,20 @@ class NaturalOI:
 
         return outcome_conditionals
 
-    def get_ites(self, conditionals):
+    def get_individual_treatment_effects(
+        self, conditionals: pd.DataFrame
+    ) -> np.ndarray:
         # array of ITEs (treat2 - treat1) per unit corresponding to {outcome}
         conditionals = conditionals.copy()
         # outcome_idx = self.experiment.outcome_names.index(outcome)
-        options = enumerate_strings(self.experiment.get_options(self.covariate_names))
-        idx_to_feat = enum_to_dcts(options, self.covariate_names)
+
+        options = enumerate_strings(
+            {
+                covariate: self.experiment.options[covariate]
+                for covariate in self.experiment.covariate_names
+            }
+        )
+        idx_to_feat = convert_enum_to_dicts(options, self.covariate_names)
         feat_dicts = [
             self.experiment.apply_transform(dct, repr_type="numeric")
             for dct in idx_to_feat
@@ -55,7 +70,7 @@ class NaturalOI:
         conditionals.loc[:, "y_given_tx_probs"] = conditionals.apply(
             lambda row: np.array(
                 [float(prob) for prob in row["y_given_tx_probs"][1:-1].split()]
-            ).reshape(self.conditional_shape),
+            ).reshape(self._conditional_shape),
             axis=1,
         )
         # choose probs corresponding to {outcome}
@@ -63,12 +78,12 @@ class NaturalOI:
         #     lambda row: row["y_given_tx_probs"][2 * outcome_idx : 2 * (outcome_idx + 1)], axis=1
         # )
 
-        self.outcome_conditionals = self.compute_outcome_cond(conditionals)
-        all_ites = np.zeros((self.num_treat, len(conditionals)))
+        self.outcome_conditionals = self._compute_outcome_conditionals(conditionals)
+        all_ites = np.zeros((self._num_treat, len(conditionals)))
         for i, (_, row) in enumerate(conditionals.iterrows()):
             x = row[self.covariate_names].to_dict()
             x_idx = feat_dicts.index(x)
-            for t in range(self.num_treat):
+            for t in range(self._num_treat):
                 all_ites[t, i] = self.outcome_conditionals[x_idx, t]
 
         return all_ites
