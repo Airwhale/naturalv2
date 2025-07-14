@@ -265,8 +265,11 @@ def get_nested_value(data: Any, path: str) -> Any | None:
 
 def get_drugbank_aliases(data_path: str, drug_name: str) -> list[str]:
     alias_path = os.path.join(data_path, "drugbank_aliases.csv")
-    if os.path.exists(alias_path):
+    index_path = os.path.join(data_path, "drugbank_indices.csv")
+    if os.path.exists(alias_path) and os.path.exists(index_path):
         aliases_df = pd.read_csv(alias_path, index_col=0)
+        with open(index_path, "r") as f:
+            index_mapping = json.load(f)
     else:
         file_path = os.path.join(data_path, "full_database.xml.gz")
         with gzip.open(file_path, "rt") as xml_file:
@@ -274,7 +277,9 @@ def get_drugbank_aliases(data_path: str, drug_name: str) -> list[str]:
             root = tree.getroot()
             ns = '{http://www.drugbank.ca}' 
             aliases_dicts = []
+            index_mapping = {}
 
+            index = 0 
             for drug in root.findall(ns + 'drug'):
                 aliases = []
                 
@@ -304,23 +309,25 @@ def get_drugbank_aliases(data_path: str, drug_name: str) -> list[str]:
                 
                 aliases = list(set(aliases))
                 aliases_dicts.append({
-                    "aliases": str(aliases)
+                    "index": index,
+                    "alias_list": str(aliases)
                 })
+                for alias in aliases:
+                    index_mapping[alias] = index
+                index += 1
+
         aliases_df = pd.DataFrame(aliases_dicts)
         aliases_df.to_csv(alias_path)
+        with open(index_path, "w") as f:
+            json.dump(index_mapping, f)
 
-    aliases = []
-    for idx, row in aliases_df.iterrows():
-        aliases_list = ast.literal_eval(row["aliases"])
-        if any(
-            drug_name.lower() == alias.lower() 
-            # or drug_name.lower() in alias.lower() 
-            # or alias.lower() in drug_name.lower()
-            for alias in aliases_list
-        ):
-            aliases += aliases_list
-            
-    return aliases
+    drug_name = drug_name.lower()
+    drug_index = index_mapping.get(drug_name)
+    aliases = aliases_df.loc[aliases_df["index"] == drug_index]["alias_list"]
+    all_aliases = []
+    for alias_list in aliases:
+        all_aliases += ast.literal_eval(alias_list)
+    return all_aliases
 
 def qa_interleaved_enum(q_dct, options_dct, a_enum, to_enum):
     all_interleaved_options = []

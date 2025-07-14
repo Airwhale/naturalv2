@@ -664,8 +664,11 @@ class Experiment:
             treatment.title if isinstance(treatment, MeasureGroup) else treatment.label
             for treatment in treatments
         ]
-        for drug_name in self.treatment_names:
-            self.treatment_names += get_drugbank_aliases(self.data_path, drug_name) 
+        self.drugbank_names: dict[str, list[str]] = {}
+        for drug_name in self._treatment_names:
+            self.drugbank_names[drug_name] = []
+            for name in [drug_name] + drug_name.split(" "):
+                self.drugbank_names[drug_name] += get_drugbank_aliases(self.data_path, name) 
 
         self._outcome_names: list[str] = [
             outcome.title if isinstance(outcome, OutcomeMeasure) else outcome.measure
