@@ -9,15 +9,15 @@ from typing import Any, Literal
 
 import pandas as pd
 from omegaconf import DictConfig
+from rich.console import Console
+from rich.pretty import Pretty
+from rich.table import Table
 
 from naturalv2.evals.experiment import Experiment
 from naturalv2.models.lm import LM
 
 
 logger = logging.getLogger(__name__)
-
-TREAMENT_COL_NAME = "treatment_taken"
-OUTCOME_COL_NAME = "is_outcome_mentioned"
 
 
 class ProcessingError(Exception):
@@ -116,8 +116,24 @@ class PipelineStage(ABC):
         """Return a dictionary of statistics collected during processing."""
         if "cost" not in self._stats:
             self._stats["cost"] = self.llm.cost
+        if "total_prompt_tokens" not in self._stats:
+            self._stats["total_prompt_tokens"] = self.llm.total_prompt_tokens
+        if "total_completion_tokens" not in self._stats:
+            self._stats["total_completion_tokens"] = self.llm.total_completion_tokens
 
         return self._stats
+
+    def render_stats_table(self) -> None:
+        """Print the statistics collected during processing in a table format."""
+        stats_table = Table(title=f"Statistics for {self.stage_name}")
+        stats_table.add_column("Key", style="cyan")
+        stats_table.add_column("Value", style="magenta")
+
+        for key, value in self.get_stats().items():
+            stats_table.add_row(str(key), Pretty(value, expand_all=True))
+
+        console = Console()
+        console.print(stats_table)
 
     def add_stat(self, key: str, value: Any) -> None:
         """Add a statistic to the stage's stats dictionary.
@@ -228,10 +244,8 @@ class NATURALPipeline:
                     stage.add_stat("model_request_params", stage.llm._request_params)
                     # TODO: add prompt template to stats
                     stage_stats = stage.get_stats()
-                    logger.info(
-                        f"Stage {stage.stage_name} completed successfully. "
-                        f"Statistics: {stage_stats}"
-                    )
+                    logger.info(f"Stage {stage.stage_name} completed successfully.")
+                    stage.render_stats_table()
 
                     self._data_flow[stage.stage_name] = stage_stats
 
@@ -242,9 +256,7 @@ class NATURALPipeline:
                         )
                         break
             except Exception as e:
-                logger.error(
-                    f"Error processing stage {stage.stage_name}: {e}", exc_info=True
-                )
+                logger.error(f"Error processing stage {stage.stage_name}: {e}")
                 raise ProcessingError from e
 
         logger.info(

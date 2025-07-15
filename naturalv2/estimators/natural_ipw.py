@@ -1,63 +1,78 @@
-import numpy as np
+"""Natural Inverse Probability Weighting (IPW) Estimator."""
 
-from naturalv2.utils import enum_to_dcts, enumerate_strings
+import ast
+
+import numpy as np
+import pandas as pd
+
+from naturalv2.evals.experiment import Experiment
+from naturalv2.utils import convert_enum_to_dicts, enumerate_strings
 
 
 class NaturalIPW:
-    def __init__(self, experiment):
+    """NATURAL Inverse Probability Weighting (IPW) Estimator.
+
+    This class computes Individual Treatment Effects (ITE) using the IPW method.
+    It calculates the propensity scores for each treatment given the covariates
+    and uses these scores to estimate the ITEs from the conditional probabilities
+    of treatment and outcome given covariates.
+
+    Parameters
+    ----------
+    experiment : Experiment
+        The experiment object containing treatment and covariate information.
+
+    """
+
+    def __init__(self, experiment: Experiment) -> None:
+        """Initialize the NaturalIPW estimator."""
         self.experiment = experiment
-        self.covariate_names = experiment.covariate_names
-        self.num_treat = len(experiment.treatment_names)
-        # self.num_out = len(experiment.outcome_names)
-        self.conditional_shape = [self.num_treat, 2]  # binary outcomes
 
-    def compute_prop_score(self, conditionals):
-        options = enumerate_strings(self.experiment.get_options(self.covariate_names))
-        idx_to_feat = enum_to_dcts(options, self.covariate_names)
-        feat_dicts = [
-            self.experiment.apply_transform(dct, repr_type="numeric")
-            for dct in idx_to_feat
-        ]
-        prop_score_lst = []
+        self._covariate_names = experiment.covariate_names
+        self._num_treat = len(experiment.treatment_names)
+        self._conditional_shape = [self._num_treat, 2]  # binary outcomes
 
-        for i in range(len(feat_dicts)):
-            features = feat_dicts[i]
-            subset = conditionals.copy()
-            # restrict posts using sampled features
-            for key in self.covariate_names:
-                subset = subset.loc[subset[key] == features[key]]
-            if len(subset) == 0:
-                prop_scores = [0 for _ in range(self.num_treat)]
-            else:
-                # marginalize out Y
-                propensity = subset[["ty_given_x_probs"]].apply(
-                    lambda row: np.sum(row["ty_given_x_probs"], axis=-1), axis=1
-                )
-                # average over posts
-                prop_scores = []
-                for t in range(self.num_treat):
-                    prop_t = propensity.apply(lambda arr, t=t: arr[t]).sum() / len(
-                        subset
-                    )  # Fixed B023
-                    prop_scores.append(prop_t)
-            prop_score_lst.append(prop_scores)
-        return np.array(prop_score_lst)
+    def get_individual_treatment_effects(
+        self, conditionals: pd.DataFrame
+    ) -> np.ndarray:
+        """Calculate Individual Treatment Effects (ITE) given conditionals.
 
-    def get_ites(self, conditionals):
+        Given a dataframe containing P(T, Y | X) for each treatment T and covariate X,
+        this method computes the ITEs for each treatment and covariate combination.
+
+        Parameters
+        ----------
+        conditionals : pd.DataFrame
+            DataFrame containing the conditional probabilities of outcomes given
+            treatments and covariates. It should include columns for covariates,
+            treatment, and outcomes.
+
+        Returns
+        -------
+        np.ndarray
+            An array of shape (num_treatments, num_samples) containing the ITEs for
+            each treatment and covariate combination.
+        """
         # array of ITEs (treat2 - treat1) per unit corresponding to {outcome}
         conditionals = conditionals.copy()
         # outcome_idx = self.experiment.outcome_names.index(outcome)
-        options = enumerate_strings(self.experiment.get_options(self.covariate_names))
-        idx_to_feat = enum_to_dcts(options, self.covariate_names)
+
+        options = enumerate_strings(
+            {
+                covariate: self.experiment.options[covariate]
+                for covariate in self._covariate_names
+            }
+        )
+        idx_to_feat = convert_enum_to_dicts(options, self._covariate_names)
         feat_dicts = [
             self.experiment.apply_transform(dct, repr_type="numeric")
             for dct in idx_to_feat
-        ]
+        ]  # dataset should have already been discretized and the transforms ready
 
         conditionals.loc[:, "ty_given_x_probs"] = conditionals.apply(
-            lambda row: np.array(
-                [float(prob) for prob in row["ty_given_x_probs"][1:-1].split()]
-            ).reshape(self.conditional_shape),
+            lambda row: np.array(ast.literal_eval(row["ty_given_x_probs"])).reshape(
+                self._conditional_shape
+            ),
             axis=1,
         )
         # choose probs corresponding to {outcome}
@@ -65,13 +80,13 @@ class NaturalIPW:
         #     lambda row: row["ty_given_x_probs"][:, 2 * outcome_idx : 2 * (outcome_idx + 1)], axis=1
         # )
 
-        self.prop_score_lst = self.compute_prop_score(conditionals)
-        all_ites = np.zeros((self.num_treat, len(conditionals)))
+        self.prop_score_lst = self._compute_prop_score(conditionals)
+        all_ites = np.zeros((self._num_treat, len(conditionals)))
         for i, (_, row) in enumerate(conditionals.iterrows()):  # Fixed PLW2901
             probs = row["ty_given_x_probs"]
-            x = row[self.covariate_names].to_dict()
+            x = row[self._covariate_names].to_dict()
             # enumerate treatments
-            for t in range(self.num_treat):
+            for t in range(self._num_treat):
                 # propensity score given x features
                 x_idx = feat_dicts.index(x)
                 t_given_x = self.prop_score_lst[x_idx, t]
@@ -84,3 +99,42 @@ class NaturalIPW:
                         all_ites[t, i] += y * posterior / t_given_x
 
         return all_ites
+
+    def _compute_prop_score(self, conditionals: pd.DataFrame) -> np.ndarray:
+        """Compute propensity scores for each treatment given covariates."""
+        options = enumerate_strings(
+            {
+                covariate: self.experiment.options[covariate]
+                for covariate in self._covariate_names
+            }
+        )
+        idx_to_feat = convert_enum_to_dicts(options, self._covariate_names)
+        feat_dicts = [
+            self.experiment.apply_transform(dct, repr_type="numeric")
+            for dct in idx_to_feat
+        ]
+        prop_score_lst = []
+
+        for i in range(len(feat_dicts)):
+            features = feat_dicts[i]
+            subset = conditionals.copy()
+
+            # restrict posts using sampled features
+            for key in self._covariate_names:
+                subset = subset.loc[subset[key] == features[key]]
+            if len(subset) == 0:
+                prop_scores = [0 for _ in range(self._num_treat)]
+            else:
+                # marginalize out Y
+                propensity = subset[["ty_given_x_probs"]].apply(
+                    lambda row: np.sum(row["ty_given_x_probs"], axis=-1), axis=1
+                )
+                # average over posts
+                prop_scores = []
+                for t in range(self._num_treat):
+                    prop_t = propensity.apply(lambda arr, t=t: arr[t]).sum() / len(
+                        subset
+                    )  # Fixed B023
+                    prop_scores.append(prop_t)
+            prop_score_lst.append(prop_scores)
+        return np.array(prop_score_lst)

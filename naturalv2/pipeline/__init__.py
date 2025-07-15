@@ -1,0 +1,3 @@
+TREATMENT_COL_NAME = "treatment_taken"
+INCLUSION_COL_NAME = "meets_inclusion_criteria"
+OUTCOME_COL_NAME = "is_outcome_mentioned"

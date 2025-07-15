@@ -4,7 +4,6 @@ import os
 from enum import Enum
 from typing import Any, Literal
 
-import aiofiles
 import pandas as pd
 from omegaconf import DictConfig
 from pydantic import BaseModel
@@ -17,12 +16,9 @@ from naturalv2.models.lm import (
     build_lm_instance_from_cfg,
     get_message_content,
 )
-from naturalv2.pipeline.natural import (
-    OUTCOME_COL_NAME,
-    TREAMENT_COL_NAME,
-    PipelineContext,
-    PipelineStage,
-)
+from naturalv2.pipeline import INCLUSION_COL_NAME, OUTCOME_COL_NAME, TREATMENT_COL_NAME
+from naturalv2.pipeline.natural import PipelineContext, PipelineStage
+from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
 from naturalv2.utils import create_response_format, get_save_path
 
 
@@ -91,7 +87,7 @@ class RelevanceFilterStage(SampleExtractionStage):
     """Stage for filtering relevant reports.
 
     At this stage, an LLM is asked to determine if a report is relevant to a
-    given condition, treatment, outcome or other covariate of interest.
+    given condition, treatment, outcome or other covariates of interest.
     This stage processes the input data to filter out reports that are not relevant
     based on the LLM's response.
 
@@ -223,9 +219,9 @@ class TreatmentOutcomeFilterStage(SampleExtractionStage):
         )
         response_format = create_response_format(
             "TYFilterResponse",
-            [TREAMENT_COL_NAME, OUTCOME_COL_NAME],
+            [TREATMENT_COL_NAME, OUTCOME_COL_NAME],
             types={
-                TREAMENT_COL_NAME: Literal[*treatment_options],
+                TREATMENT_COL_NAME: Literal[*treatment_options],
                 OUTCOME_COL_NAME: Literal["Yes", "No", "Unknown"],
             },
         )
@@ -242,12 +238,7 @@ class TreatmentOutcomeFilterStage(SampleExtractionStage):
             max_concurrent_requests=self.max_concurrent_workers,
         )
 
-        self.data = context.experiment.hard_filter_ty(
-            ty_samples,
-            t_col=TREAMENT_COL_NAME,
-            y_col=OUTCOME_COL_NAME,
-            outcome=context.outcome,
-        )
+        self.data = context.experiment.hard_filter_ty(ty_samples)
         logger.info(f"After treatment-outcome filter: {len(self.data)} reports.")
         return self.data
 
@@ -312,7 +303,7 @@ class KnownsStage(SampleExtractionStage):
             + context.experiment.extended_covariate_names,
             {
                 "Duration": int | Literal["Unknown"],
-                "Inclusion": Literal["Yes", "No", "Unknown"],
+                INCLUSION_COL_NAME: Literal["Yes", "No", "Unknown"],
             },
         )
         self.data = await extract_covariates(
@@ -507,8 +498,7 @@ async def extract_covariates(
 
     # Create a CSV writer task to write results to a file
     csv_writer_task = asyncio.create_task(
-        _csv_writer(result_queue, file_path, writer_pbar),
-        name="CSV-Writer",
+        _csv_writer(result_queue, file_path, writer_pbar), name="CSV-Writer"
     )
 
     try:
@@ -527,7 +517,7 @@ async def extract_covariates(
         for idx, error in enumerate(worker_errors):
             if isinstance(error, int):
                 processing_error_count += error
-            elif isinstance(error, Exception):
+            elif isinstance(error, BaseException):
                 logging.error(
                     f"Worker {idx} encountered an exception: {type(error).__name__} - {error}",
                     exc_info=True,
@@ -540,7 +530,7 @@ async def extract_covariates(
             f"Processing completed. {success_count} records written, "
             f"{processing_error_count} errors"
         )
-    except Exception as e:
+    except BaseException as e:
         logger.error(f"Error during extraction: {e}", exc_info=True)
         # Cancel any running tasks
         for task in [csv_writer_task, producer_task] + worker_tasks:
@@ -557,11 +547,6 @@ async def extract_covariates(
         return pd.read_csv(file_path, index_col=0)
 
     return pd.DataFrame()  # Return empty DataFrame if file not found
-
-
-def _create_progress_bar(total: int, desc: str) -> tqdm:
-    """Create a tqdm progress bar."""
-    return tqdm(total=total, desc=desc, leave=False)
 
 
 def _prompt_formatter(
@@ -659,8 +644,11 @@ async def _prompt_processor(
     """
     error_count = 0
     while True:
-        index, row, messages = await prompt_queue.get()
-        if index is None and row is None:
+        try:
+            index, row, messages = await prompt_queue.get()
+            if index is None and row is None:
+                break
+        except asyncio.CancelledError:
             break
 
         try:
@@ -688,7 +676,7 @@ async def _prompt_processor(
                 )
                 await result_queue.put(False)  # Signal failure to writer
 
-        except Exception as e:
+        except BaseException as e:
             logging.error(
                 f"Worker {worker_id} failed on item at index {index}: {type(e).__name__} - {e}",
                 exc_info=True,
@@ -700,88 +688,3 @@ async def _prompt_processor(
             prompt_queue.task_done()
 
     return error_count
-
-
-async def _csv_writer(
-    result_queue: asyncio.Queue,
-    output_filepath: str,
-    pbar: tqdm,
-    flush_interval: float = 5.0,
-) -> int:
-    """Asynchronously write results to a CSV file."""
-    success_count = 0
-    last_flush_time = asyncio.get_event_loop().time()
-    fieldnames = None
-
-    # Ensure the directory exists
-    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
-
-    try:
-        async with aiofiles.open(
-            output_filepath, mode="w", newline="", encoding="utf-8"
-        ) as csvfile:
-            writer = None
-            while True:
-                try:
-                    result: dict[str, Any] | False | None = await asyncio.wait_for(
-                        result_queue.get(), timeout=flush_interval
-                    )
-                except asyncio.TimeoutError:  # Timeout reached, flush the file
-                    if writer is not None:
-                        await csvfile.flush()
-                    continue
-
-                try:
-                    if result is None:  # Termination signal
-                        logger.debug("CSV writer received termination signal.")
-                        break
-
-                    if result is False:  # Processing error
-                        logger.debug("Received False result from processing.")
-                        continue
-
-                    if writer is None:
-                        fieldnames = list(result.keys())
-                        # Create header row
-                        header_row = ["index"] + fieldnames
-                        header_line = (
-                            ",".join(f'"{field}"' for field in header_row) + "\n"
-                        )
-                        await csvfile.write(header_line)
-                        writer = (
-                            True  # Just use as a flag that we've written the header
-                        )
-
-                    # Create the row data
-                    row_data = {"index": success_count, **result}
-
-                    # Format the row with proper CSV quoting
-                    row_values = []
-                    for field in ["index"] + fieldnames:
-                        value = str(row_data.get(field, ""))
-                        # Escape quotes and wrap in quotes
-                        escaped_value = value.replace('"', '""')
-                        row_values.append(f'"{escaped_value}"')
-
-                    row_line = ",".join(row_values) + "\n"
-                    await csvfile.write(row_line)
-
-                    success_count += 1
-                    pbar.update(1)
-
-                    # Periodic flush
-                    current_time = asyncio.get_event_loop().time()
-                    if (current_time - last_flush_time) >= flush_interval:
-                        await csvfile.flush()
-                        last_flush_time = current_time
-                finally:
-                    result_queue.task_done()
-
-        # Final flush happens automatically when exiting the async context manager
-
-    except Exception as e:
-        logger.error(f"Error writing to CSV file {output_filepath}: {e}", exc_info=True)
-    finally:
-        pbar.close()
-
-    return success_count
