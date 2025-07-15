@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from ast import literal_eval
 from pathlib import Path
 from typing import Literal
@@ -666,9 +667,14 @@ class Experiment:
         ]
         self.drugbank_names: dict[str, list[str]] = {}
         for drug_name in self._treatment_names:
-            self.drugbank_names[drug_name] = []
-            for name in [drug_name] + drug_name.split(" "):
-                self.drugbank_names[drug_name] += get_drugbank_aliases(self.data_path, name) 
+            # Remove any dosage, units etc. before searching DrugBank
+            drug_name_stripped = re.sub(
+                r'\s+\d+([./]\d+)*\s*(mg|g|mcg|ug|ml|iu|units|tablets?|capsules?)?\b.*$', 
+                '', 
+                drug_name, 
+                flags=re.IGNORECASE
+            ).strip()
+            self.drugbank_names[drug_name] = get_drugbank_aliases(self.data_path, drug_name_stripped) 
 
         self._outcome_names: list[str] = [
             outcome.title if isinstance(outcome, OutcomeMeasure) else outcome.measure

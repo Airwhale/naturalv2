@@ -610,7 +610,7 @@ async def _curate_experiments(
         + ["test"] * len(test_ncts)
     )
     all_ncts = train_ncts + val_ncts + test_ncts
-    splits, all_ncts = ["train"] * 11, train_ncts[:5] + train_ncts[-5:] + ["NCT03828539"] #TODO: remove after testing
+    # splits, all_ncts = ["val"] * 5, val_ncts[:5] #TODO: remove after testing
 
     # Prepare experiment tasks (no LLM tasks yet)
     logger.info(
@@ -670,7 +670,7 @@ def main(cfg: DictConfig) -> None:
         ["train"] * len(train_ncts) + ["val"] * len(val_ncts) + ["test"] * len(test_ncts)
     )
     all_ncts = train_ncts + val_ncts + test_ncts
-    splits, all_ncts = ["train"] * 11, train_ncts[:5] + train_ncts[-5:] + ["NCT03828539"] #TODO: remove after testing
+    # splits, all_ncts = ["val"] * 5, val_ncts[:5] #TODO: remove after testing
     
     # create study dataset
     study_dataset_file = os.path.join(
@@ -693,7 +693,6 @@ def main(cfg: DictConfig) -> None:
             )
             # study_dataset.data_paths[f"{source_name}_condition_filtered"] = []
             study_dataset.data_paths[f"{source_name}_cleaned"] = []
-            study_dataset.data_paths[f"{source_name}_metadata"] = {} # TODO: remove
             condition_metadata = study_dataset.sources[source_name]
 
             for nct_id, split in zip(all_ncts, splits):
@@ -718,6 +717,8 @@ def main(cfg: DictConfig) -> None:
             clean_paths = study_dataset.data_paths[f"{source_name}_cleaned"]
             source_dataset.cleanup_for_multiprocessing()
 
+            # Use cheap model for common names for now, until we can figure rate limits out
+            cheap_model = build_lm_instance_from_cfg(cfg.cheap_model)
             # Process experiments in batches with async LLM calls
             await _curate_experiments(
                 cfg,
@@ -725,7 +726,7 @@ def main(cfg: DictConfig) -> None:
                 source_dataset,
                 study_dataset,
                 clean_paths,
-                sample_model,
+                cheap_model,
                 source_name,
                 train_ncts,
                 val_ncts,

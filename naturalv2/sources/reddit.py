@@ -381,13 +381,13 @@ class RedditSource:
                     valid_count += len(processed_chunk)
                     first_chunk = False
 
-            if valid_count == 0:
-                columns = pd.read_csv(clean_data_path, nrows=0).columns.tolist()
-                empty_df = pd.DataFrame(
-                    columns=columns + ["treatments_mentioned", "outcome_words"]
-                )
-                empty_df.to_csv(save_path)
-                logger.warning(f"No valid matches found for experiment {experiment.nct_id}")
+        if valid_count == 0:
+            columns = pd.read_csv(clean_data_path, nrows=0).columns.tolist()
+            empty_df = pd.DataFrame(
+                columns=columns + ["treatments_mentioned", "outcome_words"]
+            )
+            empty_df.to_csv(save_path)
+            logger.warning(f"No valid matches found for experiment {experiment.nct_id}")
 
         return save_path, valid_count
 
@@ -524,7 +524,20 @@ def _download_submissions_and_comments(
             rule_filtered_df = _clean_sub_data(data_path, sub)
             rule_filtered_df = rule_filtered_df.drop_duplicates("report")
         except Exception as e:
-            rule_filtered_df = pd.DataFrame()
+            rule_filtered_df = pd.DataFrame(
+                columns=[
+                    "subreddit",
+                    "title",
+                    "initial_post",
+                    "report",
+                    "score",
+                    "date_created",
+                    "permalink",
+                    "treatments_mentioned",
+                    "outcome_words",
+                    "author_replies",
+                ]
+            )
             logger.error(f"Error processing subreddit {sub}: {e}")
         rule_filtered_df.to_csv(clean_sub_path)
     return submissions_path, comments_path, clean_sub_path
