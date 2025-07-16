@@ -147,7 +147,7 @@ class ConditionalExtractionStage(PipelineStage):
         extract_type_map = {
             "NaturalIPW": ConditionalsExtractType.TY_GIVEN_X,
             "NaturalOI": ConditionalsExtractType.Y_GIVEN_TX,
-            "NaturalMC": ConditionalsExtractType.NONE,  # No extraction needed for MC
+            "NaturalMC": ConditionalsExtractType.TY_GIVEN_X,  # Sample T,Y from conditional for MC
         }
         extract_type = extract_type_map.get(context.estimator_type)
         if extract_type is None:

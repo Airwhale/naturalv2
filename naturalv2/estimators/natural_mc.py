@@ -85,8 +85,8 @@ class NaturalMC:
 
         data = CausalData(
             X=observational_data[self.experiment.covariate_names].copy(),  # covariates
-            T=observational_data[TREATMENT_COL_NAME].copy(),  # treatment
-            Y=observational_data[OUTCOME_COL_NAME].copy(),  # outcome
+            T=observational_data[f"{TREATMENT_COL_NAME}_sampled"].copy(),  # treatment
+            Y=observational_data[f"{outcome}_sampled"].copy(),  # outcome
         )
 
         model.fit(data)
