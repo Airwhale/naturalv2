@@ -11,7 +11,7 @@ from naturalv2.models.causal_models import (
     CausalData,
     OutcomeImputation,
 )
-from naturalv2.pipeline import OUTCOME_COL_NAME, TREATMENT_COL_NAME
+from naturalv2.pipeline import TREATMENT_COL_NAME
 
 
 class NaturalMC:
