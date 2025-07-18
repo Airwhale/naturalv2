@@ -63,12 +63,25 @@ def run_study(conditions: list[str], args: argparse.Namespace) -> dict[str, Any]
 
     output_lines = []
     # Read and display output in real-time
-    for line in iter(process.stdout.readline, ""):
-        print(line, end="")  # display in real-time
-        output_lines.append(line)  # store for later processing
-        sys.stdout.flush()  # ensure it flushes to the console
+    if process.stdout is not None:
+        for line in iter(process.stdout.readline, ""):
+            print(line, end="")  # display in real-time
+            output_lines.append(line)  # store for later processing
+            sys.stdout.flush()  # ensure it flushes to the console
+        process.stdout.close()
+    else:
+        logger.error("process.stdout is None, cannot read output.")
+        return_code = process.wait()
+        return {
+            "conditions": conditions,
+            "train_trials": None,
+            "train_labels": None,
+            "val_trials": None,
+            "val_labels": None,
+            "test_trials": None,
+            "test_labels": None,
+        }
 
-    process.stdout.close()
     return_code = process.wait()
 
     if return_code != 0:
@@ -113,24 +126,34 @@ def run_study(conditions: list[str], args: argparse.Namespace) -> dict[str, Any]
     }
 
 
-def count_unique_ncts(studies_dir: str) -> int:
-    unique_ncts = set()
+def count_unique_ncts(studies_dir: str) -> dict[str, int]:
+    def extract_ncts_and_labels(trial_type: str):
+        ncts = set()
+        labels = 0
+        for yaml_file in Path(studies_dir).glob("**/*.yaml"):
+            with open(yaml_file, "r") as f:
+                study_data = yaml.safe_load(f)
+                for trial in study_data.get(trial_type, []):
+                    ncts.update(trial.keys())
 
-    for yaml_file in Path(studies_dir).glob("**/*.yaml"):
-        with open(yaml_file, "r") as f:
-            study_data = yaml.safe_load(f)
+                for trial in study_data.get(trial_type, []):
+                    for nct_id in trial:
+                        if nct_id in ncts:
+                            labels += len(trial[nct_id])
+        return ncts, labels
 
-            # Extract NCT IDs from train, val, and test trials
-            for trial_list in [
-                study_data["train_trials"],
-                study_data["val_trials"],
-                study_data["test_trials"],
-            ]:
-                for trial in trial_list:
-                    # Each trial is a dict with one key (the NCT ID)
-                    unique_ncts.update(trial.keys())
+    train_ncts, total_train_labels = extract_ncts_and_labels("train_trials")
+    val_ncts, total_val_labels = extract_ncts_and_labels("val_trials")
+    test_ncts, total_test_labels = extract_ncts_and_labels("test_trials")
 
-    return len(unique_ncts)
+    return {
+        "train_trials": len(train_ncts),
+        "val_trials": len(val_ncts),
+        "test_trials": len(test_ncts),
+        "train_labels": total_train_labels,
+        "val_labels": total_val_labels,
+        "test_labels": total_test_labels,
+    }
 
 
 if __name__ == "__main__":
@@ -165,5 +188,5 @@ if __name__ == "__main__":
     df.to_csv(csv_path, index=False)
     logger.info(f"Results saved to {csv_path}")
     logger.info(
-        f"{count_unique_ncts(os.path.join(args.output_dir, 'studies'))} unique trials covered."
+        f"{count_unique_ncts(os.path.join(args.output_dir, 'studies'))} unique trials and labels covered."
     )
