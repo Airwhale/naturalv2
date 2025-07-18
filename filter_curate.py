@@ -459,6 +459,10 @@ class _DataCurator:
                             exp_task.experiment_instance, f"{attribute}_common_names"
                         ).update({exp_task.source_name: common_names})
 
+            # Save the modified experiment object to YAML
+            exp_file = os.path.join(experiment_dir, f"{exp_task.nct_id}.yaml")
+            exp_task.experiment_instance.to_yaml(exp_file)
+            
             # Run experiment data curation using the source_dataset instance
             exp_data_path, exp_data_size = source_dataset.curate_experiment_data(
                 exp_task.experiment_instance,
@@ -476,7 +480,6 @@ class _DataCurator:
             )
 
             # Save the modified experiment object to YAML
-            exp_file = os.path.join(experiment_dir, f"{exp_task.nct_id}.yaml")
             exp_task.experiment_instance.to_yaml(exp_file)
 
             return {
@@ -610,7 +613,6 @@ async def _curate_experiments(
         + ["test"] * len(test_ncts)
     )
     all_ncts = train_ncts + val_ncts + test_ncts
-    # splits, all_ncts = ["val"] * 5, val_ncts[:5] #TODO: remove after testing
 
     # Prepare experiment tasks (no LLM tasks yet)
     logger.info(
@@ -670,7 +672,6 @@ def main(cfg: DictConfig) -> None:
         ["train"] * len(train_ncts) + ["val"] * len(val_ncts) + ["test"] * len(test_ncts)
     )
     all_ncts = train_ncts + val_ncts + test_ncts
-    # splits, all_ncts = ["val"] * 5, val_ncts[:5] #TODO: remove after testing
     
     # create study dataset
     study_dataset_file = os.path.join(
@@ -695,26 +696,23 @@ def main(cfg: DictConfig) -> None:
             study_dataset.data_paths[f"{source_name}_cleaned"] = []
             condition_metadata = study_dataset.sources[source_name]
 
+            all_condition_keywords = []
             for nct_id, split in zip(all_ncts, splits):
                 status = "active" if split == "test" else "completed"
                 exp = Experiment("/mfs1/u/nikita/naturalv2/", nct_id, status=status)
-                condition_keywords = exp.conditions if exp.conditions else []   
+                condition_keywords = exp.conditions if exp.conditions else []  
+                all_condition_keywords.extend(condition_keywords) 
 
-                condition_filter_paths, clean_paths, condition_metadata = await source_dataset.condition_filter(condition_keywords, condition_metadata)
-                # study_dataset.data_paths[f"{source_name}_condition_filtered"].extend(condition_filter_paths)
-                study_dataset.data_paths[f"{source_name}_cleaned"].extend(clean_paths)
-                study_dataset.sources[source_name] = condition_metadata
-
-                study_dataset.to_yaml(study_dataset_file)
-                
-            # study_dataset[f"{source_name}_cleaned"] = []
-            # if f"{source_name}_cleaned" not in study_dataset.data_paths:
-            #     clean_paths, data_size = source_dataset.clean_data(study.conditions[0])
-            #     study_dataset.data_paths[f"{source_name}_cleaned"].extend(clean_paths)
-            #     study_dataset.data_sizes.update({f"{source_name}_cleaned": data_size})
-
+            condition_metadata = await source_dataset.condition_filter(all_condition_keywords, condition_metadata)
+            study_dataset.sources[source_name] = condition_metadata
+            # TODO: the way this is set up, LLM outputs are saved only at the end, not as they come
             study_dataset.to_yaml(study_dataset_file)
-            clean_paths = study_dataset.data_paths[f"{source_name}_cleaned"]
+
+            clean_paths = source_dataset.clean_data()
+            study_dataset.data_paths[f"{source_name}_cleaned"].extend(clean_paths)
+            study_dataset.to_yaml(study_dataset_file)
+
+            all_clean_paths = study_dataset.data_paths[f"{source_name}_cleaned"]
             source_dataset.cleanup_for_multiprocessing()
 
             # Use cheap model for common names for now, until we can figure rate limits out
@@ -725,7 +723,7 @@ def main(cfg: DictConfig) -> None:
                 study,
                 source_dataset,
                 study_dataset,
-                clean_paths,
+                all_clean_paths,
                 cheap_model,
                 source_name,
                 train_ncts,

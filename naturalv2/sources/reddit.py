@@ -83,6 +83,7 @@ class RedditSource:
             username=os.environ.get("PRAW_USERNAME"),
             user_agent=os.environ.get("PRAW_AGENT"),
         )
+        self.subs_about = get_sub_about_info(self.data_path)
 
         self._anonymizer = None
         if anonymize:
@@ -115,8 +116,7 @@ class RedditSource:
         list[str]
             List of paths to the downloaded data files for relevant subreddits.
         """
-        subs_about = get_sub_about_info(self.data_path)
-        pushshift_subreddits = subs_about["sub"].to_list()
+        pushshift_subreddits = self.subs_about["sub"].to_list()
 
         self.relevant_subs = set()
 
@@ -144,9 +144,8 @@ class RedditSource:
             relevant_subs_llm = self.get_subreddits_from_llm(llm_input_dict)
             return relevant_subs_llm
 
-        # # Run all subreddit/post searches asynchronously
-        # loop = asyncio.get_event_loop()
-        # tasks = []
+        logger.info(f"Getting relevant subreddits for {len(keywords)} keywords.")
+        # TODO: Run _get_relevant_subs_and_posts concurrently
         for word in keywords:
             if word not in condition_metadata:
                 relevant_subs = await _get_relevant_subs_and_posts(word)
@@ -156,22 +155,17 @@ class RedditSource:
             else:
                 self.relevant_subs.update(condition_metadata[word])
 
-        # if tasks:
-        #     results = loop.run_until_complete(asyncio.gather(*tasks))
-        #     for word, relevant_subs in results:
-        #         condition_metdata[word] = relevant_subs
 
         self.relevant_subs = list(self.relevant_subs)
         logger.info(f"{len(self.relevant_subs)} relevant subreddits found!")
+        return condition_metadata
 
-        condition_data_paths, clean_paths = [], []
+    def clean_data(self):
+        clean_paths = []
         subs_to_filter = []
         for sub in self.relevant_subs:
-            sub_path = os.path.join(self._subs_data_dir, f"{sub}_submissions.csv")
-            comment_path = os.path.join(self._subs_data_dir, f"{sub}_comments.csv")
             clean_sub_path = os.path.join(self._subs_data_dir, f"{sub}_cleaned.csv")
-            if os.path.exists(sub_path) and os.path.exists(comment_path) and os.path.exists(clean_sub_path):
-                condition_data_paths.extend([sub_path, comment_path])
+            if os.path.exists(clean_sub_path):
                 clean_paths.append(clean_sub_path)
             else:
                 subs_to_filter.append(sub)
@@ -179,7 +173,7 @@ class RedditSource:
         if not subs_to_filter:
             # all data have been downloaded
             logger.info("All relevant subreddit data has already been downloaded and cleaned.")
-            return condition_data_paths, clean_paths, condition_metadata
+            return clean_paths
 
         n_downloaded = len(self.relevant_subs) - len(subs_to_filter)
         logger.info(
@@ -203,97 +197,26 @@ class RedditSource:
                 leave=True,
                 disable=len(subs_to_filter) == 0,  # disable if no subs to download
             )
-            for submissions_path, comments_path, clean_sub_path in results:
-                condition_data_paths.extend([submissions_path, comments_path])
-                clean_paths.append(clean_sub_path)
+            for clean_sub_path in results:
+                if clean_sub_path is not None:
+                    clean_paths.append(clean_sub_path)
         else:  # single-threaded download; avoids multiprocessing overhead
             for sub in subs_to_filter:
-                submissions_path, comments_path = _download_submissions_and_comments(
+                clean_sub_path = _download_submissions_and_comments(
                     sub,
                     self._subs_data_dir,
                     self._anonymizer,
                     self.anonymizer_batch_size,
                 )
-                condition_data_paths.extend([submissions_path, comments_path])
-                clean_paths.append(clean_sub_path)
+                if clean_sub_path is not None:
+                    clean_paths.append(clean_sub_path)
 
-        return condition_data_paths, clean_paths, condition_metadata
+        return clean_paths
 
     def cleanup_for_multiprocessing(self):
         """Remove unpicklable attributes to make instance picklable."""
         self.reddit = None
-        
-    def clean_data(self, study_name: str) -> tuple[str, int]:
-        # TODO remove
-        """Clean Reddit data for a given study.
-
-        Parameters
-        ----------
-        study_name : str
-            Name of the study for which to clean Reddit data.
-
-        Returns
-        -------
-        tuple[str, int]
-            Path to the cleaned data file and the number of unique posts in the
-            cleaned data.
-        """
-        study_dir = os.path.join(self.data_path, study_name.lower().replace(" ", "_"))
-        os.makedirs(study_dir, exist_ok=True)
-
-        subs_to_clean = self.relevant_subs
-
-        save_path = os.path.join(study_dir, "reddit_cleaned.csv")
-        if os.path.exists(save_path):
-            cleaned_data = pd.read_csv(save_path, index_col=0, low_memory=False)
-            cleaned_subs = cleaned_data["subreddit"].unique()
-            remaining_subs = set(self.relevant_subs) - set(cleaned_subs)
-
-            if not remaining_subs:
-                logger.info(
-                    f"Cleaned data already exists at {save_path}. Returning existing data."
-                )
-                return save_path, len(cleaned_data)
-
-            logger.info(
-                f"Cleaned data exists but not for all relevant subreddits. "
-                f"Cleaning {len(remaining_subs)} remaining "
-                "subreddits."
-            )
-            subs_to_clean = list(remaining_subs)
-            rule_filtered_df = cleaned_data
-        else:
-            rule_filtered_df = pd.DataFrame()
-
-        with (
-            tqdm(
-                total=len(subs_to_clean),
-                desc="Cleaning Reddit data",
-                unit="subreddit",
-                disable=len(subs_to_clean) == 0,  # disable if no subs to clean
-            ) as pbar,
-            ProcessPoolExecutor(max_workers=self.max_download_workers) as executor,
-        ):
-            futures = {
-                executor.submit(_clean_sub_data, self._subs_data_dir, sub): sub
-                for sub in subs_to_clean
-            }
-            for future in as_completed(futures):
-                sub = futures[future]
-                try:
-                    merged_df = future.result()
-                    rule_filtered_df = pd.concat(
-                        [rule_filtered_df, merged_df], ignore_index=True
-                    )
-                    rule_filtered_df.to_csv(save_path)
-                except Exception as e:
-                    logger.error(f"Error processing subreddit {sub}: {e}")
-                finally:
-                    pbar.update(1)
-
-        rule_filtered_df = rule_filtered_df.drop_duplicates("report")
-        rule_filtered_df.to_csv(save_path)
-        return save_path, len(rule_filtered_df)
+        self.subs_about = None
 
     def curate_experiment_data(
         self,
@@ -317,7 +240,7 @@ class RedditSource:
         filter_by_date : bool
             Whether to filter the data by the experiment's date.
         clean_data_paths : list[str]
-            List of paths to the cleaned Reddit data file.
+            List of paths to the cleaned Reddit data.
 
         Returns
         -------
@@ -326,6 +249,7 @@ class RedditSource:
             that mention both treatments and outcomes.
 
         """
+        assert len(clean_data_paths) > 0
         study_dir = os.path.join(self.data_path, study_name.lower().replace(" ", "_"))
         os.makedirs(study_dir, exist_ok=True)
         save_path = os.path.join(
@@ -363,7 +287,14 @@ class RedditSource:
         first_chunk = True
 
         for clean_data_path in clean_data_paths:
+            file_size = os.path.getsize(clean_data_path)
+            if file_size == 0:
+                logger.warning(f"Skipping empty file: {clean_data_path} (size: {file_size} bytes)")
+                continue
             for chunk in pd.read_csv(clean_data_path, index_col=0, chunksize=chunk_size):
+                if chunk.empty:
+                    logger.warning(f"Skipping empty chunk from file: {clean_data_path}")
+                    continue
                 processed_chunk = self._process_and_filter_chunk(
                     chunk, treatment_names, outcome_names, date_cutoff
                 )
@@ -380,6 +311,7 @@ class RedditSource:
                     )
                     valid_count += len(processed_chunk)
                     first_chunk = False
+            
 
         if valid_count == 0:
             columns = pd.read_csv(clean_data_path, nrows=0).columns.tolist()
@@ -498,49 +430,42 @@ class RedditSource:
 def _download_submissions_and_comments(
     sub: str, data_path: str, anonymizer: Optional[Anonymizer], batch_size: int
 ) -> tuple[str, str]:
-    """Download submissions and comments for a given subreddit."""
-    submissions_path = os.path.join(data_path, f"{sub}_submissions.csv")
-    comments_path = os.path.join(data_path, f"{sub}_comments.csv")
-    if not os.path.exists(submissions_path):
-        download_sub_data(
-            sub,
-            "submissions",
-            data_path,
-            anonymizer_instance=anonymizer,
-            batch_size=batch_size,
-        )
-    if not os.path.exists(comments_path):
-        download_sub_data(
-            sub,
-            "comments",
-            data_path,
-            anonymizer_instance=anonymizer,
-            batch_size=batch_size,
-        )
-
+    """Download submissions and comments for a given subreddit, then clean."""
     clean_sub_path = os.path.join(data_path, f"{sub}_cleaned.csv")
-    if not os.path.exists(clean_sub_path):
-        try:
-            rule_filtered_df = _clean_sub_data(data_path, sub)
-            rule_filtered_df = rule_filtered_df.drop_duplicates("report")
-        except Exception as e:
-            rule_filtered_df = pd.DataFrame(
-                columns=[
-                    "subreddit",
-                    "title",
-                    "initial_post",
-                    "report",
-                    "score",
-                    "date_created",
-                    "permalink",
-                    "treatments_mentioned",
-                    "outcome_words",
-                    "author_replies",
-                ]
+    if os.path.exists(clean_sub_path):
+        return clean_sub_path
+    
+    try:
+        submissions_path = os.path.join(data_path, f"{sub}_submissions.csv")
+        comments_path = os.path.join(data_path, f"{sub}_comments.csv")
+        if not os.path.exists(submissions_path):
+            download_sub_data(
+                sub,
+                "submissions",
+                data_path,
+                anonymizer_instance=anonymizer,
+                batch_size=batch_size,
             )
-            logger.error(f"Error processing subreddit {sub}: {e}")
+        if not os.path.exists(comments_path):
+            download_sub_data(
+                sub,
+                "comments",
+                data_path,
+                anonymizer_instance=anonymizer,
+                batch_size=batch_size,
+            )
+    
+        rule_filtered_df = _clean_sub_data(data_path, sub)
+        rule_filtered_df = rule_filtered_df.drop_duplicates("report")
         rule_filtered_df.to_csv(clean_sub_path)
-    return submissions_path, comments_path, clean_sub_path
+        # Delete the submissions and comments files after cleaning
+        os.remove(submissions_path)
+        os.remove(comments_path)
+    except Exception as e:
+        clean_sub_path = None
+        logger.error(f"Error processing subreddit {sub}: {e}")
+        
+    return clean_sub_path
 
 
 def _clean_sub_data(data_path: str, sub: str) -> pd.DataFrame:
