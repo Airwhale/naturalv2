@@ -100,6 +100,28 @@ class Study:
         self.num_val_trials = len(self.val_trials)
         self.num_test_trials = len(self.test_trials)
 
+        self.num_keywords = len(
+            set(
+                kw
+                for exp in train_exp + val_exp + test_exp
+                for kw in (exp.conditions if exp.conditions else [])
+            )
+        )
+        self.num_treatments = len(
+            set(
+                treatment
+                for exp in train_exp + val_exp + test_exp
+                for treatment in (exp.treatment_names if exp.treatment_names else [])
+            )
+        )
+        self.num_outcomes = len(
+            set(
+                outcome
+                for exp in train_exp + val_exp + test_exp
+                for outcome in (exp.outcome_names if exp.outcome_names else [])
+            )
+        )
+
         self._log_study_summary()
 
     def _log_study_summary(self):
@@ -109,6 +131,9 @@ class Study:
             Train: %s trials, %s labels
             Val: %s trials, %s labels
             Test: %s trials, %s labels to predict
+            Condition keywords: %s 
+            Treatments: %s 
+            Outcomes: %s 
             """,
             self.conditions,
             self.num_train_trials,
@@ -117,6 +142,9 @@ class Study:
             self.num_val_labels,
             self.num_test_trials,
             self.num_test_to_predict,
+            self.num_keywords,
+            self.num_treatments, 
+            self.num_outcomes
         )
 
     def to_yaml(self, filename: str) -> None:
@@ -305,7 +333,7 @@ def _process_condition_trial(
     trial_disease_mesh: list[str] = (
         get_nested_value(trial, "derivedSection.conditionBrowseModule.ancestors") or []
     )
-    trial_mesh_set = {mesh.lower() for mesh in trial_disease_mesh}
+    trial_mesh_set = {mesh.term.lower() for mesh in trial_disease_mesh}
 
     # Remove "disease" or "diseases" from the set
     trial_mesh_set = {
@@ -334,9 +362,7 @@ def _process_condition_trial(
     return "", None
 
 
-@hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
-def main(cfg: DictConfig) -> None:
-    # Find NCT IDs of valid retrospective and test trials
+def run_study_and_get_stats(cfg: DictConfig) -> dict:
     nct_list = find_valid_ncts(cfg.data_path)
     test_nct_list = find_valid_ncts(cfg.data_path, test=True)
     logger.info(
@@ -344,8 +370,7 @@ def main(cfg: DictConfig) -> None:
         len(nct_list),
         len(test_nct_list),
     )
-
-    # Find NCT IDs of retrospective and test trials related to condition
+    
     retro_trials = find_condition_ncts(nct_list, cfg.data_path, cfg.conditions)
     test_trials = find_condition_ncts(
         test_nct_list, cfg.data_path, cfg.conditions, test=True
@@ -360,6 +385,24 @@ def main(cfg: DictConfig) -> None:
             cfg.conditions[0].lower().replace(" ", "_") + "_study.yaml",
         )
     )
+    
+    return {
+        "conditions": cfg.conditions,
+        "train_trials": study.num_train_trials,
+        "train_labels": study.num_train_labels,
+        "val_trials": study.num_val_trials,
+        "val_labels": study.num_val_labels,
+        "test_trials": study.num_test_trials,
+        "test_labels": study.num_test_to_predict,
+        "num_keywords": study.num_keywords,
+        "num_treatments": study.num_treatments,
+        "num_outcomes": study.num_outcomes,
+    }
+
+@hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
+def main(cfg: DictConfig) -> None:
+    stats = run_study_and_get_stats(cfg)
+    print(yaml.safe_dump(stats, sort_keys=False))
 
 
 if __name__ == "__main__":
