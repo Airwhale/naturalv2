@@ -43,22 +43,26 @@ probs_model:
 pipeline_stages:
   - _target_: naturalv2.pipeline.sample_extraction.RelevanceFilterStage
     model_cfg: ${cheap_model}
-    max_concurrent_workers: 100
+    max_concurrent_workers: 8
 
   - _target_: naturalv2.pipeline.sample_extraction.TreatmentOutcomeFilterStage
     model_cfg: ${cheap_model}
-    max_concurrent_workers: 100
+    max_concurrent_workers: 8
 
   - _target_: naturalv2.pipeline.sample_extraction.KnownsStage
     model_cfg: ${sample_model}
-    max_concurrent_workers: 100
+    max_concurrent_workers: 8
 
   - _target_: naturalv2.pipeline.sample_extraction.ImputationsStage
     model_cfg: ${sample_model}
-    max_concurrent_workers: 100
-
-  - _target_: naturalv2.pipeline.conditional_extraction.ConditionalExtractionStage
-    model_cfg: ${probs_model}
+    max_concurrent_workers: 8
 
   - _target_: naturalv2.pipeline.conditional_extraction.InclusionProbStage
     model_cfg: ${probs_model}
+    max_concurrent_workers: 8
+
+  - _target_: naturalv2.pipeline.conditional_extraction.ConditionalExtractionStage
+    model_cfg: ${probs_model}
+    max_concurrent_workers: 8
+
+  
