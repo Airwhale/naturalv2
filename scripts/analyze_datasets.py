@@ -42,8 +42,18 @@ def plot_dates(data_sizes, utc_dates, date_labels, save_path):
 
     xtick_positions = [utc_dates[i] for i in xtick_indices]
     xtick_labels = [date_labels[i].strftime("%Y-%m-%d") for i in xtick_indices]
-
     plt.xticks(xtick_positions, xtick_labels, rotation=45, ha='right')
+    
+    thresholds = [0, 10, 100, 1000, 10000, 50000]
+    total_trials = len(data_sizes)
+    fractions = [
+        len([ds for ds in data_sizes if ds > t]) / total_trials for t in thresholds
+    ]
+    for i, (t, frac) in enumerate(zip(thresholds, fractions)):
+        if t == 0:
+            plt.text(xtick_positions[0], 1.5, f"Total: {total_trials}", color='k')
+        else:
+            plt.text(xtick_positions[0], t, f">{t}: {frac:.2%}", color='k')
     plt.tight_layout()
     plt.savefig(save_path)
     return
