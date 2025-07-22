@@ -345,7 +345,7 @@ class LM:
         if loop and loop.is_running():  # run the async function in a new event loop
             # NOTE: This is a workaround for running async code in a Jupyter notebook
             # or other environments where the event loop is already running.
-            import nest_asyncio
+            import nest_asyncio  # noqa: PLC0415
 
             nest_asyncio.apply()
             response = loop.run_until_complete(

@@ -2,14 +2,13 @@
 
 import logging
 import os
-from multiprocessing import Pool, cpu_count
 
 import hydra
 import yaml
 from omegaconf import DictConfig
-from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 
-from naturalv2.evals.clinical_trial import ClinicalTrial, download_clinical_trials
+from naturalv2.evals.clinical_trial import ClinicalTrial, Mesh, download_clinical_trials
 from naturalv2.evals.experiment import Experiment
 from naturalv2.utils import check_trial, get_nested_value
 
@@ -228,16 +227,15 @@ def find_valid_ncts(data_path: str, test: bool = False) -> list[str]:
         download_clinical_trials(trial_path, test)
 
     if not os.path.exists(valid_nct_path):
-        with open(valid_nct_path, "a") as valid_file, Pool(cpu_count()) as pool:
-            file_list = [(filename, trial_path) for filename in os.listdir(trial_path)]
+        file_list = [(filename, trial_path) for filename in os.listdir(trial_path)]
 
-            results: list[tuple[str, dict[str, int], bool]] = list(
-                tqdm(
-                    pool.imap(_process_trial_file, file_list),
-                    desc="Finding valid trials" + (" (test)" if test else ""),
-                    total=len(file_list),
-                )
-            )
+        results: list[tuple[str, dict[str, int], bool]] = process_map(
+            _process_trial_file,
+            file_list,
+            desc="Finding valid trials" + (" (test)" if test else ""),
+            chunksize=1,
+        )
+        with open(valid_nct_path, "a") as valid_file:
             for nct_id, trial_stats, check in results:
                 if nct_id and trial_stats:
                     for key, value in trial_stats.items():
@@ -284,22 +282,18 @@ def find_condition_ncts(
     condition_trials: list[tuple[str, str | None]] = []
     conditions_set = {cond.replace("_", " ").lower() for cond in conditions}
 
-    with Pool(cpu_count()) as pool:
-        results: list[tuple[str, str | None]] = list(
-            tqdm(
-                pool.imap(
-                    _process_condition_trial,
-                    [(nct_id, trial_path, conditions_set, test) for nct_id in nct_ids],
-                ),
-                desc="Finding condition trials" + (" (test)" if test else ""),
-                total=len(nct_ids),
-            )
-        )
-        for nct_id, result_date in results:
-            if nct_id:
-                condition_trials.append((nct_id, result_date))
-                with open(condition_nct_path, "a") as condition_file:
-                    condition_file.write(f"{nct_id}\n")
+    results: list[tuple[str, str | None]] = process_map(
+        _process_condition_trial,
+        [(nct_id, trial_path, conditions_set, test) for nct_id in nct_ids],
+        desc="Finding condition trials" + (" (test)" if test else ""),
+        chunksize=1,
+    )
+
+    for nct_id, result_date in results:
+        if nct_id:
+            condition_trials.append((nct_id, result_date))
+            with open(condition_nct_path, "a") as condition_file:
+                condition_file.write(f"{nct_id}\n")
 
     # For debugging:
     # for nct_id in tqdm(nct_ids, desc="Finding condition trials" + (" (test)" if test else "")):
@@ -330,8 +324,11 @@ def _process_condition_trial(
 
     trial = ClinicalTrial.from_json_file(os.path.join(trial_path, f"{nct_id}.json"))
 
-    trial_disease_mesh: list[str] = (
-        get_nested_value(trial, "derivedSection.conditionBrowseModule.ancestors") or []
+    mesh_ancestors: list[Mesh] | None = get_nested_value(
+        trial, "derivedSection.conditionBrowseModule.ancestors"
+    )
+    trial_disease_mesh = (
+        [ancestor.term for ancestor in mesh_ancestors] if mesh_ancestors else []
     )
     trial_mesh_set = {mesh.term.lower() for mesh in trial_disease_mesh}
 
