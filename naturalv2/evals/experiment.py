@@ -677,6 +677,17 @@ class Experiment:
             outcome.title if isinstance(outcome, OutcomeMeasure) else outcome.measure
             for outcome in outcomes
         ]
+
+        self.drugbank_names: dict[str, list[str]] = {}
+        for drug_name in self._treatment_names:
+            # Remove any dosage, units etc. before searching DrugBank
+            drug_name_stripped = re.sub(
+                r'\s+\d+([./]\d+)*\s*(mg|g|mcg|ug|ml|iu|units|tablets?|capsules?)?\b.*$', 
+                '', 
+                drug_name, 
+                flags=re.IGNORECASE
+            ).strip()
+            self.drugbank_names[drug_name] = get_drugbank_aliases(self.data_path, drug_name_stripped) 
         # TODO: maybe use timeframes in question_prompts, e.g.
         # outcome_q = "What was the patient's reported {out.title}?"
         # if out.timeFrame: outcome_q.replace("?", "after a duration of {out.timeFrame.split(",")[-1]}?")
