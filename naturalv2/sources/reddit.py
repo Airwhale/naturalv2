@@ -1,5 +1,6 @@
 """Module for downloading and processing Reddit data."""
 
+import asyncio
 import datetime
 import json
 import logging
@@ -89,8 +90,7 @@ class RedditSource:
         if anonymize:
             self._anonymizer = Anonymizer(score_threshold=anonymizer_score_threshold)
 
-    def get_subreddits_from_llm(self, llm_input):
-        lm = build_lm_instance_from_cfg(self.lm_cfg)
+    async def get_subreddits_from_llm(self, lm, llm_input):
 
         messages: list[dict[str, str]] = load_prompt(
             base_dir="naturalv2/prompts",
@@ -99,26 +99,24 @@ class RedditSource:
             **llm_input,
         )
 
-        response = lm.call_sync(messages=messages, response_format=ListResponse)
+        response = await lm(messages=messages, response_format=ListResponse)
         subreddits = extract_list_response(response)
         return subreddits[0]
 
-    async def condition_filter(self, keywords: list[str], condition_metadata: dict) -> list[str]:
+    async def condition_filter(
+        self, 
+        keywords: list[str], 
+        study_dataset,
+        study_dataset_file: str,
+        semaphore_limit: Optional[int] = 50,
+    ) -> list[str]:
         """Filter subreddits based on keywords in their description.
-
-        Parameters
-        ----------
-        keywords : list[str]
-            List of keywords to filter subreddits by their description.
-
-        Returns
-        -------
-        list[str]
-            List of paths to the downloaded data files for relevant subreddits.
         """
+        source_metadata = study_dataset.sources["reddit"]
         pushshift_subreddits = self.subs_about["sub"].to_list()
 
         self.relevant_subs = set()
+        lm = build_lm_instance_from_cfg(self.lm_cfg)
 
         async def _get_relevant_subs_and_posts(word):
             # Search for subreddits matching the word
@@ -141,24 +139,37 @@ class RedditSource:
                 "condition": word,
                 "input": json.dumps(llm_input, indent=4) 
             }
-            relevant_subs_llm = self.get_subreddits_from_llm(llm_input_dict)
+            relevant_subs_llm = await self.get_subreddits_from_llm(lm, llm_input_dict)
             return relevant_subs_llm
 
         logger.info(f"Getting relevant subreddits for {len(keywords)} keywords.")
-        # TODO: Run _get_relevant_subs_and_posts concurrently
-        for word in keywords:
-            if word not in condition_metadata:
-                relevant_subs = await _get_relevant_subs_and_posts(word)
-                logger.info(f"{len(relevant_subs)} relevant subreddits found for keyword: {word}.")
-                self.relevant_subs.update(relevant_subs)
-                condition_metadata[word] = relevant_subs
-            else:
-                self.relevant_subs.update(condition_metadata[word])
+        semaphore = asyncio.Semaphore(semaphore_limit)
+        lock = asyncio.Lock()
 
+        async def process_keyword(word):
+            if word not in source_metadata:
+                async with semaphore:
+                    try:
+                        relevant_subs = await _get_relevant_subs_and_posts(word)
+                        logger.info(f"{len(relevant_subs)} relevant subreddits found for keyword: {word}.")
+                        self.relevant_subs.update(relevant_subs)
+                        source_metadata[word] = relevant_subs
+
+                        # Write to YAML immediately (protected by a lock)
+                        async with lock:
+                            study_dataset.sources["reddit"] = source_metadata
+                            study_dataset.to_yaml(study_dataset_file)
+                    except Exception as e:
+                        logger.error(f"Error processing keyword {word}: {e}")
+            else:
+                self.relevant_subs.update(source_metadata[word])
+
+        # Launch all tasks concurrently, but limited by the semaphore
+        await asyncio.gather(*(process_keyword(word) for word in keywords))
 
         self.relevant_subs = list(self.relevant_subs)
         logger.info(f"{len(self.relevant_subs)} relevant subreddits found!")
-        return condition_metadata
+        return source_metadata
 
     def clean_data(self):
         clean_paths = []
@@ -213,8 +224,9 @@ class RedditSource:
 
         return clean_paths
 
-    def cleanup_for_multiprocessing(self):
+    async def cleanup_for_multiprocessing(self):
         """Remove unpicklable attributes to make instance picklable."""
+        await self.reddit.close()
         self.reddit = None
         self.subs_about = None
 

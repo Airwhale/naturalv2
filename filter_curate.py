@@ -655,7 +655,7 @@ async def _curate_experiments(
 
 @hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
-    # load study from yaml
+    # Load study from yaml
     study_file = os.path.join(
         cfg.save_path,
         "studies",
@@ -663,7 +663,7 @@ def main(cfg: DictConfig) -> None:
     )
     study = Study.from_yaml(study_file)
 
-    # extract train, val, and test NCT IDs
+    # Extract train, val, and test NCT IDs
     train_ncts = [list(trial.keys())[0] for trial in study.train_trials]
     val_ncts = [list(trial.keys())[0] for trial in study.val_trials]
     test_ncts = [list(trial.keys())[0] for trial in study.test_trials]
@@ -673,7 +673,7 @@ def main(cfg: DictConfig) -> None:
     )
     all_ncts = train_ncts + val_ncts + test_ncts
     
-    # create study dataset
+    # Create study dataset
     study_dataset_file = os.path.join(
         cfg.data_path,
         "studies",
@@ -684,7 +684,7 @@ def main(cfg: DictConfig) -> None:
     else:
         study_dataset = StudyDataset(study.conditions, cfg.sources)
 
-    # initialize sample model
+    # Initialize sample model
     sample_model = build_lm_instance_from_cfg(cfg.sample_model)
 
     async def process_all_sources():
@@ -692,30 +692,31 @@ def main(cfg: DictConfig) -> None:
             source_dataset: Union[RedditSource, PubMedSet] = instantiate(
                 cfg[source_name]
             )
-            # study_dataset.data_paths[f"{source_name}_condition_filtered"] = []
             study_dataset.data_paths[f"{source_name}_cleaned"] = []
-            condition_metadata = study_dataset.sources[source_name]
 
             all_condition_keywords = []
             for nct_id, split in zip(all_ncts, splits):
                 status = "active" if split == "test" else "completed"
-                exp = Experiment("/mfs1/u/nikita/naturalv2/", nct_id, status=status)
+                exp = Experiment(cfg.data_path, nct_id, status=status)
                 condition_keywords = exp.conditions if exp.conditions else []  
                 all_condition_keywords.extend(condition_keywords) 
 
-            condition_metadata = await source_dataset.condition_filter(all_condition_keywords, condition_metadata)
-            study_dataset.sources[source_name] = condition_metadata
-            # TODO: the way this is set up, LLM outputs are saved only at the end, not as they come
-            study_dataset.to_yaml(study_dataset_file)
+            # Filter and download data related to condition keywords
+            await source_dataset.condition_filter(
+                all_condition_keywords, 
+                study_dataset,
+                study_dataset_file,
+                semaphore_limit=cfg.get("curate_max_concurrency", 100)
+            )
 
             clean_paths = source_dataset.clean_data()
             study_dataset.data_paths[f"{source_name}_cleaned"].extend(clean_paths)
             study_dataset.to_yaml(study_dataset_file)
 
             all_clean_paths = study_dataset.data_paths[f"{source_name}_cleaned"]
-            source_dataset.cleanup_for_multiprocessing()
+            await source_dataset.cleanup_for_multiprocessing()
 
-            # Use cheap model for common names for now, until we can figure rate limits out
+            # Use cheap model for common names 
             cheap_model = build_lm_instance_from_cfg(cfg.cheap_model)
             # Process experiments in batches with async LLM calls
             await _curate_experiments(
