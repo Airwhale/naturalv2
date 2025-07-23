@@ -24,7 +24,7 @@ from naturalv2.evals.experiment import Experiment
 from naturalv2.models.lm import LM, build_lm_instance_from_cfg, extract_list_response
 from naturalv2.sources.pubmed import PubMedSet
 from naturalv2.sources.reddit import RedditSource
-from naturalv2.utils import get_drugbank_aliases, ListResponse, load_prompt
+from naturalv2.utils import ListResponse
 
 
 load_dotenv(".env")
@@ -410,7 +410,9 @@ class _DataCurator:
 
         for result in llm_results.values():
             if result.success and result.common_names:
-                grouped[result.nct_id][result.attribute].extend(result.common_names + [result.name]) # include original attribute name 
+                grouped[result.nct_id][result.attribute].extend(
+                    result.common_names + [result.name]
+                )  # include original attribute name
 
         # Remove duplicates and convert to regular dict
         final_grouped: dict[str, dict[str, list[str]]] = {}
@@ -462,7 +464,7 @@ class _DataCurator:
             # Save the modified experiment object to YAML
             exp_file = os.path.join(experiment_dir, f"{exp_task.nct_id}.yaml")
             exp_task.experiment_instance.to_yaml(exp_file)
-            
+
             # Run experiment data curation using the source_dataset instance
             exp_data_path, exp_data_size = source_dataset.curate_experiment_data(
                 exp_task.experiment_instance,
@@ -669,10 +671,12 @@ def main(cfg: DictConfig) -> None:
     test_ncts = [list(trial.keys())[0] for trial in study.test_trials]
 
     splits = (
-        ["train"] * len(train_ncts) + ["val"] * len(val_ncts) + ["test"] * len(test_ncts)
+        ["train"] * len(train_ncts)
+        + ["val"] * len(val_ncts)
+        + ["test"] * len(test_ncts)
     )
     all_ncts = train_ncts + val_ncts + test_ncts
-    
+
     # Create study dataset
     study_dataset_file = os.path.join(
         cfg.data_path,
@@ -698,15 +702,15 @@ def main(cfg: DictConfig) -> None:
             for nct_id, split in zip(all_ncts, splits):
                 status = "active" if split == "test" else "completed"
                 exp = Experiment(cfg.data_path, nct_id, status=status)
-                condition_keywords = exp.conditions if exp.conditions else []  
-                all_condition_keywords.extend(condition_keywords) 
+                condition_keywords = exp.conditions if exp.conditions else []
+                all_condition_keywords.extend(condition_keywords)
 
             # Filter and download data related to condition keywords
             await source_dataset.condition_filter(
-                all_condition_keywords, 
+                all_condition_keywords,
                 study_dataset,
                 study_dataset_file,
-                semaphore_limit=cfg.get("curate_max_concurrency", 100)
+                semaphore_limit=cfg.get("curate_max_concurrency", 100),
             )
 
             clean_paths = source_dataset.clean_data()
@@ -716,7 +720,7 @@ def main(cfg: DictConfig) -> None:
             all_clean_paths = study_dataset.data_paths[f"{source_name}_cleaned"]
             await source_dataset.cleanup_for_multiprocessing()
 
-            # Use cheap model for common names 
+            # Use cheap model for common names
             cheap_model = build_lm_instance_from_cfg(cfg.cheap_model)
             # Process experiments in batches with async LLM calls
             await _curate_experiments(

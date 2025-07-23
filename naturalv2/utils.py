@@ -1,15 +1,15 @@
 import ast
-import gzip 
+import gzip
 import json
 import logging
 import os
-import pandas as pd
 import re
+import xml.etree.ElementTree as ET
 from itertools import product
 from string import Template
 from typing import Any, Literal
-import xml.etree.ElementTree as ET
 
+import pandas as pd
 from pydantic import BaseModel, create_model
 
 from naturalv2.evals.clinical_trial import (
@@ -275,43 +275,42 @@ def get_drugbank_aliases(data_path: str, drug_name: str) -> list[str]:
         with gzip.open(file_path, "rt") as xml_file:
             tree = ET.parse(xml_file)
             root = tree.getroot()
-            ns = '{http://www.drugbank.ca}' 
+            ns = "{http://www.drugbank.ca}"
             aliases_dicts = []
             index_mapping = {}
 
-            index = 0 
-            for drug in root.findall(ns + 'drug'):
+            index = 0
+            for drug in root.findall(ns + "drug"):
                 aliases = []
-                
-                name_elem = drug.find(ns + 'name')
+
+                name_elem = drug.find(ns + "name")
                 if name_elem is not None and name_elem.text:
                     aliases.append(name_elem.text.strip().lower())
-                
-                synonyms_elem = drug.find(ns + 'synonyms')
+
+                synonyms_elem = drug.find(ns + "synonyms")
                 if synonyms_elem is not None:
-                    for syn_elem in synonyms_elem.findall(ns + 'synonym'):
+                    for syn_elem in synonyms_elem.findall(ns + "synonym"):
                         if syn_elem.text:
                             aliases.append(syn_elem.text.strip().lower())
-                
-                products_elem = drug.find(ns + 'products')
+
+                products_elem = drug.find(ns + "products")
                 if products_elem is not None:
-                    for product_elem in products_elem.findall(ns + 'product'):
-                        name_elem = product_elem.find(ns + 'name')
+                    for product_elem in products_elem.findall(ns + "product"):
+                        name_elem = product_elem.find(ns + "name")
                         if name_elem is not None and name_elem.text:
                             aliases.append(name_elem.text.strip().lower())
-                
-                intl_brands_elem = drug.find(ns + 'international-brands')
+
+                intl_brands_elem = drug.find(ns + "international-brands")
                 if intl_brands_elem is not None:
-                    for intl_brand_elem in intl_brands_elem.findall(ns + 'international-brand'):
-                        name_elem = intl_brand_elem.find(ns + 'name')
+                    for intl_brand_elem in intl_brands_elem.findall(
+                        ns + "international-brand"
+                    ):
+                        name_elem = intl_brand_elem.find(ns + "name")
                         if name_elem is not None and name_elem.text:
                             aliases.append(name_elem.text.strip().lower())
-                
+
                 aliases = list(set(aliases))
-                aliases_dicts.append({
-                    "index": index,
-                    "alias_list": str(aliases)
-                })
+                aliases_dicts.append({"index": index, "alias_list": str(aliases)})
                 for alias in aliases:
                     index_mapping[alias] = index
                 index += 1
@@ -328,6 +327,7 @@ def get_drugbank_aliases(data_path: str, drug_name: str) -> list[str]:
     for alias_list in aliases:
         all_aliases += ast.literal_eval(alias_list)
     return all_aliases
+
 
 def qa_interleaved_enum(q_dct, options_dct, a_enum, to_enum):
     all_interleaved_options = []

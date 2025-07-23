@@ -1,27 +1,34 @@
 import argparse
 import datetime
+import os
+
 import matplotlib.pyplot as plt
-import numpy as np
-import os 
-import yaml
 
 from filter_curate import StudyDataset
 from naturalv2.evals.experiment import Experiment
 
+
 # Usage: python -m scripts.analyze_datasets --data_path /mfs1/u/nikita/naturalv2 --output_dir scratch --study hemic_and_lymphatic_diseases
+
 
 def plot_effects(data_sizes, avg_effect_sizes, save_path):
     plt.figure(figsize=(10, 6))
-    plt.scatter(avg_effect_sizes, data_sizes, label="Avg Abs Effect Size", marker='s', color='green')
+    plt.scatter(
+        avg_effect_sizes,
+        data_sizes,
+        label="Avg Abs Effect Size",
+        marker="s",
+        color="green",
+    )
     plt.xlabel("Absolute Effect Size")
     plt.ylabel("Data Size")
     plt.yscale("log")
     plt.title("Absolute average effect sizes vs Reddit data size")
     # plt.legend()
     plt.grid(True)
-    plt.tight_layout()  
+    plt.tight_layout()
     plt.savefig(save_path)
-    return 
+
 
 def plot_dates(data_sizes, utc_dates, date_labels, save_path):
     plt.figure(figsize=(10, 6))
@@ -32,18 +39,21 @@ def plot_dates(data_sizes, utc_dates, date_labels, save_path):
     plt.title("Trial end dates vs Reddit data sizes")
     plt.grid(True)
 
-    num_xticks = 15  
+    num_xticks = 15
     if len(utc_dates) <= num_xticks:
         xtick_indices = list(range(len(utc_dates)))
     else:
-        xtick_indices = [round(i * (len(utc_dates) - 1) / (num_xticks - 1)) for i in range(num_xticks - 1)]
+        xtick_indices = [
+            round(i * (len(utc_dates) - 1) / (num_xticks - 1))
+            for i in range(num_xticks - 1)
+        ]
         if (len(utc_dates) - 1) not in xtick_indices:
             xtick_indices.append(len(utc_dates) - 1)
 
     xtick_positions = [utc_dates[i] for i in xtick_indices]
     xtick_labels = [date_labels[i].strftime("%Y-%m-%d") for i in xtick_indices]
-    plt.xticks(xtick_positions, xtick_labels, rotation=45, ha='right')
-    
+    plt.xticks(xtick_positions, xtick_labels, rotation=45, ha="right")
+
     thresholds = [0, 10, 100, 1000, 10000, 50000]
     total_trials = len(data_sizes)
     fractions = [
@@ -51,12 +61,11 @@ def plot_dates(data_sizes, utc_dates, date_labels, save_path):
     ]
     for i, (t, frac) in enumerate(zip(thresholds, fractions)):
         if t == 0:
-            plt.text(xtick_positions[0], 1.5, f"Total: {total_trials}", color='k')
+            plt.text(xtick_positions[0], 1.5, f"Total: {total_trials}", color="k")
         else:
-            plt.text(xtick_positions[0], t, f">{t}: {frac:.2%}", color='k')
+            plt.text(xtick_positions[0], t, f">{t}: {frac:.2%}", color="k")
     plt.tight_layout()
     plt.savefig(save_path)
-    return
 
 
 if __name__ == "__main__":
@@ -67,7 +76,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     experiment_dir = os.path.join(args.data_path, "experiments")
-    study_dataset_path = os.path.join(args.data_path, f"studies/{args.study}_study_dataset.yaml")
+    study_dataset_path = os.path.join(
+        args.data_path, f"studies/{args.study}_study_dataset.yaml"
+    )
     study_dataset = StudyDataset.from_yaml(study_dataset_path)
 
     utc_dates, date_labels = [], []
@@ -95,8 +106,13 @@ if __name__ == "__main__":
         data_sizes.append(data_size)
         ncts.append(nct_id)
 
-    sorted_lists = sorted(zip(utc_dates, date_labels, avg_effect_sizes, data_sizes, ncts), key=lambda x: x[0])
-    utc_dates, date_labels, avg_effect_sizes, data_sizes, ncts = map(list, zip(*sorted_lists))
+    sorted_lists = sorted(
+        zip(utc_dates, date_labels, avg_effect_sizes, data_sizes, ncts),
+        key=lambda x: x[0],
+    )
+    utc_dates, date_labels, avg_effect_sizes, data_sizes, ncts = map(
+        list, zip(*sorted_lists)
+    )
 
     save_path = os.path.join(args.output_dir, f"{args.study}_reddit_effect_sizes.png")
     plot_effects(data_sizes, avg_effect_sizes, save_path)

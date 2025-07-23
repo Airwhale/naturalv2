@@ -130,9 +130,9 @@ class Study:
             Train: %s trials, %s labels
             Val: %s trials, %s labels
             Test: %s trials, %s labels to predict
-            Condition keywords: %s 
-            Treatments: %s 
-            Outcomes: %s 
+            Condition keywords: %s
+            Treatments: %s
+            Outcomes: %s
             """,
             self.conditions,
             self.num_train_trials,
@@ -142,8 +142,8 @@ class Study:
             self.num_test_trials,
             self.num_test_to_predict,
             self.num_keywords,
-            self.num_treatments, 
-            self.num_outcomes
+            self.num_treatments,
+            self.num_outcomes,
         )
 
     def to_yaml(self, filename: str) -> None:
@@ -367,7 +367,7 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
         len(nct_list),
         len(test_nct_list),
     )
-    
+
     retro_trials = find_condition_ncts(nct_list, cfg.data_path, cfg.conditions)
     test_trials = find_condition_ncts(
         test_nct_list, cfg.data_path, cfg.conditions, test=True
@@ -382,7 +382,7 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
             cfg.conditions[0].lower().replace(" ", "_") + "_study.yaml",
         )
     )
-    
+
     return {
         "conditions": cfg.conditions,
         "train_trials": study.num_train_trials,
@@ -395,6 +395,7 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
         "num_treatments": study.num_treatments,
         "num_outcomes": study.num_outcomes,
     }
+
 
 @hydra.main(config_path="conf/", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:

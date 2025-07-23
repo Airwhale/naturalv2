@@ -1,15 +1,15 @@
 import argparse
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import yaml
-from hydra import initialize, compose
+from hydra import compose, initialize
 
 from create_study import run_study_and_get_stats
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,20 +44,20 @@ CONDITION_LISTS = [
 
 
 def run_study(conditions: list[str], args: argparse.Namespace) -> dict[str, Any]:
-    
     config_dir = os.path.dirname(args.config_path)
     config_name = os.path.basename(args.config_path)
-    if config_name.endswith('.yaml'):
+    if config_name.endswith(".yaml"):
         config_name = config_name[:-5]
     with initialize(config_path=config_dir or None, version_base="1.2"):
         cfg = compose(config_name=config_name)
-    
+
     cfg.conditions = conditions
     cfg.save_path = args.output_dir
-   
+
     logger.info(f"Running study for: {conditions}")
     stats = run_study_and_get_stats(cfg)
     return stats
+
 
 def count_unique_ncts(studies_dir: str) -> dict[str, int]:
     def extract_ncts_and_labels(trial_type: str):

@@ -5,15 +5,13 @@ import datetime
 import json
 import logging
 import os
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
 from typing import Optional
 
-import pandas as pd
 import asyncpraw
+import pandas as pd
 import psutil
 from omegaconf import DictConfig
-from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from naturalv2.evals.experiment import Experiment
@@ -91,7 +89,6 @@ class RedditSource:
             self._anonymizer = Anonymizer(score_threshold=anonymizer_score_threshold)
 
     async def get_subreddits_from_llm(self, lm, llm_input):
-
         messages: list[dict[str, str]] = load_prompt(
             base_dir="naturalv2/prompts",
             prompt_type="condition_subreddits",
@@ -104,14 +101,13 @@ class RedditSource:
         return subreddits[0]
 
     async def condition_filter(
-        self, 
-        keywords: list[str], 
+        self,
+        keywords: list[str],
         study_dataset,
         study_dataset_file: str,
         semaphore_limit: Optional[int] = 50,
     ) -> list[str]:
-        """Filter subreddits based on keywords in their description.
-        """
+        """Filter subreddits based on keywords in their description."""
         source_metadata = study_dataset.sources["reddit"]
         pushshift_subreddits = self.subs_about["sub"].to_list()
 
@@ -131,13 +127,16 @@ class RedditSource:
                 subreddit_instance = await self.reddit.subreddit(subreddit)
                 async for submission in subreddit_instance.search(word, limit=5):
                     posts.append(
-                        "**Title**: " + submission.title + "\n\n" +
-                        "**Post content**: " + (submission.selftext or "")[:1000]
+                        "**Title**: "
+                        + submission.title
+                        + "\n\n"
+                        + "**Post content**: "
+                        + (submission.selftext or "")[:1000]
                     )
                 llm_input.append({"subreddit": subreddit, "example_posts": posts})
             llm_input_dict = {
                 "condition": word,
-                "input": json.dumps(llm_input, indent=4) 
+                "input": json.dumps(llm_input, indent=4),
             }
             relevant_subs_llm = await self.get_subreddits_from_llm(lm, llm_input_dict)
             return relevant_subs_llm
@@ -151,7 +150,9 @@ class RedditSource:
                 async with semaphore:
                     try:
                         relevant_subs = await _get_relevant_subs_and_posts(word)
-                        logger.info(f"{len(relevant_subs)} relevant subreddits found for keyword: {word}.")
+                        logger.info(
+                            f"{len(relevant_subs)} relevant subreddits found for keyword: {word}."
+                        )
                         self.relevant_subs.update(relevant_subs)
                         source_metadata[word] = relevant_subs
 
@@ -183,7 +184,9 @@ class RedditSource:
 
         if not subs_to_filter:
             # all data have been downloaded
-            logger.info("All relevant subreddit data has already been downloaded and cleaned.")
+            logger.info(
+                "All relevant subreddit data has already been downloaded and cleaned."
+            )
             return clean_paths
 
         n_downloaded = len(self.relevant_subs) - len(subs_to_filter)
@@ -271,10 +274,13 @@ class RedditSource:
         if os.path.exists(save_path):
             exp_df = pd.read_csv(save_path, index_col=0)
             return save_path, len(exp_df)
-        
-        drugbank_names = [item for sublist in experiment.drugbank_names.values() for item in sublist]
+
+        drugbank_names = [
+            item for sublist in experiment.drugbank_names.values() for item in sublist
+        ]
         treatment_names = [
-            name.lower() for name in experiment.treatment_common_names["reddit"] + drugbank_names
+            name.lower()
+            for name in experiment.treatment_common_names["reddit"] + drugbank_names
         ]
         outcome_names = [
             name.lower() for name in experiment.outcome_common_names["reddit"]
@@ -301,9 +307,13 @@ class RedditSource:
         for clean_data_path in clean_data_paths:
             file_size = os.path.getsize(clean_data_path)
             if file_size == 0:
-                logger.warning(f"Skipping empty file: {clean_data_path} (size: {file_size} bytes)")
+                logger.warning(
+                    f"Skipping empty file: {clean_data_path} (size: {file_size} bytes)"
+                )
                 continue
-            for chunk in pd.read_csv(clean_data_path, index_col=0, chunksize=chunk_size):
+            for chunk in pd.read_csv(
+                clean_data_path, index_col=0, chunksize=chunk_size
+            ):
                 if chunk.empty:
                     logger.warning(f"Skipping empty chunk from file: {clean_data_path}")
                     continue
@@ -323,7 +333,6 @@ class RedditSource:
                     )
                     valid_count += len(processed_chunk)
                     first_chunk = False
-            
 
         if valid_count == 0:
             columns = pd.read_csv(clean_data_path, nrows=0).columns.tolist()
@@ -446,7 +455,7 @@ def _download_submissions_and_comments(
     clean_sub_path = os.path.join(data_path, f"{sub}_cleaned.csv")
     if os.path.exists(clean_sub_path):
         return clean_sub_path
-    
+
     try:
         submissions_path = os.path.join(data_path, f"{sub}_submissions.csv")
         comments_path = os.path.join(data_path, f"{sub}_comments.csv")
@@ -466,7 +475,7 @@ def _download_submissions_and_comments(
                 anonymizer_instance=anonymizer,
                 batch_size=batch_size,
             )
-    
+
         rule_filtered_df = _clean_sub_data(data_path, sub)
         rule_filtered_df = rule_filtered_df.drop_duplicates("report")
         rule_filtered_df.to_csv(clean_sub_path)
@@ -476,7 +485,7 @@ def _download_submissions_and_comments(
     except Exception as e:
         clean_sub_path = None
         logger.error(f"Error processing subreddit {sub}: {e}")
-        
+
     return clean_sub_path
 
 
