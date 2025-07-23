@@ -704,6 +704,7 @@ def main(cfg: DictConfig) -> None:
                 exp = Experiment(cfg.data_path, nct_id, status=status)
                 condition_keywords = exp.conditions if exp.conditions else []
                 all_condition_keywords.extend(condition_keywords)
+            all_condition_keywords = list(set(all_condition_keywords))
 
             # Filter and download data related to condition keywords
             await source_dataset.condition_filter(
