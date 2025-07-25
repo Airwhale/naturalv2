@@ -409,7 +409,9 @@ class _DataCurator:
 
         for result in llm_results.values():
             if result.success and result.common_names:
-                grouped[result.nct_id][result.attribute][result.name] = result.common_names
+                grouped[result.nct_id][result.attribute][result.name] = (
+                    result.common_names
+                )
 
         # Convert to regular dict
         final_grouped: dict[str, dict[str, dict[str, list[str]]]] = {}

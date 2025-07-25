@@ -123,11 +123,13 @@ class Experiment:
 
         # Set treatment and outcome names and common names per data source
         # E.g. {"reddit": {
-        #  "Erenumab": [Aimovig], 
+        #  "Erenumab": [Aimovig],
         #  "Topiramate": [Topamax]
         # }}
         self._set_outcome_treatment_effects(trial)
-        self.treatment_common_names: dict[str, dict[str, list[str]]] = {} # E.g. {"reddit": {"Erenumab": [Aimovig], "Topiramate": [Topamax]}}
+        self.treatment_common_names: dict[
+            str, dict[str, list[str]]
+        ] = {}  # E.g. {"reddit": {"Erenumab": [Aimovig], "Topiramate": [Topamax]}}
         self.outcome_common_names: dict[str, dict[str, list[str]]] = {}
 
         # Set expected choices for each feature

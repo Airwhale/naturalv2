@@ -281,13 +281,21 @@ class RedditSource:
         treatment_names = [
             name.lower()
             for name in list(experiment.treatment_common_names["reddit"].keys())
-            + [item for sublist in experiment.treatment_common_names["reddit"].values() for item in sublist]
+            + [
+                item
+                for sublist in experiment.treatment_common_names["reddit"].values()
+                for item in sublist
+            ]
             + drugbank_names
         ]
         outcome_names = [
             name.lower()
             for name in list(experiment.outcome_common_names["reddit"].keys())
-            + [item for sublist in experiment.outcome_common_names["reddit"].values() for item in sublist]
+            + [
+                item
+                for sublist in experiment.outcome_common_names["reddit"].values()
+                for item in sublist
+            ]
         ]
 
         # Prepare date filter
