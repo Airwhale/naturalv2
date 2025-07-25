@@ -127,7 +127,7 @@ class Experiment:
         #  "Topiramate": [Topamax]
         # }}
         self._set_outcome_treatment_effects(trial)
-        self.treatment_common_names: dict[str, dict[str, list[str]]] = {}  
+        self.treatment_common_names: dict[str, dict[str, list[str]]] = {}
         self.outcome_common_names: dict[str, dict[str, list[str]]] = {}
 
         # Set expected choices for each feature
