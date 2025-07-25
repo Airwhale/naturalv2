@@ -402,24 +402,21 @@ class _DataCurator:
 
     def _group_llm_results_by_experiment(
         self, llm_results: dict[str, LLMResult]
-    ) -> dict[str, dict[str, list[str]]]:
-        """Group LLM results by experiment and attribute"""
-        grouped: defaultdict[str, defaultdict[str, list[str]]] = defaultdict(
-            lambda: defaultdict(list)
+    ) -> dict[str, dict[str, dict[str, list[str]]]]:
+        grouped: defaultdict[str, defaultdict[str, dict[str, list[str]]]] = defaultdict(
+            lambda: defaultdict(dict)
         )
 
         for result in llm_results.values():
             if result.success and result.common_names:
-                grouped[result.nct_id][result.attribute].extend(
-                    result.common_names + [result.name]
-                )  # include original attribute name
+                grouped[result.nct_id][result.attribute][result.name] = result.common_names
 
-        # Remove duplicates and convert to regular dict
-        final_grouped: dict[str, dict[str, list[str]]] = {}
+        # Convert to regular dict
+        final_grouped: dict[str, dict[str, dict[str, list[str]]]] = {}
         for nct_id, attributes in grouped.items():
             final_grouped[nct_id] = {}
-            for attribute, names in attributes.items():
-                final_grouped[nct_id][attribute] = list(set(names))
+            for attribute, name_map in attributes.items():
+                final_grouped[nct_id][attribute] = dict(name_map)
 
         return final_grouped
 
@@ -456,10 +453,10 @@ class _DataCurator:
             if exp_llm_data:
                 for attribute in ["treatment", "outcome"]:
                     if attribute in exp_llm_data:
-                        common_names = exp_llm_data[attribute]
+                        common_names_dict = exp_llm_data[attribute]
                         getattr(
                             exp_task.experiment_instance, f"{attribute}_common_names"
-                        ).update({exp_task.source_name: common_names})
+                        ).update({exp_task.source_name: common_names_dict})
 
             # Save the modified experiment object to YAML
             exp_file = os.path.join(experiment_dir, f"{exp_task.nct_id}.yaml")

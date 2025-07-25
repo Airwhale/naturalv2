@@ -121,10 +121,14 @@ class Experiment:
             "Whether the report indicates that the individual meets the inclusion criteria."
         )
 
-        # Set treatment and outcome names and common names
+        # Set treatment and outcome names and common names per data source
+        # E.g. {"reddit": {
+        #  "Erenumab": [Aimovig], 
+        #  "Topiramate": [Topamax]
+        # }}
         self._set_outcome_treatment_effects(trial)
-        self.treatment_common_names: dict[str, list[str]] = {}
-        self.outcome_common_names: dict[str, list[str]] = {}
+        self.treatment_common_names: dict[str, dict[str, list[str]]] = {} # E.g. {"reddit": {"Erenumab": [Aimovig], "Topiramate": [Topamax]}}
+        self.outcome_common_names: dict[str, dict[str, list[str]]] = {}
 
         # Set expected choices for each feature
         # NOTE: options for covariates can only be set when we get some data
