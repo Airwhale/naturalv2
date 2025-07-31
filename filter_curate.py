@@ -399,7 +399,9 @@ class _DataCurator:
                             getattr(
                                 experiment_task.experiment_instance,
                                 f"{attribute}_common_names",
-                            ).update({experiment_task.source_name: common_names})
+                            ).update(
+                                {experiment_task.source_name: list(set(common_names))}
+                            )
 
                 # Save the modified experiment object to YAML
                 exp_file = os.path.join(
