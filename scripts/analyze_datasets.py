@@ -4,8 +4,8 @@ import os
 
 import matplotlib.pyplot as plt
 
-from filter_curate import StudyDataset
 from naturalv2.evals.experiment import Experiment
+from naturalv2.study import StudyDataset, get_study_filepaths
 
 
 # Usage: python -m scripts.analyze_datasets --data_path /mfs1/u/nikita/naturalv2 --output_dir scratch --study hemic_and_lymphatic_diseases
@@ -59,7 +59,7 @@ def plot_dates(data_sizes, utc_dates, date_labels, save_path):
     fractions = [
         len([ds for ds in data_sizes if ds > t]) / total_trials for t in thresholds
     ]
-    for i, (t, frac) in enumerate(zip(thresholds, fractions)):
+    for t, frac in zip(thresholds, fractions):
         if t == 0:
             plt.text(xtick_positions[0], 1.5, f"Total: {total_trials}", color="k")
         else:
@@ -76,17 +76,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     experiment_dir = os.path.join(args.data_path, "experiments")
-    study_dataset_path = os.path.join(
-        args.data_path, f"studies/{args.study}_study_dataset.yaml"
-    )
+    study_dataset_path = get_study_filepaths(args.data_path, args.study)[
+        "study_dataset"
+    ]
     study_dataset = StudyDataset.from_yaml(study_dataset_path)
 
     utc_dates, date_labels = [], []
     avg_effect_sizes, data_sizes = [], []
     ncts = []
 
-    for nct_id, data_size in study_dataset.data_sizes.items():
-        nct_id = nct_id.split("_", 1)[1] if "_" in nct_id else nct_id
+    for nctid, data_size in study_dataset.data_sizes.items():
+        nct_id = nctid.split("_", 1)[1] if "_" in nctid else nctid
         exp_file = os.path.join(experiment_dir, f"{nct_id}.yaml")
         try:
             exp = Experiment.from_yaml(exp_file)

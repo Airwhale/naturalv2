@@ -1,15 +1,12 @@
-import ast
-import gzip
-import json
+"""Utility functions."""
+
+import asyncio
 import logging
 import os
 import re
-import xml.etree.ElementTree as ET
 from itertools import product
-from string import Template
-from typing import Any, Literal
+from typing import Any, Coroutine
 
-import pandas as pd
 from pydantic import BaseModel, create_model
 
 from naturalv2.evals.clinical_trial import (
@@ -25,13 +22,31 @@ logger = logging.getLogger(__name__)
 
 
 class ListResponse(BaseModel):
+    """Response model for list outputs."""
+
     output: list[str] | None
 
 
 def create_response_format(
     name: str, keys: list[str], types: dict[str, Any] | None = None
 ) -> BaseModel:
-    "Generate a Pydantic model with fields specified by the given keys."
+    """Generate a Pydantic model with fields specified by the given keys.
+
+    Parameters
+    ----------
+    name : str
+        The name of the model to be created.
+    keys : list[str]
+        A list of keys that will be used as field names in the model.
+    types : dict[str, Any] | None
+        A dictionary mapping keys to their respective types. If None, defaults
+        to Any type for all keys.
+
+    Returns
+    -------
+    BaseModel
+        A Pydantic model class with fields corresponding to the provided keys.
+    """
 
     if types is None:
         types = dict.fromkeys(keys, Any)
@@ -41,73 +56,54 @@ def create_response_format(
     return create_model(name, **fields)
 
 
-def load_prompt(
-    base_dir: str,
-    prompt_type: str,
-    return_format: Literal["messages", "prompt"] | None = None,
-    **user_prompt_format_kwargs: Any,
-) -> str | list[dict[str, str]]:
-    if return_format not in ["messages", "prompt", None]:
-        raise ValueError("return_format must be either 'messages', 'prompt', or None.")
+async def concurrency_limited(coro: Coroutine, semaphore: asyncio.Semaphore) -> Any:
+    """Run a coroutine with a concurrency limit using a semaphore.
 
-    filepath = os.path.join(base_dir, f"{prompt_type}.json")
-    if not os.path.exists(filepath):
-        raise FileNotFoundError(f"Prompt file {filepath} not found.")
+    Parameters
+    ----------
+    coro : Coroutine
+        The coroutine to be executed.
+    semaphore : asyncio.Semaphore
+        The semaphore to limit concurrency.
 
-    # load json file
-    with open(filepath, "r") as f:
-        prompt_data: dict[str, Any] = json.load(f)
+    Returns
+    -------
+    Any
+        The result of the coroutine execution.
+    """
 
-    # 'user_prompt_template' must be in the json file
-    if "user_prompt_template" not in prompt_data:
-        raise KeyError(
-            f"'user_prompt_template' key not found in {prompt_type}.json file."
-            "Please check the file format."
-        )
+    async with semaphore:
+        return await coro
 
-    # 'system_prompt_template' is optional, but if it exists, construct and return
-    # a list of dictionaries with 'role' and 'content' keys
-    system_prompt: str | None = prompt_data.get("system_prompt_template")
-    if system_prompt:
-        logger.debug(f"System prompt loaded from {prompt_type}.json: {system_prompt}")
 
-        system_role_dict = {"role": "system", "content": system_prompt}
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename by replacing disallowed characters with underscores.
 
-    user_prompt_template: str = prompt_data["user_prompt_template"]
-    if user_prompt_format_kwargs:
-        user_prompt_template = Template(user_prompt_template).safe_substitute(
-            **user_prompt_format_kwargs
-        )
+    This function replaces characters that are not alphanumeric, hyphens, or
+    underscores with underscores. It is useful for ensuring that filenames are
+    valid across different operating systems and filesystems.
 
-    logger.debug(
-        f"User prompt template loaded from {prompt_type}.json: {user_prompt_template}"
-    )
+    Parameters
+    ----------
+    filename : str
+        The original filename to be sanitized.
 
-    if "examples_intro" in prompt_data and (
-        "examples" in prompt_data and len(prompt_data["examples"]) > 0
-    ):
-        examples_intro = prompt_data["examples_intro"]
-        examples: list[dict[str, str]] = prompt_data["examples"]
+    Returns
+    -------
+    str
+        The sanitized filename with disallowed characters replaced by underscores.
 
-        # append examples intro and examples to user_prompt_template
-        user_prompt_template += f"\n\n{examples_intro}"
-        for example in examples:
-            user_prompt_template += f"\n\n{example['input']}\n\n{example['output']}"
+    Examples
+    --------
+    >>> sanitize_filename("example file.txt")
+    'example_file.txt'
+    >>> sanitize_filename("invalid/file:name*?.txt")
+    'invalid_file_name_.txt'
+    >>> sanitize_filename("data@2023#report.csv")
+    'data_2023_report.csv'
+    """
 
-    if return_format in ["messages", None]:
-        user_role_dict = {"role": "user", "content": user_prompt_template}
-
-        if system_prompt:
-            return [system_role_dict, user_role_dict]
-        if return_format == "messages":
-            return [user_role_dict]
-
-    # concatenate system_prompt and user_prompt_template
-    # and return as a single string
-    if system_prompt:
-        return f"{system_prompt}\n\n{user_prompt_template}"
-
-    return user_prompt_template
+    return re.sub(r"[^\w\-.]", "_", filename)
 
 
 def get_save_path(
@@ -117,18 +113,45 @@ def get_save_path(
     extract_type: str,
     outcome: str | None = None,
 ) -> str:
-    """Generate save path for extracted data."""
+    """Generate save path for extracted data.
+
+    Parameters
+    ----------
+    base_path : str
+        The base directory where results will be saved.
+    nct_id : str
+        The National Clinical Trial ID (NCT ID) of the clinical trial.
+    model_name : str
+        The name of the model used for extraction.
+    extract_type : str
+        The type of extraction performed (e.g., "treatment", "outcome").
+    outcome : str | None
+        The specific outcome of interest, if applicable. If None, the path will
+        not include an outcome.
+    """
     return os.path.join(
         base_path,
         "results",
         f"{nct_id}",
-        f"{model_name.replace('/', '-')}_{extract_type}.csv"
+        sanitize_filename(f"{model_name}_{extract_type}") + ".csv"
         if outcome is None
-        else f"{model_name.replace('/', '-')}_{extract_type}_{outcome}.csv",
+        else sanitize_filename(f"{model_name}_{extract_type}_{outcome}") + ".csv",
     )
 
 
 def check_nonplacebo(intervention_names: list[str] | None) -> bool:
+    """Check if there are any non-placebo interventions.
+
+    Parameters
+    ----------
+    intervention_names : list[str] | None
+        A list of intervention names to check for non-placebo interventions.
+
+    Returns
+    -------
+    bool
+        True if there are non-placebo interventions, False otherwise.
+    """
     nonplacebo_interventions = [
         name for name in (intervention_names or []) if "placebo" not in name.lower()
     ]
@@ -136,10 +159,34 @@ def check_nonplacebo(intervention_names: list[str] | None) -> bool:
 
 
 def check_noncontrol(intervention_type: ArmGroupType | None) -> bool:
+    """Check if the intervention type is not a control group.
+
+    Parameters
+    ----------
+    intervention_type : ArmGroupType | None
+        The type of the arm group to check.
+
+    Returns
+    -------
+    bool
+        True if the intervention type is not a control group, False otherwise.
+    """
     return intervention_type != ArmGroupType.NO_INTERVENTION
 
 
 def check_binary_endpoint(text: str) -> bool:
+    """Check if the text contains a binary endpoint pattern.
+
+    Parameters
+    ----------
+    text : str
+        The text to check for binary endpoint patterns.
+
+    Returns
+    -------
+    bool
+        True if the text matches a binary endpoint pattern, False otherwise.
+    """
     binary_patterns = [
         r"""
     \b(                  # Word boundary to ensure full-word match
@@ -169,6 +216,19 @@ def check_binary_endpoint(text: str) -> bool:
 
 
 def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
+    """Check if the trial meets specific criteria.
+
+    Parameters
+    ----------
+    trial : ClinicalTrial
+        The clinical trial object to check.
+
+    Returns
+    -------
+    tuple[dict[str, int], bool]
+        A dictionary with statistics about the trial and a boolean indicating
+        whether the trial meets the criteria for further processing.
+    """
     stats = {
         "total": 1,
         "randomized": 0,
@@ -213,8 +273,7 @@ def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
 
 
 def get_nested_value(data: Any, path: str) -> Any | None:
-    """
-    Gets a value from a deeply nested data structure using a path string.
+    """Gets a value from a deeply nested data structure using a path string.
 
     Parameters
     ----------
@@ -263,101 +322,21 @@ def get_nested_value(data: Any, path: str) -> Any | None:
     return current
 
 
-def get_drugbank_aliases(data_path: str, drug_name: str) -> list[str]:
-    alias_path = os.path.join(data_path, "drugbank_aliases.csv")
-    index_path = os.path.join(data_path, "drugbank_indices.csv")
-    if os.path.exists(alias_path) and os.path.exists(index_path):
-        aliases_df = pd.read_csv(alias_path, index_col=0)
-        with open(index_path, "r") as f:
-            index_mapping = json.load(f)
-    else:
-        file_path = os.path.join(data_path, "full_database.xml.gz")
-        with gzip.open(file_path, "rt") as xml_file:
-            tree = ET.parse(xml_file)
-            root = tree.getroot()
-            ns = "{http://www.drugbank.ca}"
-            aliases_dicts = []
-            index_mapping = {}
-
-            index = 0
-            for drug in root.findall(ns + "drug"):
-                aliases = []
-
-                name_elem = drug.find(ns + "name")
-                if name_elem is not None and name_elem.text:
-                    aliases.append(name_elem.text.strip().lower())
-
-                synonyms_elem = drug.find(ns + "synonyms")
-                if synonyms_elem is not None:
-                    for syn_elem in synonyms_elem.findall(ns + "synonym"):
-                        if syn_elem.text:
-                            aliases.append(syn_elem.text.strip().lower())
-
-                products_elem = drug.find(ns + "products")
-                if products_elem is not None:
-                    for product_elem in products_elem.findall(ns + "product"):
-                        name_elem = product_elem.find(ns + "name")
-                        if name_elem is not None and name_elem.text:
-                            aliases.append(name_elem.text.strip().lower())
-
-                intl_brands_elem = drug.find(ns + "international-brands")
-                if intl_brands_elem is not None:
-                    for intl_brand_elem in intl_brands_elem.findall(
-                        ns + "international-brand"
-                    ):
-                        name_elem = intl_brand_elem.find(ns + "name")
-                        if name_elem is not None and name_elem.text:
-                            aliases.append(name_elem.text.strip().lower())
-
-                aliases = list(set(aliases))
-                aliases_dicts.append({"index": index, "alias_list": str(aliases)})
-                for alias in aliases:
-                    index_mapping[alias] = index
-                index += 1
-
-        aliases_df = pd.DataFrame(aliases_dicts)
-        aliases_df.to_csv(alias_path)
-        with open(index_path, "w") as f:
-            json.dump(index_mapping, f)
-
-    drug_name = drug_name.lower()
-    drug_index = index_mapping.get(drug_name)
-    aliases = aliases_df.loc[aliases_df["index"] == drug_index]["alias_list"]
-    all_aliases = []
-    for alias_list in aliases:
-        all_aliases += ast.literal_eval(alias_list)
-    return all_aliases
-
-
-def qa_interleaved_enum(q_dct, options_dct, a_enum, to_enum):
-    all_interleaved_options = []
-    alph = ["a) ", "b) ", "c) ", "d) "]
-    for option in a_enum:
-        interleaved_enum = " \n\nMultiple Choice Questions"
-        for num in range(len(to_enum)):
-            key = to_enum[num]
-            interleaved_enum += " \n\nQ: " + q_dct[key]
-            interleaved_enum += " \nOptions: "
-            for i in range(len(options_dct[key])):
-                interleaved_enum += alph[i] + options_dct[key][i] + " "
-            split_option = [i.split(":") for i in option.split(",")]
-            interleaved_enum += " \nA: " + split_option[num][1][1:]
-        all_interleaved_options.append(interleaved_enum)
-    return all_interleaved_options
-
-
-def concatenate_q(dct):
-    keys = list(dct.keys())
-    num = 1
-    all_qs = " \nAnswer the following questions."
-    for key in keys:
-        all_qs += " \nQ" + str(num) + ": " + dct[key]
-        num += 1
-    all_qs += "\n"
-    return all_qs
-
-
 def enumerate_strings(string_map: dict[str, list[str]]) -> list[str]:
+    """Generate all combinations of strings from a dictionary of lists.
+
+    Parameters
+    ----------
+    string_map : dict[str, list[str]]
+        A dictionary where keys are labels (e.g., "A1", "A2") and values are lists
+        of strings.
+
+    Returns
+    -------
+    list[str]
+        A list of strings where each string is a combination of the values from
+        the lists in `string_map`, labeled with their corresponding keys.
+    """
     combinations = product(*list(string_map.values()))
     result = []
     for combo in combinations:
@@ -369,6 +348,25 @@ def enumerate_strings(string_map: dict[str, list[str]]) -> list[str]:
 def convert_enum_to_dicts(
     enumerated: list[str], enum_keys: list[str]
 ) -> list[dict[str, str]]:
+    """Convert a list of enumerated strings into a list of dictionaries.
+
+    Each string is expected to be formatted as "A<digit>: value", where
+    <digit> corresponds to the index in `enum_keys`.
+
+    Parameters
+    ----------
+    enumerated : list[str]
+        A list of strings where each string contains key-value pairs formatted as
+        "A<digit>: value".
+    enum_keys : list[str]
+        A list of keys that correspond to the enumerated values.
+
+    Returns
+    -------
+    list[dict[str, str]]
+        A list of dictionaries where each dictionary maps the keys from `enum_keys`
+        to their corresponding values extracted from the enumerated strings.
+    """
     return_dcts = []
     for elem in enumerated:
         separate = _parse_key_value_pairs(elem)

@@ -1,3 +1,5 @@
+"""Sample extraction stages of the NATURAL pipeline."""
+
 import asyncio
 import logging
 import os
@@ -73,7 +75,13 @@ class SampleExtractionStage(PipelineStage):
         self.data: pd.DataFrame | None = None
 
     def get_language_model(self) -> LM:
-        """Return the language model used in this stage."""
+        """Return the language model used in this stage.
+
+        Returns
+        -------
+        LM
+            An instance of the language model configured for this stage.
+        """
         return build_lm_instance_from_cfg(self.model_cfg)
 
     async def process(
@@ -215,14 +223,14 @@ class TreatmentOutcomeFilterStage(SampleExtractionStage):
         treatment_options = (
             context.experiment.treatment_names
             + context.experiment.treatment_common_names[context.source_name]
-            + ["Unknown"]
+            + ["None"]
         )
         response_format = create_response_format(
             "TYFilterResponse",
             [TREATMENT_COL_NAME, OUTCOME_COL_NAME],
             types={
                 TREATMENT_COL_NAME: Literal[*treatment_options],
-                OUTCOME_COL_NAME: Literal["Yes", "No", "Unknown"],
+                OUTCOME_COL_NAME: Literal["Yes", "No"],
             },
         )
         ty_samples = await extract_covariates(
@@ -299,10 +307,10 @@ class KnownsStage(SampleExtractionStage):
         """
         response_format = create_response_format(
             "KnownsResponse",
-            context.experiment.covariate_names
+            keys=context.experiment.covariate_names
             + context.experiment.extended_covariate_names,
-            {
-                "Duration": int | Literal["Unknown"],
+            types={
+                "Duration": str | Literal["Unknown", "None"],
                 INCLUSION_COL_NAME: Literal["Yes", "No", "Unknown"],
             },
         )
@@ -361,7 +369,7 @@ class ImputationsStage(SampleExtractionStage):
         response_format = create_response_format(
             "ImputationsResponse",
             keys=context.experiment.covariate_names,
-            types={"Duration": int},
+            types={"Duration": str},
         )
         self.data = await extract_covariates(
             input_df=data,
@@ -489,6 +497,7 @@ async def extract_covariates(
                 result_queue,
                 llm,
                 worker_pbar,
+                extract_type,
                 response_format=response_format,
             ),
             name=f"Prompt-Processor-{worker_id}",
@@ -572,6 +581,7 @@ def _prompt_formatter(
 def _result_processor(
     row: pd.Series,
     response: ResponseType,
+    extract_type: ExtractType,
     response_format: BaseModel | None = None,
 ) -> dict[str, Any] | None:
     """Process the LLM response and combine it with the original row data."""
@@ -596,6 +606,10 @@ def _result_processor(
             f"Response text: '{response_text[:200]}...'"
         )
         return None  # Signal error
+
+    if extract_type == ExtractType.KNOWNS:
+        # append "_known" to each key in the parsed data
+        parsed_data = {f"{key}_known": value for key, value in parsed_data.items()}
 
     # Combine original row data with parsed LLM data
     parsed_row_data: dict[str, Any] = row.to_dict()
@@ -636,6 +650,7 @@ async def _prompt_processor(
     result_queue: asyncio.Queue,
     llm: LM,
     pbar: tqdm,
+    extract_type: ExtractType,
     response_format: BaseModel | None = None,
 ) -> int:
     """Worker function to process prompts.
@@ -665,7 +680,7 @@ async def _prompt_processor(
                 response_format=response_format or {"type": "json_object"},
             )
             processed_result = _result_processor(
-                row, result, response_format=response_format
+                row, result, extract_type, response_format=response_format
             )
 
             if processed_result is not None:

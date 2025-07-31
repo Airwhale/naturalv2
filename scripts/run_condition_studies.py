@@ -55,8 +55,7 @@ def run_study(conditions: list[str], args: argparse.Namespace) -> dict[str, Any]
     cfg.save_path = args.output_dir
 
     logger.info(f"Running study for: {conditions}")
-    stats = run_study_and_get_stats(cfg)
-    return stats
+    return run_study_and_get_stats(cfg)
 
 
 def count_unique_ncts(studies_dir: str) -> dict[str, int]:

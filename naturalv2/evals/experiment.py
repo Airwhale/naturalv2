@@ -7,6 +7,7 @@ from ast import literal_eval
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -23,20 +24,125 @@ from naturalv2.evals.clinical_trial import (
     Reference,
 )
 from naturalv2.pipeline import INCLUSION_COL_NAME, OUTCOME_COL_NAME, TREATMENT_COL_NAME
+from naturalv2.prompts.utils import load_prompt
+from naturalv2.sources.drugbank_cache import get_drugbank_aliases
 from naturalv2.utils import (
     check_binary_endpoint,
     check_noncontrol,
     check_nonplacebo,
-    get_drugbank_aliases,
     get_nested_value,
-    load_prompt,
 )
 
 
 logger = logging.getLogger(__name__)
 
+pd.set_option("future.no_silent_downcasting", True)
+
+DRUG_NAME_SANITIZER = re.compile(
+    r"\s+\d+([./]\d+)*\s*(mg|g|mcg|ug|ml|iu|units|tablets?|capsules?)?\b.*$",
+    flags=re.IGNORECASE,
+)
+
 
 class Experiment:
+    """Class representing an experiment based on a clinical trial.
+
+    This class encapsulates the details of a clinical trial, including its
+    identification, conditions, treatments, outcomes, and other relevant
+    information. It provides methods to load experiment details from a YAML file,
+    filter extractions based on treatment and outcome, discretize features,
+    apply transformations, and build prompts for reports.
+
+    Parameters
+    ----------
+    data_path : str
+        Path to the directory containing clinical trial JSON files.
+    nct_id : str
+        National Clinical Trial (NCT) ID of the clinical trial.
+    status : Literal["completed", "active"], default="completed"
+        Status of the clinical trial, either "completed" or "active". If "active",
+        the trial is expected to be in progress, and the relevant JSON file will be
+        loaded from the `nct_reports_test` directory. If "completed", it will be
+        loaded from the `nct_reports` directory.
+
+    Attributes
+    ----------
+    data_path : str
+        Path to the directory containing clinical trial JSON files.
+    trial_path : str
+        Path to the JSON file for the clinical trial based on the NCT ID and status.
+    status : Literal["completed", "active"]
+        Status of the clinical trial, either "completed" or "active".
+    studies : list[list[str]]
+        List of studies associated with the clinical trial.
+    nct_id : str
+        National Clinical Trial (NCT) ID of the clinical trial.
+    title : str | None
+        Official title of the clinical trial, or None if not available.
+    date : str | None
+        Completion or results first post date of the clinical trial, or None if not
+        available.
+    trial_keywords : list[str] | None
+        List of keywords associated with the clinical trial, or None if not available.
+    conditions : list[str]
+        List of disease conditions that the clinical trial is focused on.
+    trial_disease_mesh : list[str]
+        List of MeSH terms associated with the disease in the clinical trial.
+    trial_disease_ancestors : list[str]
+        List of MeSH terms that are ancestors of the trial disease.
+    references : list[str]
+        List of references associated with the clinical trial for the experiment.
+    inclusion_criteria : str | None
+        Inclusion/exclusion criteria for the experiment, or None if not available.
+    covariate_names : list[str]
+        List of covariate names used in the experiment.
+    covariate_desc : dict[str, str]
+        Dictionary mapping covariate names to their descriptions. Note that not
+        all covariates have descriptions. "Duration" is always included as a covariate
+        and represents the duration of the treatment in ISO 8601 format.
+    extended_covariate_names : list[str]
+        List of extended covariate names, including inclusion-related binary variables.
+    treatment_names : list[str]
+        List of treatment names used in the experiment.
+    outcome_names : list[str]
+        List of outcome names used in the experiment.
+    outcome_timeframes : list[str | None]
+        List of timeframes for each outcome, or None if not available.
+    outcome_treatment : list[list[str | list[str]]]
+        List of lists containing outcome and treatment pairs, where each pair
+        consists of an outcome name and a list of treatment names.
+    treatment_desc : dict[str, str | None]
+        Dictionary mapping treatment names to their descriptions, or None if not
+        available.
+    outcome_desc : dict[str, str | None]
+        Dictionary mapping outcome names to their descriptions, or None if not
+        available.
+    treatment_common_names : dict[str, list[str]]
+        Dictionary mapping treatment names to their common names, which are
+        alternative names or identifiers for the treatments used in the experiment.
+    outcome_common_names : dict[str, list[str]]
+        Dictionary mapping outcome names to their common names, which are
+        alternative names or identifiers for the outcomes used in the experiment.
+    effect_sizes : list[float]
+        List of effect sizes for each outcome-treatment pair.
+    drugbank_names : dict[str, list[str]]
+        Dictionary mapping treatment names to their DrugBank aliases, which are
+        alternative names or identifiers for the treatments used in the experiment.
+    options : dict[str, list[str]]
+        Dictionary containing expected choices for each feature, including treatments,
+        outcomes, and covariates. The keys are feature names, and the values are lists
+        of possible values for those features.
+    numerical_repr : dict[str, dict[str, int]]
+        Dictionary mapping feature names to their numerical representations,
+        where each feature value is mapped to an integer index.
+    language_repr : dict[str, dict[int, str]]
+        Dictionary mapping feature names to their language representations,
+        where each integer index is mapped to its corresponding feature value.
+    source_paths : dict[str, list]
+        Dictionary storing paths to curated data for the experiment, one per source.
+
+    """
+
     def __init__(
         self,
         data_path: str,
@@ -70,8 +176,8 @@ class Experiment:
         self._trial_keywords: list[str] | None = get_nested_value(
             trial, "protocolSection.conditionsModule.keywords"
         )
-        self._conditions: list[str] = get_nested_value(
-            trial, "protocolSection.conditionsModule.conditions"
+        self._conditions: list[str] = (
+            get_nested_value(trial, "protocolSection.conditionsModule.conditions") or []
         )
         meshes: list[Mesh] | None = get_nested_value(
             trial, "derivedSection.conditionBrowseModule.meshes"
@@ -111,15 +217,27 @@ class Experiment:
                     if covariate.description
                 }
             )
-        self.covariate_desc["Duration"] = (
-            "The number of days that the treatment was taken (rounded to the nearest integer)."
-        )
+        self.covariate_desc[
+            "Duration"
+        ] = """The duration of the treatment, represented as an ISO 8601 duration string.
+
+            Format: P[n]W or P[n]DT[n]H[n]M[n]S, where
+                P: Period designator (required).
+                [n]W: Number of weeks.
+                [n]D: Number of days.
+                T: Time designator (required to introduce time components).
+                [n]H: Number of hours.
+                [n]M: Number of minutes.
+                [n]S: Number of seconds.
+            """
         self.extended_covariate_names: list[str] = [
             INCLUSION_COL_NAME  # , "Dosage"
         ]  # inclusion-related binary variables
         self.covariate_desc[INCLUSION_COL_NAME] = (
             "Whether the report indicates that the individual meets the inclusion criteria."
         )
+
+        self._effect_sizes: list[float] = []
 
         # Set treatment and outcome names and common names per data source
         # E.g. {"reddit": {
@@ -129,6 +247,8 @@ class Experiment:
         self._set_outcome_treatment_effects(trial)
         self.treatment_common_names: dict[str, dict[str, list[str]]] = {}
         self.outcome_common_names: dict[str, dict[str, list[str]]] = {}
+
+        self._drugbank_names: dict[str, list[str]] = {}
 
         # Set expected choices for each feature
         # NOTE: options for covariates can only be set when we get some data
@@ -141,10 +261,6 @@ class Experiment:
         # Store different representations of the features
         self._numerical_repr: dict[str, dict[str, int]] = {}
         self._language_repr: dict[str, dict[int, str]] = {}
-
-        # Set question prompts for each feature
-        self.question_prompts: dict[str, str] = {}
-        self._set_questions()
 
         # Store list of paths to curated data for the experiment, one per source
         self.source_paths: dict[str, list] = {}
@@ -220,7 +336,7 @@ class Experiment:
         return self._outcome_timeframes
 
     @property
-    def outcome_treatment(self) -> list[list[str, list[str, str]]]:
+    def outcome_treatment(self) -> list[list[str | list[str]]]:
         """List of tuples containing outcome and treatment pairs."""
         return self._outcome_treatment
 
@@ -238,6 +354,20 @@ class Experiment:
     def effect_sizes(self) -> list[float]:
         """List of effect sizes for each outcome-treatment pair."""
         return self._effect_sizes
+
+    @property
+    def drugbank_names(self) -> dict[str, list[str]]:
+        """Get DrugBank names for the treatments in the experiment."""
+        if self._drugbank_names:
+            return self._drugbank_names
+
+        for drug_name in self._treatment_names:
+            drug_name_stripped = DRUG_NAME_SANITIZER.sub("", drug_name).strip()
+            self._drugbank_names[drug_name] = get_drugbank_aliases(
+                self.data_path, drug_name_stripped
+            )
+
+        return self._drugbank_names
 
     @classmethod
     def from_yaml(cls, filename: str) -> "Experiment":
@@ -284,6 +414,10 @@ class Experiment:
         filename : str
             Path to the YAML file where the experiment details will be saved.
         """
+        # Make sure self._drugbank_names is populated
+        # This is a potentially expensive operation
+        _ = self.drugbank_names
+
         with open(filename, "w") as file:
             yaml.safe_dump(self.__dict__, file)
 
@@ -357,15 +491,7 @@ class Experiment:
 
         This method converts continuous covariates into binary or categorical
         representations based on the number of unique values. It also converts
-        treatment and outcome columns into numerical encodings. If more than
-        half of the values in a covariate are numeric, it will be discretized
-        into binary based on the median value. If a covariate has more than 10
-        unique values, it will be converted to binary or categorical based on
-        the frequency of values. If a covariate has fewer than 10 unique values,
-        it will be converted to categorical encoding.
-        The method also updates the `self.options` dictionary with the unique
-        string values for each covariate and sets the numerical and language
-        representations for the covariates, treatments, and outcomes.
+        treatment and outcome columns into numerical encodings.
 
         Parameters
         ----------
@@ -384,82 +510,13 @@ class Experiment:
             If the extractions DataFrame does not contain the expected columns
             listed in `covariate_names`, `extended_covariate_names`, `OUTCOME_COL_NAME`
             or `TREATMENT_COL_NAME`.
-
         """
         for covariate in self.covariate_names:
-            if covariate not in extractions.columns:
-                raise ValueError(f"`{covariate}` column is missing from extractions.")
+            self._discretize_covariate(extractions, covariate)
 
-            covariate_data = extractions[covariate]
-            all_answers = extractions[covariate].unique()
-
-            if len(all_answers) > 10:  # many unique values, convert to binary
-                # Try to convert to numeric first
-                numeric_series = pd.to_numeric(covariate_data, errors="coerce")
-
-                if (
-                    numeric_series.notna().sum() > len(extractions) * 0.5
-                ):  # mostly numeric
-                    quant_50 = numeric_series.describe()["50%"]
-                    binary_codes = (numeric_series > quant_50).astype(int)
-                    extractions[covariate] = binary_codes
-
-                    self.options.update(
-                        {
-                            covariate: [
-                                f"Less than or equal to {quant_50}",
-                                f"Greater than {quant_50}",
-                            ]
-                        }
-                    )
-                else:  # mostly non-numeric strings, use frequency-based approach
-                    # Get top N most frequent values and group rest as "Other"
-                    value_counts = covariate_data.value_counts()
-                    top_values = value_counts.head(9).index.tolist()
-
-                    # Replace infrequent values with "Other"
-                    extractions.loc[~covariate_data.isin(top_values), covariate] = (
-                        "Other"
-                    )
-
-                    # Convert to categorical
-                    updated_answers = covariate_data.unique()
-                    cov_map = {name: i for (i, name) in enumerate(updated_answers)}
-                    extractions[covariate] = extractions[covariate].replace(cov_map)
-
-                    # Only update the options if the covariate values are strings
-                    # and not numeric. When this method is called multiple times,
-                    # this prevents overwriting the options with numeric values.
-                    if pd.api.types.is_string_dtype(updated_answers):
-                        self.options.update({covariate: updated_answers.tolist()})
-            else:  # few unique values, convert to categorical
-                cov_map = {name: i for (i, name) in enumerate(all_answers)}
-                extractions[covariate] = extractions[covariate].replace(cov_map)
-
-                if pd.api.types.is_string_dtype(all_answers):
-                    self.options.update({covariate: all_answers.tolist()})
-
-        # Convert binary columns to numerical encoding
-        binary_map_num = {"No": 0, "Yes": 1}
-        for feat in self.extended_covariate_names + [OUTCOME_COL_NAME]:
-            if feat not in extractions.columns:
-                raise ValueError(f"`{feat}` column is missing from extractions.")
-
-            extractions[feat] = extractions[feat].replace(binary_map_num)
-
-        # Convert treatment column to categorical encoding
-        if TREATMENT_COL_NAME not in extractions.columns:
-            raise ValueError(
-                f"`{TREATMENT_COL_NAME}` column is missing from extractions."
-            )
-
-        treatment_map = {name: i for (i, name) in enumerate(self.treatment_names)}
-        extractions[TREATMENT_COL_NAME] = extractions[TREATMENT_COL_NAME].replace(
-            treatment_map
-        )
-
+        self._discretize_binary_columns(extractions)
+        self._discretize_treatment_column(extractions)
         self._set_transforms()
-
         return extractions
 
     def apply_transform(
@@ -539,26 +596,33 @@ class Experiment:
             on the `return_format` parameter.
 
         """
-        prompts_dir = str(Path(__file__).resolve().parents[1] / "prompts")
+        prompts_dir = str(Path(__file__).resolve().parents[1] / "prompts" / "templates")
 
         outcome_desc = {outcome: self.outcome_desc[outcome]}
-        format_inputs = {
-            "conditions": str(self._conditions),
-            "treatments": str(
-                self.treatment_names + self.treatment_common_names[source_name]
-            ),
-            "outcome": outcome,
-            "outcome_common_names": self.outcome_common_names.get(source_name, []),
-            "covariates": str(self.covariate_names + self.extended_covariate_names),
-            "ty_desc": "".join(
-                [
-                    f"\n{k}: {v}"
-                    for k, v in {**self.treatment_desc, **outcome_desc}.items()
+        treatment_names = list(
+            set(
+                self.treatment_names
+                + [
+                    item
+                    for sublist in self.treatment_common_names[source_name].values()
+                    for item in sublist
                 ]
-            ),
-            "covariate_desc": "".join(
-                [f"\n{k}: {v}" for k, v in self.covariate_desc.items()]
-            ),
+                + [item for sublist in self.drugbank_names.values() for item in sublist]
+            )
+        )
+        format_inputs = {
+            "conditions": self._conditions,
+            "treatments": treatment_names,
+            "outcome": outcome,
+            "outcome_common_names": [
+                item
+                for sublist in self.outcome_common_names[source_name].values()
+                for item in sublist
+            ],
+            "covariates": self.covariate_names + self.extended_covariate_names,
+            "treatment_desc": self.treatment_desc,
+            "outcome_desc": outcome_desc,
+            "covariate_desc": self.covariate_desc,
             "inclusion_criteria": self.inclusion_criteria,
             "report": report,
         }
@@ -567,152 +631,306 @@ class Experiment:
             prompts_dir, prompt_type, return_format=return_format, **format_inputs
         )
 
+    def get_question_prompts(self) -> dict[str, str]:
+        """Get the prompts for each feature in the experiment.
+
+        This method loads the question prompts for inclusion criteria, covariates,
+        treatments, and outcomes from the prompt templates directory. The prompts
+        are formatted with the relevant information from the experiment, such as
+        inclusion criteria, covariate names, treatment names, and outcome names.
+
+        Returns
+        -------
+        dict[str, str]
+            A dictionary where keys are feature names (e.g., inclusion criteria,
+            covariates, treatments, outcomes) and values are the corresponding
+            formatted question prompts.
+        """
+        prompts_dir = str(Path(__file__).resolve().parents[1] / "prompts" / "templates")
+        question_prompts: dict[str, str] = {}
+
+        question_prompts[INCLUSION_COL_NAME] = load_prompt(  # type: ignore[assignment]
+            prompts_dir,
+            "question_inclusion",
+            return_format="prompt",
+            inclusion_criteria=self.inclusion_criteria,
+        )
+
+        for cov in self.covariate_names:
+            question_prompts[cov] = load_prompt(
+                prompts_dir, "question_covariate", return_format="prompt", covariate=cov
+            )
+
+        question_prompts[TREATMENT_COL_NAME] = load_prompt(
+            prompts_dir,
+            "question_treatment",
+            return_format="prompt",
+            treatments=self.treatment_names,
+        )
+
+        for outcome in self.outcome_names:
+            question_prompts[outcome] = load_prompt(
+                prompts_dir, "question_outcome", return_format="prompt", outcome=outcome
+            )
+
+        return question_prompts
+
+    def _discretize_covariate(self, extractions: pd.DataFrame, covariate: str) -> None:
+        """Discretize a covariate in the extractions DataFrame."""
+        if covariate not in extractions.columns:
+            raise ValueError(f"`{covariate}` column is missing from extractions.")
+
+        if covariate == "Duration":
+            extractions[covariate] = pd.to_timedelta(
+                extractions[covariate], errors="coerce"
+            ).astype(str)
+
+        covariate_data = extractions[covariate]
+
+        all_answers = covariate_data.unique()
+
+        if len(all_answers) > 10:
+            self._discretize_many_unique(extractions, covariate, covariate_data)
+        else:
+            self._discretize_few_unique(extractions, covariate, all_answers)
+
+    def _discretize_many_unique(
+        self, extractions: pd.DataFrame, covariate: str, covariate_data: pd.Series
+    ) -> None:
+        """Discretize a covariate with many unique values in the extractions DataFrame.
+
+        This method converts numeric covariates into binary representations based on
+        the median value, or categorizes non-numeric covariates into frequent and
+        infrequent categories, grouping the infrequent ones into "Other".
+        """
+        if covariate == "Duration":
+            numeric_series = covariate_data
+        else:
+            numeric_series = pd.to_numeric(covariate_data, errors="coerce")
+
+        if numeric_series.notna().sum() > len(extractions) * 0.5:
+            quant_50 = numeric_series.describe()["50%"]
+            binary_codes = (numeric_series > quant_50).astype(int)
+            extractions[covariate] = binary_codes
+
+            self.options.update(
+                {
+                    covariate: [
+                        f"Less than or equal to {quant_50}",
+                        f"Greater than {quant_50}",
+                    ]
+                }
+            )
+        else:
+            value_counts = covariate_data.value_counts()
+            cumulative_counts = value_counts.cumsum()
+
+            # For each category, calculate the number of samples in all the categories
+            # that come after it in the sorted order
+            tail_sums = len(covariate_data) - cumulative_counts
+
+            # Create a mask for categories that have more samples than the tail sum
+            # This means, if we kept the category and grouped all the categories
+            # after it into "Other", the "Other" category would have at most as many samples
+            # as the category itself
+            tail_mask = tail_sums <= value_counts
+
+            if tail_mask.any():
+                # Find the position of the first category that has more samples
+                # than the tail sum
+                # This is the cutoff position for renaming categories to "Other"
+                cutoff_position = value_counts.index.get_loc(tail_mask.idxmax())
+                categories = value_counts.index[: cutoff_position + 1].tolist()
+            else:
+                # If all categories are frequent enough, only rename the last
+                # as "Other"
+                categories = value_counts.index.tolist()[:-1]
+
+            extractions[covariate] = np.where(
+                covariate_data.isin(categories),
+                covariate_data,
+                "Other",
+            )
+            updated_answers = categories + ["Other"]
+            cov_map = {name: i for (i, name) in enumerate(updated_answers)}
+            extractions[covariate] = extractions[covariate].replace(cov_map).astype(int)
+            self.options.update({covariate: [str(name) for name in updated_answers]})
+
+    def _discretize_few_unique(
+        self, extractions: pd.DataFrame, covariate: str, all_answers: np.ndarray
+    ) -> None:
+        """Discretize a covariate with few unique values in the extractions DataFrame."""
+        cov_map = {name: i for (i, name) in enumerate(all_answers)}
+        extractions[covariate] = extractions[covariate].replace(cov_map).astype(int)
+        self.options.update({covariate: [str(name) for name in all_answers]})
+
+    def _discretize_binary_columns(self, extractions: pd.DataFrame) -> None:
+        """ "Discretize binary columns in the extractions DataFrame."""
+        binary_map_num = {"No": 0, "Yes": 1}
+        for feat in self.extended_covariate_names + [OUTCOME_COL_NAME]:
+            if feat not in extractions.columns:
+                raise ValueError(f"`{feat}` column is missing from extractions.")
+            extractions[feat] = extractions[feat].replace(binary_map_num)
+
+    def _discretize_treatment_column(self, extractions: pd.DataFrame) -> None:
+        """ "Discretize the treatment column in the extractions DataFrame."""
+        if TREATMENT_COL_NAME not in extractions.columns:
+            raise ValueError(
+                f"`{TREATMENT_COL_NAME}` column is missing from extractions."
+            )
+        treatment_map = {name: i for (i, name) in enumerate(self.treatment_names)}
+        extractions[TREATMENT_COL_NAME] = (
+            extractions[TREATMENT_COL_NAME].replace(treatment_map).astype(int)
+        )
+
     def _set_outcome_treatment_effects(self, trial: ClinicalTrial) -> None:
-        """Set variables related to outcomes, treatments and their effect sizes."""
-        # NOTE: we use lists instead of tuples in _outcome_treatement because
-        # of YAML serialization issues with tuples
-        self._outcome_treatment: list[list[str, list[str, str]]] = []
+        """Set variables related to outcomes, treatments and their effect sizes.
+
+        This method initializes the `_outcome_treatment` list, `_treatment_desc`,
+        and `_outcome_desc` dictionaries based on the status of the trial. It builds
+        the outcome-treatment pairs and their descriptions for both active and
+        completed trials. It also sets the treatment and outcome names, timeframes,
+        and their descriptions.
+        """
+        self._outcome_treatment: list[list[str | list[str]]] = []
         self._treatment_desc, self._outcome_desc = {}, {}
 
-        if (
-            self.status == "active"
-        ):  # use arm information to find outcome-treatment pairs
-            primary_outcomes: list[Outcome] | None = get_nested_value(
-                trial, "protocolSection.outcomesModule.primaryOutcomes"
-            )
-            arm_groups: list[ArmGroup] | None = get_nested_value(
-                trial, "protocolSection.armsInterventionsModule.armGroups"
-            )
-
-            outcomes: list[Outcome] = [
-                outcome
-                for outcome in primary_outcomes or []
-                if check_binary_endpoint(outcome.measure)
-            ]
-            treatments: list[ArmGroup] = [
-                arm
-                for arm in arm_groups or []
-                if check_noncontrol(arm.type)
-                and check_nonplacebo(arm.interventionNames)
-            ]
-
-            for outcome in outcomes:
-                for i, arm1 in enumerate(treatments):
-                    for j, arm2 in enumerate(treatments):
-                        if i < j:
-                            self._outcome_treatment.append(
-                                [outcome.measure, [arm1.label, arm2.label]]
-                            )
-        else:  # use outcome information to find outcome-treatment pairs
-            trial_outcome_measures: list[OutcomeMeasure] | None = get_nested_value(
-                trial,
-                "resultsSection.outcomeMeasuresModule.outcomeMeasures",
-            )
-            outcomes: list[OutcomeMeasure] = [
-                outcome
-                for outcome in trial_outcome_measures or []
-                if outcome.type == OutcomeMeasureType.PRIMARY
-                and check_binary_endpoint(outcome.title)
-            ]
-
-            treatments: list[MeasureGroup] = []
-            self._effect_sizes: list[float] = []
-
-            for outcome in outcomes:
-                measure_groups: list[MeasureGroup] = [
-                    cohort
-                    for cohort in outcome.groups or []
-                    if check_nonplacebo([cohort.title])
-                ]
-                treatments.extend(measure_groups)
-
-                for i, cohort1 in enumerate(measure_groups):
-                    for j, cohort2 in enumerate(measure_groups):
-                        if i < j:
-                            measure1: Measurement | None = outcome.get_group_stats(
-                                cohort1
-                            )
-                            measure2: Measurement | None = outcome.get_group_stats(
-                                cohort2
-                            )
-
-                            denom1 = literal_eval(
-                                cohort1.extract_denom_value_by_id(outcome.denoms)
-                            )
-                            denom2 = literal_eval(
-                                cohort2.extract_denom_value_by_id(outcome.denoms)
-                            )
-
-                            if (
-                                (measure1 is not None and measure1.value != "None")
-                                and (measure2 is not None and measure2.value != "None")
-                                and (denom1 is not None and denom1 > 0)
-                                and (denom2 is not None and denom2 > 0)
-                            ):
-                                effect1: float = literal_eval(measure1.value)
-                                effect2: float = literal_eval(measure2.value)
-                            else:
-                                continue
-
-                            # divide by cohort size or 100 if result is a percentage
-                            unit = (
-                                outcome.unitOfMeasure.lower()
-                                if outcome.unitOfMeasure
-                                else ""
-                            )
-                            effect1 = (
-                                effect1 / 100 if "percent" in unit else effect1 / denom1
-                            )
-                            effect2 = (
-                                effect2 / 100 if "percent" in unit else effect2 / denom2
-                            )
-                            effect_size = effect2 - effect1  # always cohort2 - cohort1
-
-                            self._outcome_treatment.append(
-                                [outcome.title, [cohort1.title, cohort2.title]]
-                            )
-                            self._effect_sizes.append(effect_size)
+        if self.status == "active":
+            outcomes, treatments = self._get_active_outcomes_treatments(trial)
+            self._build_active_outcome_treatment(outcomes, treatments)
+        else:
+            outcomes, treatments = self._get_completed_outcomes_treatments(trial)
+            self._build_completed_outcome_treatment(outcomes)
 
         self._treatment_names: list[str] = [
-            treatment.title if isinstance(treatment, MeasureGroup) else treatment.label
+            treatment.title if hasattr(treatment, "title") else treatment.label
             for treatment in treatments
         ]
         self._outcome_names: list[str] = [
-            outcome.title if isinstance(outcome, OutcomeMeasure) else outcome.measure
+            outcome.title if hasattr(outcome, "title") else outcome.measure
             for outcome in outcomes
         ]
 
-        self.drugbank_names: dict[str, list[str]] = {}
-        for drug_name in self._treatment_names:
-            # Remove any dosage, units etc. before searching DrugBank
-            drug_name_stripped = re.sub(
-                r"\s+\d+([./]\d+)*\s*(mg|g|mcg|ug|ml|iu|units|tablets?|capsules?)?\b.*$",
-                "",
-                drug_name,
-                flags=re.IGNORECASE,
-            ).strip()
-            self.drugbank_names[drug_name] = get_drugbank_aliases(
-                self.data_path, drug_name_stripped
-            )
-        # TODO: maybe use timeframes in question_prompts, e.g.
-        # outcome_q = "What was the patient's reported {out.title}?"
-        # if out.timeFrame: outcome_q.replace("?", "after a duration of {out.timeFrame.split(",")[-1]}?")
         self._outcome_timeframes: list[str | None] = [
-            outcome.timeFrame for outcome in outcomes
+            getattr(outcome, "timeFrame", None) for outcome in outcomes
         ]
 
         self._treatment_desc = {
-            treatment.title
-            if isinstance(treatment, MeasureGroup)
-            else treatment.label: treatment.description
+            (
+                treatment.title if hasattr(treatment, "title") else treatment.label
+            ): getattr(treatment, "description", None)
             for treatment in treatments
         }
         self._outcome_desc = {
-            outcome.title
-            if isinstance(outcome, OutcomeMeasure)
-            else outcome.measure: outcome.description
+            (outcome.title if hasattr(outcome, "title") else outcome.measure): getattr(
+                outcome, "description", None
+            )
             for outcome in outcomes
         }
+
+    def _get_active_outcomes_treatments(
+        self, trial: ClinicalTrial
+    ) -> tuple[list[Outcome], list[ArmGroup]]:
+        """Get active outcomes and treatments from the trial."""
+        primary_outcomes: list[Outcome] | None = get_nested_value(
+            trial, "protocolSection.outcomesModule.primaryOutcomes"
+        )
+        arm_groups: list[ArmGroup] | None = get_nested_value(
+            trial, "protocolSection.armsInterventionsModule.armGroups"
+        )
+        outcomes: list[Outcome] = [
+            outcome
+            for outcome in primary_outcomes or []
+            if check_binary_endpoint(outcome.measure)
+        ]
+        treatments: list[ArmGroup] = [
+            arm
+            for arm in arm_groups or []
+            if check_noncontrol(arm.type) and check_nonplacebo(arm.interventionNames)
+        ]
+        return outcomes, treatments
+
+    def _build_active_outcome_treatment(
+        self, outcomes: list[Outcome], treatments: list[ArmGroup]
+    ) -> None:
+        """Build the outcome-treatment pairs for active trials."""
+        for outcome in outcomes:
+            for i, arm1 in enumerate(treatments):
+                for j, arm2 in enumerate(treatments):
+                    if i < j:
+                        self._outcome_treatment.append(
+                            [outcome.measure, [arm1.label, arm2.label]]
+                        )
+
+    def _get_completed_outcomes_treatments(
+        self, trial: ClinicalTrial
+    ) -> tuple[list[OutcomeMeasure], list[MeasureGroup]]:
+        trial_outcome_measures: list[OutcomeMeasure] | None = get_nested_value(
+            trial,
+            "resultsSection.outcomeMeasuresModule.outcomeMeasures",
+        )
+        outcomes: list[OutcomeMeasure] = [
+            outcome
+            for outcome in trial_outcome_measures or []
+            if outcome.type == OutcomeMeasureType.PRIMARY
+            and check_binary_endpoint(outcome.title)
+        ]
+        treatments: list[MeasureGroup] = []
+        for outcome in outcomes:
+            measure_groups: list[MeasureGroup] = [
+                cohort
+                for cohort in outcome.groups or []
+                if check_nonplacebo([cohort.title])
+            ]
+            treatments.extend(measure_groups)
+        return outcomes, treatments
+
+    def _build_completed_outcome_treatment(
+        self, outcomes: list[OutcomeMeasure]
+    ) -> None:
+        for outcome in outcomes:
+            measure_groups: list[MeasureGroup] = [
+                cohort
+                for cohort in getattr(outcome, "groups", []) or []
+                if check_nonplacebo([cohort.title])
+            ]
+            for i, cohort1 in enumerate(measure_groups):
+                for j, cohort2 in enumerate(measure_groups):
+                    if i < j:
+                        measure1: Measurement | None = outcome.get_group_stats(cohort1)
+                        measure2: Measurement | None = outcome.get_group_stats(cohort2)
+                        denom1 = literal_eval(
+                            cohort1.extract_denom_value_by_id(outcome.denoms)
+                        )
+                        denom2 = literal_eval(
+                            cohort2.extract_denom_value_by_id(outcome.denoms)
+                        )
+                        if (
+                            (measure1 is not None and measure1.value != "None")
+                            and (measure2 is not None and measure2.value != "None")
+                            and (denom1 is not None and denom1 > 0)
+                            and (denom2 is not None and denom2 > 0)
+                        ):
+                            effect1: float = literal_eval(measure1.value)
+                            effect2: float = literal_eval(measure2.value)
+                        else:
+                            continue
+                        unit = (
+                            outcome.unitOfMeasure.lower()
+                            if outcome.unitOfMeasure is not None
+                            else ""
+                        )
+                        effect1 = (
+                            effect1 / 100 if "percent" in unit else effect1 / denom1
+                        )
+                        effect2 = (
+                            effect2 / 100 if "percent" in unit else effect2 / denom2
+                        )
+                        effect_size = effect2 - effect1
+                        self._outcome_treatment.append(
+                            [outcome.title, [cohort1.title, cohort2.title]]
+                        )
+                        self._effect_sizes.append(effect_size)
 
     def _set_transforms(self) -> None:
         """Set the numerical and language representations for the features.
@@ -759,28 +977,3 @@ class Experiment:
         exp_dir = Path(self.trial_path).parents[1] / "experiments"
         exp_dir.mkdir(mode=755, parents=True, exist_ok=True)
         self.to_yaml(str(exp_dir / f"{self.nct_id}.yaml"))
-
-    def _set_questions(self) -> None:
-        """Set the prompts for each feature in the experiment."""
-        prompts_dir = str(Path(__file__).resolve().parents[1] / "prompts")
-
-        self.question_prompts[INCLUSION_COL_NAME] = load_prompt(
-            prompts_dir,
-            "question_inclusion",
-            return_format="prompt",
-            inclusion_criteria=self.inclusion_criteria,
-        )
-
-        for cov in self.covariate_names:
-            self.question_prompts[cov] = load_prompt(
-                prompts_dir, "question_covariate", return_format="prompt", covariate=cov
-            )
-
-        self.question_prompts[TREATMENT_COL_NAME] = load_prompt(
-            prompts_dir, "question_treatment", return_format="prompt"
-        )
-
-        for outcome in self.outcome_names:
-            self.question_prompts[outcome] = load_prompt(
-                prompts_dir, "question_outcome", return_format="prompt", outcome=outcome
-            )

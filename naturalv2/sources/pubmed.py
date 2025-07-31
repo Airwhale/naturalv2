@@ -6,7 +6,6 @@ import pandas as pd
 from omegaconf import DictConfig
 
 from naturalv2.evals.experiment import Experiment
-from naturalv2.utils import load_prompt
 
 from .pubmed_utils import fetch_articles, search_pubmed
 
@@ -55,7 +54,7 @@ class PubMedSet:
 
         return self.data_files
 
-    def clean_data(self, study_name: str) -> tuple[str, int]:
+    def clean_data(self) -> tuple[str, int]:
         pass
 
     def curate_experiment_data(
@@ -66,9 +65,7 @@ class PubMedSet:
         clean_data_path: str,
     ) -> tuple[str, int]:
         rule_filtered_df = pd.DataFrame()
-        save_path = os.path.join(
-            self.data_path, f"{experiment.nct_id}_pubmed_rule_based.csv"
-        )
+        save_path = os.path.join(self.data_path, f"{experiment.nct_id}_pubmed.csv")
 
         if not os.path.exists(save_path):
             # TODO: curate experiment data
@@ -77,16 +74,3 @@ class PubMedSet:
             rule_filtered_df = pd.read_csv(save_path, index_col=0)
 
         return save_path, len(rule_filtered_df)
-
-    @staticmethod
-    def get_common_name_prompts() -> dict[str, list[dict[str, str]]]:
-        base_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts"
-        )
-        t_prompt = load_prompt(
-            base_dir, "common_name_treatment", return_format="messages", source="PubMed"
-        )
-        o_prompt = load_prompt(
-            base_dir, "common_name_outcome", return_format="messages", source="PubMed"
-        )
-        return {"treatment": t_prompt, "outcome": o_prompt}

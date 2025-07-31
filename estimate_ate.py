@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 from ast import literal_eval
-from ast import literal_eval
 
 import hydra
 import numpy as np
@@ -19,6 +18,7 @@ from naturalv2.estimators.natural_mc import NaturalMC
 from naturalv2.estimators.natural_oi import NaturalOI
 from naturalv2.evals.experiment import Experiment
 from naturalv2.pipeline.natural import NATURALPipeline, PipelineContext, PipelineStage
+from naturalv2.study import get_study_filepaths
 
 
 load_dotenv(".env")
@@ -71,7 +71,6 @@ def _weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame) -> np.
     # ites has shape [num_treatments, num_datapoints]
     probs = inclusion_probs.apply(
         lambda row: literal_eval(row["inclusion_probs"])[1], axis=1
-        lambda row: literal_eval(row["inclusion_probs"])[1], axis=1
     ).to_numpy()
     return np.average(ites, axis=1, weights=probs)
 
@@ -81,6 +80,7 @@ def _calculate_treatment_effects(
     outcome: str,
     estimator: NaturalIPW | NaturalMC | NaturalOI,
     extractions: pd.DataFrame,
+    use_imputed_nones: bool = True,
 ) -> list[dict]:
     """Calculate treatment effects for all outcome-treatment pairs.
 
@@ -101,6 +101,12 @@ def _calculate_treatment_effects(
         A list of dictionaries containing the predicted and true ATEs, along with
         absolute errors if available.
     """
+    if not use_imputed_nones:
+        # Filter out rows with ``None`` in any 'known' covariate columns
+        extractions = extractions.dropna(
+            subset=[f"{cov}_known" for cov in experiment.covariate_names]
+        )
+
     result_dicts = []
 
     if isinstance(estimator, NaturalMC):
@@ -212,9 +218,9 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     ignore_index=True,
                 )
                 # TODO: remove subsampling after testing
-                # curated_df = curated_df.sample(
-                #     frac=0.05, random_state=cfg.seed, ignore_index=True
-                # )
+                curated_df = curated_df.sample(
+                    frac=0.05, random_state=cfg.seed, ignore_index=True
+                )
                 logger.info(
                     f"Initial number of curated reports: {len(curated_df)} reports."
                 )
@@ -231,7 +237,11 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                 # Calculate and save treatment effects
                 estimator = instantiate(cfg.estimator, experiment=experiment)
                 results = _calculate_treatment_effects(
-                    experiment, outcome, estimator, extractions
+                    experiment,
+                    outcome,
+                    estimator,
+                    extractions,
+                    cfg.get("use_imputed_nones", True),
                 )
 
                 for result in results:
@@ -252,11 +262,7 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
 def main(cfg: DictConfig) -> None:
     """Main function to estimate average treatment effects."""
     # Load study object from YAML file
-    study_file = os.path.join(
-        cfg.save_path,
-        "studies",
-        cfg.conditions[0].lower().replace(" ", "_") + "_study.yaml",
-    )
+    study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])["study"]
     study = Study.from_yaml(study_file)
 
     if cfg.split not in ["train", "val", "test"]:
