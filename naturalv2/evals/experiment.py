@@ -673,7 +673,13 @@ class Experiment:
 
         for outcome in self.outcome_names:
             question_prompts[outcome] = load_prompt(
-                prompts_dir, "question_outcome", return_format="prompt", outcome=outcome
+                prompts_dir,
+                "question_outcome",
+                return_format="prompt",
+                outcome=outcome,
+                outcome_timeframe=self.outcome_timeframes[
+                    self.outcome_names.index(outcome)
+                ],
             )
 
         return question_prompts
