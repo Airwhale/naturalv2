@@ -74,7 +74,7 @@ class Experiment:
     status : Literal["completed", "active"]
         Status of the clinical trial, either "completed" or "active".
     studies : list[list[str]]
-        List of studies associated with the clinical trial.
+        List of studies associated with the experiment, along with the split it is in.
     nct_id : str
         National Clinical Trial (NCT) ID of the clinical trial.
     title : str | None
@@ -139,7 +139,7 @@ class Experiment:
         Dictionary mapping feature names to their language representations,
         where each integer index is mapped to its corresponding feature value.
     source_paths : dict[str, list]
-        Dictionary storing paths to curated data for the experiment, one per source.
+        Dictionary storing paths to curated data for the experiment, for each source.
 
     """
 

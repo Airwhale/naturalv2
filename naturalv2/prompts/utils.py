@@ -24,7 +24,7 @@ jinja_env = jinja2.Environment(undefined=PreserveUndefined)
 def load_prompt(
     base_dir: str,
     prompt_type: str,
-    return_format: Literal["messages", "prompt"] | None = None,
+    return_format: Literal["messages", "prompt"] = "prompt",
     **user_prompt_format_kwargs: Any,
 ) -> str | list[dict[str, str]]:
     """Load a prompt from a YAML file and format it with Jinja2.
@@ -35,10 +35,10 @@ def load_prompt(
         The base directory where the prompt YAML files are located.
     prompt_type : str
         The type of prompt to load. This is the filename without the .yaml extension.
-    return_format : str, optional, default=None
+    return_format : str, optional, default='prompt'
         The format to return the prompt in. Can be 'messages' for a list of dictionaries
-        with 'role' and 'content' keys, 'prompt' for a single string, or None for just the
-        user prompt template.
+        with 'role' and 'content' keys, 'prompt' for a single string, or None for a list with
+        only the user disctionary containing 'role' and 'content' keys.
     user_prompt_format_kwargs : Any
         Additional keyword arguments to format the user prompt template with Jinja2.
 
@@ -47,11 +47,10 @@ def load_prompt(
     str | list[dict[str, str]]
         If return_format is 'messages', returns a list of dictionaries with 'role' and
         'content' keys. If return_format is 'prompt', returns a single formatted string.
-        If return_format is None, returns just the user prompt template as a string.
 
     """
-    if return_format not in ["messages", "prompt", None]:
-        raise ValueError("return_format must be either 'messages', 'prompt', or None.")
+    if return_format not in ["messages", "prompt"]:
+        raise ValueError("return_format must be either 'messages' or 'prompt.")
 
     filepath = os.path.join(base_dir, f"{prompt_type}.yaml")
     if not os.path.exists(filepath):
@@ -95,14 +94,13 @@ def load_prompt(
         # append examples intro and examples to user_prompt_template
         user_prompt_template += f"\n\n{examples_intro}"
         for example in examples:
-            user_prompt_template += f"\n\n{example['input']}\n\n{example['output']}"
+            user_prompt_template += f"\n\nInput: {example['input']}\nOutput: {example['output']}"
 
-    if return_format in ["messages", None]:
+    if return_format == "messages":
         user_role_dict = {"role": "user", "content": user_prompt_template}
-
         if system_prompt:
             return [system_role_dict, user_role_dict]
-        if return_format == "messages":
+        else:
             return [user_role_dict]
 
     # concatenate system_prompt and user_prompt_template
