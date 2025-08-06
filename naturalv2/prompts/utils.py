@@ -94,14 +94,15 @@ def load_prompt(
         # append examples intro and examples to user_prompt_template
         user_prompt_template += f"\n\n{examples_intro}"
         for example in examples:
-            user_prompt_template += f"\n\nInput: {example['input']}\nOutput: {example['output']}"
+            user_prompt_template += (
+                f"\n\nInput: {example['input']}\nOutput: {example['output']}"
+            )
 
     if return_format == "messages":
         user_role_dict = {"role": "user", "content": user_prompt_template}
         if system_prompt:
             return [system_role_dict, user_role_dict]
-        else:
-            return [user_role_dict]
+        return [user_role_dict]
 
     # concatenate system_prompt and user_prompt_template
     # and return as a single string
