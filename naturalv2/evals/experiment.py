@@ -671,9 +671,13 @@ class Experiment:
             treatments=self.treatment_names,
         )
 
-        for outcome in self.outcome_names:
+        for idx, outcome in enumerate(self.outcome_names):
             question_prompts[outcome] = load_prompt(
-                prompts_dir, "question_outcome", return_format="prompt", outcome=outcome
+                prompts_dir,
+                "question_outcome",
+                return_format="prompt",
+                outcome=outcome,
+                outcome_timeframe=self.outcome_timeframes[idx],
             )
 
         return question_prompts
