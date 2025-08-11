@@ -229,9 +229,7 @@ class _DataCurator:
         async def producer():
             """Generate tasks and put them in the queue."""
             nonlocal pbar
-            task_generator = self._generate_llm_tasks_for_experiments(
-                experiment_tasks
-            )
+            task_generator = self._generate_llm_tasks_for_experiments(experiment_tasks)
 
             for task in task_generator:
                 await task_queue.put(task)

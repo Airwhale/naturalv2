@@ -146,7 +146,7 @@ class RedditSource:
                             candidate_subs = await self._search_subreddits(
                                 word, reddit_client, reddit_rate_limiter
                             )
-                            
+
                             # Concurrently search for the top 5 posts in candidate subreddits
                             post_search_tasks = [
                                 asyncio.create_task(
@@ -216,7 +216,7 @@ class RedditSource:
         downloads the submissions and comments for the subreddit, cleans the data,
         and saves it to a parquet file. It uses multiprocessing to speed up the
         download and cleaning process. If the `anonymize` flag is set, it also
-        anonymizes the data using the specified anonymizer settings. 
+        anonymizes the data using the specified anonymizer settings.
 
         Currently, only supports the top 20k subreddits form PushShift.
 
@@ -545,7 +545,6 @@ def _get_study_relevant_posts(
         df[col].str.lower().str.findall(treatment_pattern) for col in text_cols
     ]
 
-
     # Check if ANY column had a match for each row.
     has_treatment_mask = np.any([s.str.len() > 0 for s in treatment_finds], axis=0)
 
@@ -578,6 +577,4 @@ def _compile_search_pattern(terms: set[str]) -> re.Pattern:
     escaped_terms = [re.escape(term) for term in terms_sorted]
 
     # Join the escaped names with the '|' (OR) operator.
-    return re.compile(
-        r"(?:{})".format("|".join(escaped_terms)), flags=re.IGNORECASE
-    )
+    return re.compile(r"(?:{})".format("|".join(escaped_terms)), flags=re.IGNORECASE)

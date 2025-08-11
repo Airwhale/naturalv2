@@ -431,9 +431,7 @@ def get_context_post_df(
             author_replies_list = author_comments["body"].tolist()
 
             if author_replies_list:
-                submission_text += (
-                    "\n\nThe original poster also replied with the following comments in the thread:"
-                )
+                submission_text += "\n\nThe original poster also replied with the following comments in the thread:"
                 for reply in author_replies_list:
                     submission_text += "\n> " + str(reply)
         else:
@@ -526,7 +524,9 @@ def filter_by_date(
     # Log how many rows have NaN datetime if there are any
     num_no_date = date_series.isna().sum()
     if num_no_date > 0:
-        logger.debug(f"Found {num_no_date} rows with NaN values in '{date_col}' column.")
+        logger.debug(
+            f"Found {num_no_date} rows with NaN values in '{date_col}' column."
+        )
 
     # Filter rows which have a datetime and are before cutoff
     mask = (date_series.notna()) & (date_series < cutoff_dt)
