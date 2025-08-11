@@ -270,9 +270,9 @@ def download_sub_data(
 
     # remove deleted posts or comments
     df = (
-        df[df["selftext"] not in ["[deleted]", "[removed]"]]
+        df[~df["selftext"].isin(["[deleted]", "[removed]"])]
         if data_type == "submissions"
-        else df[df["body"] not in ["[deleted]", "[removed]"]]
+        else df[~df["body"].isin(["[deleted]", "[removed]"])]
     )
 
     df["score"] = pd.to_numeric(df["score"], errors="coerce")
@@ -307,9 +307,7 @@ def rule_based_filter(post_df: pd.DataFrame, text_field: str) -> pd.DataFrame:
     This function filters out posts based on several criteria:
     - Ensures the text field is of type str.
     - Ensures the permalink is of type str.
-    - Removes posts without a score.
     - Removes posts that are deleted or removed.
-    - Removes very short comments (less than 10 words).
     - Removes posts with "bot" in the author's name.
     - Cleans the text field by unescaping HTML tags and removing leading/trailing whitespace.
     - Ensures the text field has a space within the first 2048 characters.
@@ -336,16 +334,8 @@ def rule_based_filter(post_df: pd.DataFrame, text_field: str) -> pd.DataFrame:
     idx = post_df["permalink"].apply(lambda x: isinstance(x, str))
     post_df = post_df.loc[idx]
 
-    # remove rows without a score
-    post_df = post_df.loc[post_df["score"].notna()]
-
     # remove rows where the submission is deleted or removed
-    post_df = post_df.loc[post_df[text_field] not in ["[deleted]", "[removed]"]]
-
-    # remove very short comments
-    if text_field == "body":
-        idx = post_df[text_field].apply(lambda x: len(x.split()) >= 10)
-        post_df = post_df.loc[idx]
+    post_df = post_df.loc[~post_df[text_field].isin(["[deleted]", "[removed]"])]
 
     # remove posts with "bot" in the author's name
     idx = post_df["author"].apply(lambda x: "bot" not in x.lower())
@@ -384,20 +374,21 @@ def get_context_post_df(
     Parameters
     ----------
     submissions : pd.DataFrame
-        DataFrame containing submission data with columns:
+        DataFrame containing submission data with columns including:
         - subreddit
         - title
         - selftext
+        - author
         - score
         - created_utc
         - permalink
     comments : pd.DataFrame
-        DataFrame containing comment data with columns:
-        - permalink
-        - author
+        DataFrame containing comment data with columns including:
         - body
+        - author
         - score
         - created_utc
+        - permalink
 
     Returns
     -------
@@ -419,10 +410,9 @@ def get_context_post_df(
     )
 
     comments = comments.copy()
-    comments["permalink_processed"] = comments["permalink"].map(_get_comment_permalink)
     comments["date_created"] = comments["created_utc"].astype(int).map(_get_date)
-
-    comments_grouped = comments.groupby("permalink_processed")
+    comments["comments_permalink"] = comments["permalink"].map(_get_comment_permalink)
+    comments_grouped = comments.groupby("comments_permalink")
 
     all_results = []
     for _, submission in submissions.iterrows():
@@ -442,7 +432,7 @@ def get_context_post_df(
 
             if author_replies_list:
                 submission_text += (
-                    "\n\nThe author also replied with the following in the thread:"
+                    "\n\nThe original poster also replied with the following comments in the thread:"
                 )
                 for reply in author_replies_list:
                     submission_text += "\n> " + str(reply)
@@ -502,8 +492,6 @@ def get_context_post_df(
             "score",
             "date_created",
             "permalink",
-            "treatments_mentioned",
-            "outcome_words",
             "author_replies",
         ]
     )
@@ -519,7 +507,7 @@ def filter_by_date(
     adf : pd.DataFrame
         The DataFrame to filter.
     cutoff_dt : pd.Timestamp
-        The cutoff timestamp. Only rows with dates on or before this date will
+        The cutoff timestamp. Only rows with dates before this date will
         be kept.
     date_col : str
         The name of the column in the DataFrame containing date information.
@@ -535,8 +523,13 @@ def filter_by_date(
     # Parse date column all at once, try inference and coerce errors
     date_series: pd.Series = pd.to_datetime(adf[date_col], errors="coerce")
 
-    # Filter rows which have a datetime and are on or before cutoff
-    mask = (date_series.notna()) & (date_series <= cutoff_dt)
+    # Log how many rows have NaN datetime if there are any
+    num_no_date = date_series.isna().sum()
+    if num_no_date > 0:
+        logger.debug(f"Found {num_no_date} rows with NaN values in '{date_col}' column.")
+
+    # Filter rows which have a datetime and are before cutoff
+    mask = (date_series.notna()) & (date_series < cutoff_dt)
     return adf.loc[mask].reset_index(drop=True)
 
 

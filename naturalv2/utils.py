@@ -163,7 +163,7 @@ def get_save_path(
     model_name : str
         The name of the model used for extraction.
     extract_type : str
-        The type of extraction performed (e.g., "treatment", "outcome").
+        The type of extraction performed (e.g., "relevance", "imputation").
     outcome : str | None
         The specific outcome of interest, if applicable. If None, the path will
         not include an outcome.

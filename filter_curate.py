@@ -106,7 +106,7 @@ class _DataCurator:
     study_dataset : StudyDataset
         The dataset for the study containing conditions and sources.
     clean_paths : list[str]
-        Path to the cleaned data directory.
+        List of paths to the cleaned data.
     language_model : LM
         Language model instance used for LLM calls.
 
@@ -200,7 +200,6 @@ class _DataCurator:
     async def get_common_names_with_llm(  # noqa: PLR0915
         self,
         experiment_tasks: list[ExperimentTask],
-        source_name: str,
         semaphore_limit: int = 10,
     ) -> dict[str, LLMResult]:
         """Execute LLM calls to get common names for treatments and outcomes.
@@ -209,8 +208,6 @@ class _DataCurator:
         ----------
         experiment_tasks : list[ExperimentTask]
             List of ``ExperimentTask`` objects to process.
-        source_name : str
-            Name of the source dataset (e.g., "pubmed", "reddit").
         semaphore_limit : int, default=10
             Maximum number of concurrent LLM calls.
 
@@ -233,7 +230,7 @@ class _DataCurator:
             """Generate tasks and put them in the queue."""
             nonlocal pbar
             task_generator = self._generate_llm_tasks_for_experiments(
-                experiment_tasks, source_name
+                experiment_tasks
             )
 
             for task in task_generator:
@@ -393,13 +390,13 @@ class _DataCurator:
             try:
                 # Apply LLM results to the experiment object
                 if common_name_dict:
-                    for attribute in ["treatment", "outcome"]:
-                        if attribute in common_name_dict:
-                            common_names = common_name_dict[attribute]
-                            getattr(
-                                experiment_task.experiment_instance,
-                                f"{attribute}_common_names",
-                            ).update({experiment_task.source_name: common_names})
+                    attribute = "treatment"
+                    if attribute in common_name_dict:
+                        common_names = common_name_dict[attribute]
+                        getattr(
+                            experiment_task.experiment_instance,
+                            f"{attribute}_common_names",
+                        ).update({experiment_task.source_name: common_names})
 
                 # Save the modified experiment object to YAML
                 exp_file = os.path.join(
@@ -446,50 +443,49 @@ class _DataCurator:
         return final_results_list
 
     def _generate_llm_tasks_for_experiments(
-        self, experiment_tasks: list[ExperimentTask], source_name: str
+        self, experiment_tasks: list[ExperimentTask]
     ) -> Iterator[LLMTask]:
         """Generator that yields LLM tasks on demand to save memory"""
         for exp_task in experiment_tasks:
             exp = exp_task.experiment_instance
             nct_id = exp_task.nct_id
+            source_name = exp_task.source_name
 
-            for attribute in ["treatment", "outcome"]:
-                # Skip if already have common names for this source
-                if source_name in getattr(exp, f"{attribute}_common_names"):
-                    logger.debug(
-                        f"Skipping {attribute} for {nct_id} - already have common names"
-                    )
-                    continue
+            attribute = "treatment"
+            # Skip if already have common names for this source
+            if source_name in getattr(exp, f"{attribute}_common_names"):
+                logger.debug(
+                    f"Skipping {attribute} for {nct_id} - already have common names"
+                )
+                continue
 
-                attribute_names = getattr(exp, f"{attribute}_names")
-                if not attribute_names:
-                    logger.debug(f"No {attribute} names found for {nct_id}")
-                    continue
+            attribute_names = getattr(exp, f"{attribute}_names")
+            if not attribute_names:
+                logger.debug(f"No {attribute} names found for {nct_id}")
+                continue
 
-                for i, name in enumerate(attribute_names):
-                    # Create unique task ID
-                    task_id = f"{nct_id}_{attribute}_{i}_{abs(hash(name)) % 10000}"
+            for i, name in enumerate(attribute_names):
+                # Create unique task ID
+                task_id = f"{nct_id}_{attribute}_{i}_{abs(hash(name)) % 10000}"
 
-                    str_substitutes = {"keyword": name, "trial_title": exp.title}
-                    if attribute == "treatment":
-                        str_substitutes["treatment_desc"] = exp.treatment_desc[name]
-                        str_substitutes["drugbank_names"] = exp.drugbank_names[name]
-                    elif attribute == "outcome":
-                        str_substitutes["outcome_desc"] = exp.outcome_desc[name]
+                str_substitutes = {"keyword": name, "trial_title": exp.title}
+                if attribute == "treatment":
+                    str_substitutes["treatment_desc"] = exp.treatment_desc[name]
+                    str_substitutes["drugbank_names"] = exp.drugbank_names[name]
 
-                    # Prepare messages
-                    messages = get_common_name_prompts(
-                        attribute, source_name, **str_substitutes
-                    )
+                # Prepare messages
+                messages = get_common_name_prompts(
+                    attribute, source_name, **str_substitutes
+                )
 
-                    yield LLMTask(
-                        nct_id=nct_id,
-                        attribute=attribute,
-                        name=name,
-                        messages=messages,
-                        source_name=source_name,
-                        task_id=task_id,
-                    )
+                yield LLMTask(
+                    nct_id=nct_id,
+                    attribute=attribute,
+                    name=name,
+                    messages=messages,
+                    source_name=source_name,
+                    task_id=task_id,
+                )
 
     def _group_llm_results_by_experiment(
         self, llm_results: dict[str, LLMResult]
@@ -522,22 +518,13 @@ async def _curate_experiments(
     clean_paths: list[str],
     language_model: LM,
     source_name: str,
-    train_ncts: list[str],
-    val_ncts: list[str],
-    test_ncts: list[str],
+    all_ncts: list[str],
+    splits: list[str],
 ) -> None:
     """Main async function to curate experiments in parallel"""
     curator = _DataCurator(
         cfg, study, source_dataset, study_dataset, clean_paths, language_model
     )
-
-    # prepare NCT IDs and splits
-    splits = (
-        ["train"] * len(train_ncts)
-        + ["val"] * len(val_ncts)
-        + ["test"] * len(test_ncts)
-    )
-    all_ncts = train_ncts + val_ncts + test_ncts
 
     # Prepare experiment tasks (no LLM tasks yet)
     logger.info(
@@ -554,7 +541,6 @@ async def _curate_experiments(
     # Phase 1: Execute LLM calls
     llm_results = await curator.get_common_names_with_llm(
         experiment_tasks=experiment_tasks,
-        source_name=source_name,
         semaphore_limit=cfg.get("curate_max_concurrency", 10),
     )
 
@@ -606,8 +592,8 @@ def main(cfg: DictConfig) -> None:
             source_dataset: Union[RedditSource, PubMedSet] = instantiate(
                 cfg[source_name]
             )
-            study_dataset.data_paths[f"{source_name}_cleaned"] = []
 
+            # Use a trial's `conditions` to search for related data in the source
             all_condition_keywords: list[str] = []
             for nct_id, split in tqdm(
                 zip(all_ncts, splits),
@@ -638,14 +624,12 @@ def main(cfg: DictConfig) -> None:
                 all_condition_keywords, study_dataset, study_dataset_file
             )
 
-            clean_paths = source_dataset.clean_data()
-            study_dataset.data_paths[f"{source_name}_cleaned"].extend(clean_paths)
+            all_clean_paths = await source_dataset.clean_data()
+            study_dataset.data_paths[f"{source_name}_cleaned"] = all_clean_paths
             study_dataset.to_yaml(study_dataset_file)
 
-            all_clean_paths = study_dataset.data_paths[f"{source_name}_cleaned"]
-
-            # Use cheap model for common names
-            cheap_model = build_lm_instance_from_cfg(cfg.cheap_model)
+            # Use sample model for common names
+            sample_model = build_lm_instance_from_cfg(cfg.sample_model)
 
             # Process experiments in batches with async LLM calls
             await _curate_experiments(
@@ -654,11 +638,10 @@ def main(cfg: DictConfig) -> None:
                 source_dataset,
                 study_dataset,
                 all_clean_paths,
-                cheap_model,
+                sample_model,
                 source_name,
-                train_ncts,
-                val_ncts,
-                test_ncts,
+                all_ncts,
+                splits,
             )
             study_dataset.to_yaml(study_dataset_file)
 

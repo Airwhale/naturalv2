@@ -51,7 +51,7 @@ class RedditSource:
     data_path : str
         Root directory for storing Reddit data.
     lm_cfg : DictConfig
-        Configuration for the language model.
+        Configuration for the language model, which is set to be our choice of "sample model".
     max_download_workers : int | None, default=None
         Maximum number of workers for downloading or curating Reddit data.
         If ``None``, defaults to half the number of physical CPU cores.
@@ -59,12 +59,12 @@ class RedditSource:
         Maximum queries per minute for Reddit API.
     max_llm_concurrency : int, default=10
         Maximum concurrency for LLM calls.
-    anonymize : bool, default=True
+    anonymize : bool, default=False
         Whether to anonymize the data.
     anonymizer_score_threshold : float, default=0.85
         Threshold for the anonymizer to determine if detected entities should be
         anonymized.
-    anonymizer_batch_size : int, default=1
+    anonymizer_batch_size : int, default=1000
         Batch size for the anonymizer when processing data.
 
     """
@@ -119,9 +119,6 @@ class RedditSource:
         dict[str, list[str]]
             A dictionary mapping each keyword to a list of relevant subreddits.
         """
-        subs_about = await get_sub_about_info(self.data_path, self.reddit_api_qpm)
-        pushshift_subreddits = set(subs_about["subreddit"].to_list())
-
         source_metadata = study_dataset.sources["reddit"]
 
         lm = build_lm_instance_from_cfg(self.lm_cfg)
@@ -146,14 +143,11 @@ class RedditSource:
                 if word not in source_metadata:
                     async with keywords_semaphore:
                         try:
-                            subreddits = await self._search_subreddits(
+                            candidate_subs = await self._search_subreddits(
                                 word, reddit_client, reddit_rate_limiter
                             )
-                            candidate_subs = set(subreddits).intersection(
-                                pushshift_subreddits
-                            )
-
-                            # Concurrently search for posts in candidate subreddits
+                            
+                            # Concurrently search for the top 5 posts in candidate subreddits
                             post_search_tasks = [
                                 asyncio.create_task(
                                     self._search_posts_in_subreddit(
@@ -165,6 +159,7 @@ class RedditSource:
                                 )
                                 for subreddit in candidate_subs
                             ]
+                            # Collect the title and first 1000 characters of each
                             posts_results = await asyncio.gather(
                                 *post_search_tasks, return_exceptions=True
                             )
@@ -213,7 +208,7 @@ class RedditSource:
             logger.info(f"{len(self.relevant_subreddits)} relevant subreddits found!")
         return source_metadata
 
-    def clean_data(self) -> list[str]:
+    async def clean_data(self) -> list[str]:
         """Download and clean data for relevant subreddits.
 
         This method checks if the cleaned data for each relevant subreddit already
@@ -221,7 +216,9 @@ class RedditSource:
         downloads the submissions and comments for the subreddit, cleans the data,
         and saves it to a parquet file. It uses multiprocessing to speed up the
         download and cleaning process. If the `anonymize` flag is set, it also
-        anonymizes the data using the specified anonymizer settings.
+        anonymizes the data using the specified anonymizer settings. 
+
+        Currently, only supports the top 20k subreddits form PushShift.
 
         Returns
         -------
@@ -232,9 +229,13 @@ class RedditSource:
             logger.info("No relevant subreddits found to clean.")
             return []
 
+        subs_about = await get_sub_about_info(self.data_path, self.reddit_api_qpm)
+        pushshift_subreddits = set(subs_about["subreddit"].to_list())
+        available_subs = self.relevant_subreddits.intersection(pushshift_subreddits)
+
         clean_paths = []
         subs_to_filter = []
-        for sub in self.relevant_subreddits:
+        for sub in available_subs:
             clean_sub_path = os.path.join(self._subs_data_dir, f"{sub}_cleaned.parquet")
             if os.path.exists(clean_sub_path):
                 clean_paths.append(clean_sub_path)
@@ -248,7 +249,7 @@ class RedditSource:
             )
             return clean_paths
 
-        n_downloaded = len(self.relevant_subreddits) - len(subs_to_filter)
+        n_downloaded = len(available_subs) - len(subs_to_filter)
         logger.info(
             f"{n_downloaded} relevant subreddits already downloaded, "
             f"{len(subs_to_filter)} remaining to download and clean."
@@ -344,19 +345,8 @@ class RedditSource:
             + drugbank_names
         }
 
-        outcome_names = {
-            name.lower()
-            for name in list(experiment.outcome_common_names["reddit"].keys())
-            + [
-                item
-                for sublist in experiment.outcome_common_names["reddit"].values()
-                for item in sublist
-            ]
-        }
-
         # Compile regex pattern once and reuse it for all subreddits
         treatment_pattern = _compile_search_pattern(treatment_names)
-        outcome_pattern = _compile_search_pattern(outcome_names)
 
         cutoff_dt = None
         if apply_date_filter and experiment.date:
@@ -389,7 +379,6 @@ class RedditSource:
                     _get_study_relevant_posts,
                     path,
                     treatment_pattern,
-                    outcome_pattern,
                     cutoff_dt,
                 )
 
@@ -537,7 +526,6 @@ def _clean_sub_data(data_path: str, sub: str) -> pd.DataFrame:
 def _get_study_relevant_posts(
     clean_data_path: str,
     treatment_pattern: re.Pattern,
-    outcome_pattern: re.Pattern,
     cutoff_dt: pd.Timestamp | None,
 ) -> pd.DataFrame:
     """Get posts from cleaned Reddit data that mention both treatments and outcomes."""
@@ -556,31 +544,22 @@ def _get_study_relevant_posts(
     treatment_finds = [
         df[col].str.lower().str.findall(treatment_pattern) for col in text_cols
     ]
-    outcome_finds = [
-        df[col].str.lower().str.findall(outcome_pattern) for col in text_cols
-    ]
+
 
     # Check if ANY column had a match for each row.
     has_treatment_mask = np.any([s.str.len() > 0 for s in treatment_finds], axis=0)
-    has_outcome_mask = np.any([s.str.len() > 0 for s in outcome_finds], axis=0)
 
-    valid_mask = has_treatment_mask & has_outcome_mask
-    result: pd.DataFrame = df[valid_mask].copy()
+    result: pd.DataFrame = df[has_treatment_mask].copy()
     if result.empty:
         return result
 
     # Aggregate a unique list of words from the pre-computed finds.
-    valid_treatment_finds = [s[valid_mask] for s in treatment_finds]
-    valid_outcome_finds = [s[valid_mask] for s in outcome_finds]
+    valid_treatment_finds = [s[has_treatment_mask] for s in treatment_finds]
 
     # Create a new DataFrame with unique mentions
     result["treatments_mentioned"] = [
         list({item for sublist in row for item in sublist})
         for row in zip(*valid_treatment_finds)
-    ]
-    result["outcome_words"] = [
-        list({item for sublist in row for item in sublist})
-        for row in zip(*valid_outcome_finds)
     ]
 
     return result.reset_index(drop=True)
@@ -598,8 +577,7 @@ def _compile_search_pattern(terms: set[str]) -> re.Pattern:
     # Escape each name to treat special characters (like '+', '.', '*') literally.
     escaped_terms = [re.escape(term) for term in terms_sorted]
 
-    # Join the escaped names with the '|' (OR) operator and Wrap with `\b` to ensure
-    # whole-word matching.
+    # Join the escaped names with the '|' (OR) operator.
     return re.compile(
-        r"\b(?:{})\b".format("|".join(escaped_terms)), flags=re.IGNORECASE
+        r"(?:{})".format("|".join(escaped_terms)), flags=re.IGNORECASE
     )
