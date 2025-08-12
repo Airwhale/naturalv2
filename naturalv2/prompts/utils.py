@@ -67,9 +67,9 @@ def load_prompt(
             "Please check the file format."
         )
 
-    # 'system_prompt_template' is optional, but if it exists, construct and return
+    # 'system_prompt' is optional, but if it exists, construct and return
     # a list of dictionaries with 'role' and 'content' keys
-    system_prompt: str | None = prompt_data.get("system_prompt_template")
+    system_prompt: str | None = prompt_data.get("system_prompt")
     if system_prompt:
         logger.debug(f"System prompt loaded from {prompt_type}.yaml: {system_prompt}")
 
