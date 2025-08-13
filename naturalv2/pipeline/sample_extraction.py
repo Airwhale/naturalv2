@@ -411,7 +411,7 @@ async def extract_covariates(
 ) -> pd.DataFrame:
     """Extract information from reports using an LLM.
 
-    This function processes the input DataFrame to extract structured 
+    This function processes the input DataFrame to extract structured
     information from a text report based on the specified extraction type.
 
     Parameters
@@ -469,7 +469,9 @@ async def extract_covariates(
     if os.path.exists(file_path):
         existing_data = pd.read_csv(file_path, index_col=0)
         input_df = input_df.loc[~input_df.index.isin(existing_data.index)]
-        logger.info(f"Found {len(existing_data)} existing records, {len(input_df)} left to process.")
+        logger.info(
+            f"Found {len(existing_data)} existing records, {len(input_df)} left to process."
+        )
         if len(input_df) == 0:
             return existing_data
 
