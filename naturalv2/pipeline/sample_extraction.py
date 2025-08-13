@@ -58,7 +58,7 @@ class SampleExtractionStage(PipelineStage):
     data : pd.DataFrame | None
         DataFrame containing the processed data after extraction.
     llm : LM
-        Lazy-loaded language model instance used for covariate extraction.
+        Lazy-loaded language model instance used for extraction.
     model_cfg : DictConfig
         Configuration for the language model used in this stage.
     stage_name : str
@@ -411,9 +411,8 @@ async def extract_covariates(
 ) -> pd.DataFrame:
     """Extract information from reports using an LLM.
 
-    This function processes the input DataFrame to extract information about
-    relevance, treatment, outcome, known covariates, or imputation of missing
-    information based on the specified extraction type.
+    This function processes the input DataFrame to extract structured 
+    information from a text report based on the specified extraction type.
 
     Parameters
     ----------
@@ -422,18 +421,18 @@ async def extract_covariates(
     experiment : Experiment
         Experiment instance containing metadata and prompt templates.
     source_name : str
-        Name of the source from which the reports are extracted.
+        Name of the source from which the reports are curated.
     outcome : str
-        The outcome variable for which covariates are being extracted.
+        The outcome variable for which information is being extracted.
     extract_type : ExtractType
-        The type of extraction to perform (e.g., relevance, treatment-outcome filter,
+        The type of extraction to perform (e.g., relevance, treatment-outcome,
         known covariates, or imputations).
     llm : LM
         Language model instance used for processing the reports.
     model_name : str
         Name of the language model being used.
     save_path : str
-        Path where the processed data will be saved.
+        Base path where the processed data for this experiment will be saved.
     response_format : BaseModel | None, optional, default=None
         Pydantic model defining the expected format of the LLM response.
         If None, no validation will be performed on the response.
@@ -468,7 +467,11 @@ async def extract_covariates(
     )
 
     if os.path.exists(file_path):
-        return pd.read_csv(file_path, index_col=0)
+        existing_data = pd.read_csv(file_path, index_col=0)
+        input_df = input_df.loc[~input_df.index.isin(existing_data.index)]
+        logger.info(f"Found {len(existing_data)} existing records, {len(input_df)} left to process.")
+        if len(input_df) == 0:
+            return existing_data
 
     # Set up the prompt and result queues for asynchronous processing
     num_samples = len(input_df)
@@ -621,7 +624,8 @@ def _result_processor(
         parsed_data = {f"{key}_imputed": value for key, value in parsed_data.items()}
 
     # Combine original row data with parsed LLM data
-    parsed_row_data: dict[str, Any] = row.to_dict()
+    parsed_row_data = {"index": row.name}
+    parsed_row_data.update(row.to_dict())
     parsed_row_data.update(parsed_data)
 
     return parsed_row_data
@@ -696,8 +700,9 @@ async def _prompt_processor(
                 await result_queue.put(processed_result)
             else:
                 logging.warning(
-                    f"Worker {worker_id} received None result for item at index {index}"
+                    f"Worker {worker_id} received None result for item at index {index} with input {messages}."
                 )
+                error_count += 1
                 await result_queue.put(False)  # Signal failure to writer
 
         except BaseException as e:

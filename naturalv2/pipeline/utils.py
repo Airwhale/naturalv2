@@ -29,13 +29,14 @@ async def _csv_writer(
     success_count = 0
     last_flush_time = asyncio.get_event_loop().time()
     fieldnames = None
+    file_exists = os.path.exists(output_filepath)
 
     # Ensure the directory exists
     os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
 
     try:
         async with aiofiles.open(
-            output_filepath, mode="w", newline="", encoding="utf-8"
+            output_filepath, mode="a", newline="", encoding="utf-8"
         ) as csvfile:
             writer = None
             while True:
@@ -57,8 +58,8 @@ async def _csv_writer(
                         logger.debug("Received False result from processing.")
                         continue
 
-                    if writer is None:
-                        fieldnames = ["index"] + list(result.keys())
+                    fieldnames = list(result.keys())
+                    if writer is None and not file_exists:
                         # Write header
                         buffer = io.StringIO()
                         csv_writer = csv.writer(buffer)
@@ -67,9 +68,7 @@ async def _csv_writer(
                         writer = True
 
                     # Write data row
-                    row_data = [success_count] + [
-                        result.get(field) for field in fieldnames[1:]
-                    ]
+                    row_data = [result[field] for field in fieldnames]
                     buffer = io.StringIO()
                     csv_writer = csv.writer(buffer)
                     csv_writer.writerow(row_data)
