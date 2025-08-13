@@ -403,19 +403,33 @@ class RedditSource:
 
         # Concatenate all DataFrames, format reports, and save to CSV
         final_df = pd.concat(curated_experiment_data, ignore_index=True)
-        post_mask = (final_df["report_type"] == "submission")
+        post_mask = final_df["report_type"] == "submission"
         final_df.loc[post_mask, "report"] = (
-            "**Subreddit**\nThis post was found on the subreddit r/" + final_df.loc[post_mask, "subreddit"].astype(str) + ".\n\n"
-            + "**Title**\nThis post was titled: " + final_df.loc[post_mask, "title"].astype(str) + "\n\n"
-            + "**Date created**\nThis post was created on " + final_df.loc[post_mask, "date_created"].astype(str) + ".\n\n"
-            + "**Post**\n" + final_df.loc[post_mask, "report_text"].astype(str)
+            "**Subreddit**\nThis post was found on the subreddit r/"
+            + final_df.loc[post_mask, "subreddit"].astype(str)
+            + ".\n\n"
+            + "**Title**\nThis post was titled: "
+            + final_df.loc[post_mask, "title"].astype(str)
+            + "\n\n"
+            + "**Date created**\nThis post was created on "
+            + final_df.loc[post_mask, "date_created"].astype(str)
+            + ".\n\n"
+            + "**Post**\n"
+            + final_df.loc[post_mask, "report_text"].astype(str)
         )
-        comment_mask = (final_df["report_type"] == "comment")
+        comment_mask = final_df["report_type"] == "comment"
         final_df.loc[comment_mask, "report"] = (
-            "**Subreddit**\nThis comment was found on the subreddit r/" + final_df.loc[comment_mask, "subreddit"].astype(str) + ".\n\n"
-            + "**Title**\nThis comment was in response to a post titled: " + final_df.loc[comment_mask, "title"].astype(str) + "\n\n"
-            + "**Date created**\nThis comment was created on " + final_df.loc[comment_mask, "date_created"].astype(str) + ".\n\n"
-            + "**Comment**\n" + final_df.loc[comment_mask, "report_text"].astype(str)
+            "**Subreddit**\nThis comment was found on the subreddit r/"
+            + final_df.loc[comment_mask, "subreddit"].astype(str)
+            + ".\n\n"
+            + "**Title**\nThis comment was in response to a post titled: "
+            + final_df.loc[comment_mask, "title"].astype(str)
+            + "\n\n"
+            + "**Date created**\nThis comment was created on "
+            + final_df.loc[comment_mask, "date_created"].astype(str)
+            + ".\n\n"
+            + "**Comment**\n"
+            + final_df.loc[comment_mask, "report_text"].astype(str)
         )
         final_df = final_df.drop_duplicates("report")
         final_df.to_csv(save_path, index=False)

@@ -472,7 +472,7 @@ def get_context_post_df(
                         "subreddit": comment_rows["subreddit"][i],
                         "title": comment_rows["title"][i],
                         "initial_post": comment_rows["initial_post"][i],
-                        "report_text": comment_rows['report_text'][i],
+                        "report_text": comment_rows["report_text"][i],
                         "report_type": "comment",
                         "score": comment_rows["score"][i],
                         "date_created": comment_rows["date_created"][i],
