@@ -401,8 +401,23 @@ class RedditSource:
             logger.warning(f"No valid matches found for experiment {experiment.nct_id}")
             return save_path, 0
 
-        # Concatenate all DataFrames and save to CSV
+        # Concatenate all DataFrames, format reports, and save to CSV
         final_df = pd.concat(curated_experiment_data, ignore_index=True)
+        post_mask = (final_df["report_type"] == "submission")
+        final_df.loc[post_mask, "report"] = (
+            "**Subreddit**\nThis post was found on the subreddit r/" + final_df.loc[post_mask, "subreddit"].astype(str) + ".\n\n"
+            + "**Title**\nThis post was titled: " + final_df.loc[post_mask, "title"].astype(str) + "\n\n"
+            + "**Date created**\nThis post was created on " + final_df.loc[post_mask, "date_created"].astype(str) + ".\n\n"
+            + "**Post**\n" + final_df.loc[post_mask, "report_text"].astype(str)
+        )
+        comment_mask = (final_df["report_type"] == "comment")
+        final_df.loc[comment_mask, "report"] = (
+            "**Subreddit**\nThis comment was found on the subreddit r/" + final_df.loc[comment_mask, "subreddit"].astype(str) + ".\n\n"
+            + "**Title**\nThis comment was in response to a post titled: " + final_df.loc[comment_mask, "title"].astype(str) + "\n\n"
+            + "**Date created**\nThis comment was created on " + final_df.loc[comment_mask, "date_created"].astype(str) + ".\n\n"
+            + "**Comment**\n" + final_df.loc[comment_mask, "report_text"].astype(str)
+        )
+        final_df = final_df.drop_duplicates("report")
         final_df.to_csv(save_path, index=False)
 
         return save_path, len(final_df)
@@ -500,7 +515,6 @@ def _download_submissions_and_comments(
             )
 
         rule_filtered_df = _clean_sub_data(data_path, sub)
-        rule_filtered_df = rule_filtered_df.drop_duplicates("report")
         rule_filtered_df.to_parquet(clean_sub_path, index=False, compression="snappy")
         # Delete the submissions and comments files after cleaning
         os.remove(submissions_path)
@@ -536,7 +550,7 @@ def _get_study_relevant_posts(
     if df.empty:
         return pd.DataFrame()
 
-    text_cols = ["subreddit", "title", "report", "initial_post"]
+    text_cols = ["subreddit", "title", "report_text", "initial_post"]
     for col in text_cols:
         df[col] = df[col].fillna("").astype(str)
 
