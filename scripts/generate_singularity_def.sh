@@ -47,9 +47,59 @@ From: ubuntu:24.04
         nano \\
         vim \\
         wget \\
+        rsync \\
         software-properties-common \\
         gnupg2 \\
         lsb-release
+
+    # Locale and timezone support (critical for avoiding encoding issues)
+    apt-get install -y \\
+        locales \\
+        tzdata
+    locale-gen en_US.UTF-8
+    
+    # Archive and compression tools
+    apt-get install -y \\
+        unzip \\
+        zip \\
+        tar \\
+        gzip
+
+    # Development tools and compilers
+    apt-get install -y \\
+        gfortran \\
+        cmake \\
+        autotools-dev \\
+        automake \\
+        libtool \\
+        make \\
+        patch
+
+    # Networking and communication tools
+    apt-get install -y \\
+        net-tools \\
+        iproute2 \\
+        ethtool \\
+        pciutils \\
+        openssh-client
+
+    # Infiniband/RDMA support
+    apt-get install -y \\
+        libibverbs1 \\
+        libibverbs-dev \\
+        ibverbs-providers \\
+        ibverbs-utils \\
+        infiniband-diags \\
+        libmlx5-1 \\
+        rdma-core \\
+        librdmacm1 \\
+        librdmacm-dev \\
+        libucx0 \\
+        libucx-dev \\
+        libopenmpi-dev \\
+        openmpi-bin \\
+        openmpi-common \\
+        libopenmpi3
 
     # Install packages needed for your Python dependencies
     apt-get install -y \\
@@ -71,15 +121,6 @@ From: ubuntu:24.04
         libproj-dev \\
         libgdal-dev \\
         pkg-config
-
-    # Install packages for GPU support and ML libraries
-    apt-get install -y \\
-        libnvidia-compute-535 \\
-        libnvidia-decode-535 \\
-        libnvidia-encode-535 \\
-        nvidia-utils-535 \\
-        libcurand10 \\
-        libcusolver11
 
     # Install SLURM dependencies
     apt-get install -y \\
@@ -130,11 +171,18 @@ cat >> "$DEF_FILE" << 'EOF'
 %environment
     export PATH="/root/.local/bin:$PATH"
     export PATH="/opt/slurm-23.11.9/bin:$PATH"
-    export LD_LIBRARY_PATH="/opt/slurm-23.11.9/lib:/opt/slurm-23.11.9/lib/slurm:$LD_LIBRARY_PATH"
+    export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/opt/slurm-23.11.9/lib:/opt/slurm-23.11.9/lib/slurm:$LD_LIBRARY_PATH"
     export SLURM_CONF="/opt/slurm-23.11.9/etc/slurm.conf"
     export PYTHONPATH="/venv/lib/python3.11/site-packages:$PYTHONPATH"
     export VIRTUAL_ENV="/venv"
     export PATH="/venv/bin:$PATH"
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+    export OMPI_ALLOW_RUN_AS_ROOT=1
+    export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+    export OMPI_MCA_pml=ucx
+    export OMPI_MCA_btl=^openib
+    export UCX_NET_DEVICES=all
 
 %runscript
     cd /workspace
