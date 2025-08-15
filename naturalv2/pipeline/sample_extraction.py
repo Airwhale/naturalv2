@@ -468,12 +468,30 @@ async def extract_covariates(
 
     if os.path.exists(file_path):
         existing_data = pd.read_csv(file_path, index_col=0)
-        input_df = input_df.loc[~input_df.index.isin(existing_data.index)]
+        input_df = input_df.loc[~input_df["report"].isin(existing_data["report"])]
         logger.info(
             f"Found {len(existing_data)} existing records, {len(input_df)} left to process."
         )
         if len(input_df) == 0:
             return existing_data
+
+    # Create mapping from drugbank names and treatment common names to treatment names
+    treatment_mapping: dict[str, str] | None = None
+    if extract_type == ExtractType.TY_FILTER:
+        treatment_mapping = {
+            **{
+                value: treatment_name
+                for treatment_name, drugbank_names in experiment.drugbank_names.items()
+                for value in drugbank_names
+            },
+            **{
+                value: treatment_name
+                for treatment_name, common_names in experiment.treatment_common_names[
+                    source_name
+                ].items()
+                for value in common_names
+            },
+        }
 
     # Set up the prompt and result queues for asynchronous processing
     num_samples = len(input_df)
@@ -512,6 +530,7 @@ async def extract_covariates(
                 llm,
                 worker_pbar,
                 extract_type,
+                treatment_mapping=treatment_mapping,
                 response_format=response_format,
             ),
             name=f"Prompt-Processor-{worker_id}",
@@ -596,6 +615,7 @@ def _result_processor(
     row: pd.Series,
     response: ResponseType,
     extract_type: ExtractType,
+    treatment_mapping: dict[str, str] | None = None,
     response_format: BaseModel | None = None,
 ) -> dict[str, Any] | None:
     """Process the LLM response and combine it with the original row data."""
@@ -624,6 +644,15 @@ def _result_processor(
     if extract_type == ExtractType.IMPUTATIONS:
         # append "_imputed" to each key in the parsed data
         parsed_data = {f"{key}_imputed": value for key, value in parsed_data.items()}
+    if extract_type == ExtractType.TY_FILTER:
+        extracted_treatment = parsed_data.get(TREATMENT_COL_NAME)
+        parsed_data["extracted_treatment"] = extracted_treatment
+
+        # Map the extracted treatment to the treatment names
+        if extracted_treatment in treatment_mapping:
+            parsed_data[TREATMENT_COL_NAME] = treatment_mapping[extracted_treatment]
+        else:
+            parsed_data[TREATMENT_COL_NAME] = "Other"
 
     # Combine original row data with parsed LLM data
     parsed_row_data = {"index": row.name}
@@ -666,6 +695,7 @@ async def _prompt_processor(
     llm: LM,
     pbar: tqdm,
     extract_type: ExtractType,
+    treatment_mapping: dict[str, str] | None = None,
     response_format: BaseModel | None = None,
 ) -> int:
     """Worker function to process prompts.
@@ -695,7 +725,11 @@ async def _prompt_processor(
                 response_format=response_format or {"type": "json_object"},
             )
             processed_result = _result_processor(
-                row, result, extract_type, response_format=response_format
+                row,
+                result,
+                extract_type,
+                treatment_mapping=treatment_mapping,
+                response_format=response_format,
             )
 
             if processed_result is not None:
