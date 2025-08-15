@@ -219,16 +219,18 @@ class Experiment:
             )
         self.covariate_desc[
             "Duration"
-        ] = """The duration of the treatment, represented as an ISO 8601 duration string.
+        ] = """The duration of the relevant treatment, represented as an ISO 8601 duration string.
 
-            Format: P[n]W or P[n]DT[n]H[n]M[n]S, where
-                P: Period designator (required).
-                [n]W: Number of weeks.
-                [n]D: Number of days.
-                T: Time designator (required to introduce time components).
-                [n]H: Number of hours.
-                [n]M: Number of minutes.
-                [n]S: Number of seconds.
+            Format: P[n]Y[n]M[n]DT[n]H[n]M[n]S or P[n]W, where
+                P: the duration designator (for period) placed at the start of the duration representation.
+                    Y is the year designator that follows the value for the number of calendar years.
+                    M is the month designator that follows the value for the number of calendar months.
+                    W is the week designator that follows the value for the number of weeks.
+                    D is the day designator that follows the value for the number of calendar days.
+                T: the time designator that precedes the time components of the representation.
+                    H is the hour designator that follows the value for the number of hours.
+                    M is the minute designator that follows the value for the number of minutes.
+                    S is the second designator that follows the value for the number of seconds.
             """
         self.extended_covariate_names: list[str] = [
             INCLUSION_COL_NAME  # , "Dosage"
@@ -687,11 +689,6 @@ class Experiment:
         if col_name not in extractions.columns:
             raise ValueError(f"`{col_name}` column is missing from extractions.")
 
-        if col_name == "Duration_imputed":
-            extractions[col_name] = pd.to_timedelta(
-                extractions[col_name], errors="coerce"
-            )
-
         covariate_data = extractions[col_name]
         all_answers = covariate_data.unique()
 
@@ -730,7 +727,7 @@ class Experiment:
         infrequent categories, grouping the infrequent ones into "Other".
         """
         if col_name == "Duration_imputed":
-            numeric_series = covariate_data
+            numeric_series = pd.to_timedelta(covariate_data, errors="coerce")
         else:
             numeric_series = pd.to_numeric(covariate_data, errors="coerce")
 
@@ -773,9 +770,7 @@ class Experiment:
                 categories = value_counts.index.tolist()[:-1]
 
             extractions[discrete_covariate_name] = np.where(
-                covariate_data.isin(categories),
-                covariate_data,
-                "Other",
+                covariate_data.isin(categories), covariate_data.astype(str), "Other"
             )
             updated_answers = categories + ["Other"]
             cov_map = {name: i for (i, name) in enumerate(updated_answers)}
