@@ -57,7 +57,7 @@ From: ubuntu:24.04
         locales \\
         tzdata
     locale-gen en_US.UTF-8
-    
+
     # Archive and compression tools
     apt-get install -y \\
         unzip \\
