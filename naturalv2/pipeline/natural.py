@@ -256,7 +256,9 @@ class NATURALPipeline:
                         )
                         break
             except Exception as e:
-                logger.error(f"Error processing stage {stage.stage_name}: {e}")
+                logger.error(
+                    f"Error processing stage {stage.stage_name}: {e}", exc_info=True
+                )
                 raise ProcessingError from e
 
         logger.info(
