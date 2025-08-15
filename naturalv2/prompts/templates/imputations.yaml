@@ -20,28 +20,59 @@ user_prompt_template: |-
   ```
 
   **Study Context:**
+    - Target Condition(s):
+      {%- if conditions is defined %}
+        {%- for condition in conditions %}
+          - {{ condition }}
+        {%- endfor %}
+      {%- else %}
+      {%- raw %}
+        {%- for condition in conditions %}
+          - {{ condition }}
+        {%- endfor %}
+      {%- endraw %}
+      {%- endif %}
+
     - Inclusion criteria:
       {{ inclusion_criteria }}
+
+    - Relevant Treatments:
+      {%- if treatments is defined %}
+        {%- for treatment in treatments %}
+          - {{ treatment }}
+        {%- endfor %}
+      {%- else %}
+      {%- raw %}
+        {%- for treatment in treatments %}
+          - {{ treatment }}
+        {%- endfor %}
+      {%- endraw %}
+      {%- endif %}
+
     - Covariates of interest:
       {%- if covariates is defined and covariate_desc is defined %}
         {%- for covariate in covariates %}
-          {%- if covariate in covariate_desc %}
-            - Name: '{{ covariate }}'
-              Description: {{ covariate_desc[covariate] }}
-          {%- else %}
-            - Name: '{{ covariate }}'
-              Description: Standard clinical definition applies
+          {%- if covariate != 'meets_inclusion_criteria' %}
+            {%- if covariate in covariate_desc %}
+              - Name: '{{ covariate }}'
+                Description: {{ covariate_desc[covariate] }}
+            {%- else %}
+              - Name: '{{ covariate }}'
+                Description: Standard clinical definition applies
+            {%- endif %}
           {%- endif %}
         {%- endfor %}
       {%- else %}
       {%- raw %}
         {%- for covariate in covariates %}
-          {%- if covariate in covariate_desc %}
-            - Name: '{{ covariate }}'
-              Description: {{ covariate_desc[covariate] }}
-          {%- else %}
-            - Name: '{{ covariate }}'
-              Description: Standard clinical definition applies
+          {%- if covariate != 'meets_inclusion_criteria' %}
+            {%- if covariate in covariate_desc %}
+              - Name: '{{ covariate }}'
+                Description: {{ covariate_desc[covariate] }}
+            {%- else %}
+              - Name: '{{ covariate }}'
+                Description: Standard clinical definition applies
+            {%- endif %}
           {%- endif %}
         {%- endfor %}
       {%- endraw %}
@@ -50,11 +81,13 @@ user_prompt_template: |-
   **Required Output Schema:**
   Your JSON must contain exactly these keys with specific values:
   {% for covariate in covariates %}
-  - '{{ covariate }}'
+    {%- if covariate != 'meets_inclusion_criteria' %}
+    - '{{ covariate }}'
+    {%- endif %}
   {% endfor %}
 
   **Imputation Guidelines:**
-  1. Direct Extraction: Extract all explicitly stated values from the clinical report
+  1. Direct Extraction: Extract all explicitly stated values from the clinical report. If there are multiple potential values, select the most current one that is relevant to the given context.
   2. Contextual Inference: For missing values, apply logical deduction using:
     - Medical terminology and clinical context
     - Inclusion criteria requirements

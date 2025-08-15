@@ -22,6 +22,19 @@ user_prompt_template: |-
   - Inclusion Criteria:
     {{ inclusion_criteria }}
 
+  - Relevant Treatments:
+    {%- if treatments is defined %}
+      {%- for treatment in treatments %}
+        - {{ treatment }}
+      {%- endfor %}
+    {%- else %}
+    {%- raw %}
+      {%- for treatment in treatments %}
+        - {{ treatment }}
+      {%- endfor %}
+    {%- endraw %}
+    {%- endif %}
+
   **Report:**
   ```
   {{ report }}
