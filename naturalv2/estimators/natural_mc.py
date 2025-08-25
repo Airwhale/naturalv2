@@ -11,7 +11,7 @@ from naturalv2.models.causal_models import (
     CausalData,
     OutcomeImputation,
 )
-from naturalv2.pipeline import TREATMENT_COL_NAME
+from naturalv2.pipeline import OUTCOME_COL_NAME, TREATMENT_COL_NAME
 
 
 class NaturalMC:
@@ -66,13 +66,13 @@ class NaturalMC:
             If the treatment column or covariates are not present in the data.
 
         """
-        sampled_treatment_col = f"{TREATMENT_COL_NAME}_sampled"
+        sampled_treatment_col = f"{TREATMENT_COL_NAME}_discretized"
         if sampled_treatment_col not in observational_data.columns:
             raise ValueError(
                 f"{sampled_treatment_col} must be in ``observational_data`` columns."
             )
 
-        sampled_outcome_col = f"{outcome}_sampled"
+        sampled_outcome_col = f"{OUTCOME_COL_NAME}_discretized"
         if sampled_outcome_col not in observational_data.columns:
             raise ValueError(
                 f"{sampled_outcome_col} must be in ``observational_data`` columns."
