@@ -569,6 +569,7 @@ def main(cfg: DictConfig) -> None:
     val_ncts = [list(trial.keys())[0] for trial in study.val_trials]
     test_ncts = [list(trial.keys())[0] for trial in study.test_trials]
 
+    # TODO: use all trials after testing
     # splits = (
     #     ["train"] * len(train_ncts)
     #     + ["val"] * len(val_ncts)
