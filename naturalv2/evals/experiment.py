@@ -15,6 +15,7 @@ from naturalv2.evals.clinical_trial import (
     ArmGroup,
     BaselineMeasure,
     ClinicalTrial,
+    Location,
     MeasureGroup,
     Measurement,
     Mesh,
@@ -94,14 +95,14 @@ class Experiment:
         List of references associated with the clinical trial for the experiment.
     inclusion_criteria : str | None
         Inclusion/exclusion criteria for the experiment, or None if not available.
+    countries : list[str]
+        List of countries covered by the clinical trial.
     covariate_names : list[str]
         List of covariate names used in the experiment.
     covariate_desc : dict[str, str]
         Dictionary mapping covariate names to their descriptions. Note that not
         all covariates have descriptions. "Duration" is always included as a covariate
-        and represents the duration of the treatment in ISO 8601 format.
-    extended_covariate_names : list[str]
-        List of extended covariate names, including inclusion-related binary variables.
+        and represents the duration of the treatment in terms of number of days.
     treatment_names : list[str]
         List of treatment names used in the experiment.
     outcome_names : list[str]
@@ -201,13 +202,19 @@ class Experiment:
         self._inclusion_criteria: str | None = get_nested_value(
             trial, "protocolSection.eligibilityModule.eligibilityCriteria"
         )
+        locations: list[Location] | None = get_nested_value(
+            trial, "protocolSection.contactsLocationsModule.locations"
+        )
+        self._countries = None
+        if locations:
+            self._countries: list[str] = list(set([location.country for location in locations]))
 
         baseline_measures: list[BaselineMeasure] | None = get_nested_value(
             trial, "resultsSection.baselineCharacteristicsModule.measures"
         )
         self._covariate_names: list[str] = [
             base.title for base in baseline_measures or []
-        ] + ["Duration"]
+        ] + ["Country", "Duration"]
         self._covariate_desc: dict[str, str] = {}
         if baseline_measures is not None:
             self._covariate_desc.update(
@@ -217,22 +224,8 @@ class Experiment:
                     if covariate.description
                 }
             )
-        self.covariate_desc[
-            "Duration"
-        ] = """The duration of the treatment, represented as an ISO 8601 duration string.
-
-            Format: P[n]W or P[n]DT[n]H[n]M[n]S, where
-                P: Period designator (required).
-                [n]W: Number of weeks.
-                [n]D: Number of days.
-                T: Time designator (required to introduce time components).
-                [n]H: Number of hours.
-                [n]M: Number of minutes.
-                [n]S: Number of seconds.
-            """
-        self.extended_covariate_names: list[str] = [
-            INCLUSION_COL_NAME  # , "Dosage"
-        ]  # inclusion-related binary variables
+        self.covariate_desc["Duration"] = "The duration of the treatment in terms of number of days, represented as an integer."
+        self.covariate_desc["Country"] = "The patient's country of residence."
         self.covariate_desc[INCLUSION_COL_NAME] = (
             "Whether the report indicates that the individual meets the inclusion criteria."
         )
@@ -254,8 +247,8 @@ class Experiment:
         # NOTE: options for covariates can only be set when we get some data
         # (see `discretize` method)
         self.options: dict[str, list[str]] = {}
-        for feat in self.extended_covariate_names + self.outcome_names:
-            self.options.update({feat: ["No", "Yes", "Unknown"]})
+        for feat in [INCLUSION_COL_NAME] + self.outcome_names:
+            self.options.update({feat: ["No", "Yes"]})
         self.options.update({TREATMENT_COL_NAME: self.treatment_names})
 
         # Store different representations of the features
@@ -309,6 +302,11 @@ class Experiment:
     def inclusion_criteria(self) -> str | None:
         """Inclusion/exclusion criteria for the experiment."""
         return self._inclusion_criteria
+
+    @property
+    def countries(self) -> str | None:
+        """Countries where the experiment has been conducted."""
+        return self._countries
 
     @property
     def covariate_names(self) -> list[str]:
@@ -453,8 +451,8 @@ class Experiment:
 
         return extractions[
             extractions[TREATMENT_COL_NAME].isin(self.options[TREATMENT_COL_NAME])
-            & (extractions[OUTCOME_COL_NAME] == "Yes")
-        ].reset_index(drop=True)
+            & (extractions[OUTCOME_COL_NAME].isin(["Yes", "No"]))
+        ]
 
     def hard_filter_inclusion(self, extractions: pd.DataFrame) -> pd.DataFrame:
         """Filter out rows that don't meet the inclusion criteria.
@@ -474,24 +472,23 @@ class Experiment:
         ------
         ValueError
             If the extractions DataFrame does not contain the expected column
-            listed in `extended_covariate_names`.
+            called INCLUSION_COL_NAME.
         """
-        for name in self.extended_covariate_names:
-            if name not in extractions.columns:
-                raise ValueError(f"{name} column is missing from extractions.")
+        if INCLUSION_COL_NAME not in extractions.columns:
+            raise ValueError(f"{INCLUSION_COL_NAME} column is missing from extractions.")
 
-            extractions = extractions[
-                extractions[name].str.lower().isin(["yes", "unknown"])
-            ].reset_index(drop=True)
+        extractions = extractions[
+            extractions[INCLUSION_COL_NAME].str.lower().isin(["yes", "unknown"])
+        ]
 
         return extractions
 
     def discretize(self, extractions: pd.DataFrame) -> pd.DataFrame:
-        """Discretize the features in the extractions DataFrame.
+        """Discretize the covariates in the extractions DataFrame.
 
         This method converts continuous covariates into binary or categorical
         representations based on the number of unique values. It also converts
-        treatment and outcome columns into numerical encodings.
+        treatment columns into numerical encodings.
 
         Parameters
         ----------
@@ -501,23 +498,19 @@ class Experiment:
         Returns
         -------
         pd.DataFrame
-            DataFrame with discretized features, including binary and categorical
-            encodings for covariates, treatments, and outcomes.
+            DataFrame with discretized covariates and treatments, including binary and 
+            categorical encodings for covariates.
 
         Raises
         ------
         ValueError
             If the extractions DataFrame does not contain the expected columns
-            listed in `covariate_names`, `extended_covariate_names`, `OUTCOME_COL_NAME`
-            or `TREATMENT_COL_NAME`.
+            listed in `covariate_names`.
         """
-        imputed_covariates = [
-            f"{covariate}_imputed" for covariate in self.covariate_names
-        ]
-        for covariate in imputed_covariates:
+        for covariate in self.covariate_names:
             self._discretize_covariate(extractions, covariate)
 
-        self._discretize_binary_columns(extractions)
+        self._discretize_outcome_column(extractions)
         self._discretize_treatment_column(extractions)
         self._set_transforms()
         return extractions
@@ -601,30 +594,14 @@ class Experiment:
         """
         prompts_dir = str(Path(__file__).resolve().parents[1] / "prompts" / "templates")
 
-        outcome_desc = {outcome: self.outcome_desc[outcome]}
-        treatment_names = list(
-            set(
-                self.treatment_names
-                + [
-                    item
-                    for sublist in self.treatment_common_names[source_name].values()
-                    for item in sublist
-                ]
-                + [item for sublist in self.drugbank_names.values() for item in sublist]
-            )
-        )
         format_inputs = {
             "conditions": self._conditions,
-            "treatments": treatment_names,
+            "source": source_name,
+            "treatments": self.treatment_common_names[source_name],
             "outcome": outcome,
-            "outcome_common_names": [
-                item
-                for sublist in self.outcome_common_names[source_name].values()
-                for item in sublist
-            ],
-            "covariates": self.covariate_names + self.extended_covariate_names,
+            "covariates": self.covariate_names,
             "treatment_desc": self.treatment_desc,
-            "outcome_desc": outcome_desc,
+            "outcome_desc": self.outcome_desc[outcome],
             "covariate_desc": self.covariate_desc,
             "inclusion_criteria": self.inclusion_criteria,
             "report": report,
@@ -668,7 +645,6 @@ class Experiment:
             prompts_dir,
             "question_treatment",
             return_format="prompt",
-            treatments=self.treatment_names,
         )
 
         for idx, outcome in enumerate(self.outcome_names):
@@ -682,26 +658,23 @@ class Experiment:
 
         return question_prompts
 
-    def _discretize_covariate(self, extractions: pd.DataFrame, col_name: str) -> None:
-        """Discretize a covariate in the extractions DataFrame."""
-        if col_name not in extractions.columns:
-            raise ValueError(f"`{col_name}` column is missing from extractions.")
+    def _discretize_covariate(self, extractions: pd.DataFrame, covariate_name: str) -> None:
+        """Discretize a covariate in the extractions DataFrame, after imputations."""
+        imputation_col_name = f"{covariate_name}_imputed"
+        discrete_covariate_name = f"{covariate_name}_discretized"
+        if covariate_name not in extractions.columns:
+            raise ValueError(f"`{covariate_name}` column is missing from extractions.")
+        if imputation_col_name not in extractions.columns:
+            raise ValueError(f"`{imputation_col_name}` column is missing from extractions.")
 
-        if col_name == "Duration_imputed":
-            extractions[col_name] = pd.to_timedelta(
-                extractions[col_name], errors="coerce"
-            )
-
-        covariate_data = extractions[col_name]
+        knowns = extractions[covariate_name].copy()
+        unknowns = knowns.str.lower().isin(["unknown", ""]) | knowns.isna()
+        covariate_data = knowns.mask(unknowns, extractions[imputation_col_name])
         all_answers = covariate_data.unique()
-
-        discrete_covariate_name = col_name.replace("imputed", "discretized")
-        covariate_name = col_name.replace("_imputed", "")
 
         if len(all_answers) > 10:
             self._discretize_many_unique(
                 extractions,
-                col_name,
                 covariate_data,
                 discrete_covariate_name,
                 covariate_name,
@@ -709,7 +682,7 @@ class Experiment:
         else:
             self._discretize_few_unique(
                 extractions,
-                col_name,
+                covariate_data,
                 all_answers,
                 discrete_covariate_name,
                 covariate_name,
@@ -718,7 +691,6 @@ class Experiment:
     def _discretize_many_unique(
         self,
         extractions: pd.DataFrame,
-        col_name: str,
         covariate_data: pd.Series,
         discrete_covariate_name: str,
         covariate_name: str,
@@ -729,12 +701,13 @@ class Experiment:
         the median value, or categorizes non-numeric covariates into frequent and
         infrequent categories, grouping the infrequent ones into "Other".
         """
-        if col_name == "Duration_imputed":
-            numeric_series = covariate_data
-        else:
-            numeric_series = pd.to_numeric(covariate_data, errors="coerce")
+        # if covariate_name == "Duration":
+        #     numeric_series = pd.to_timedelta(covariate_data, errors="coerce")
+        # else:
+        numeric_series = pd.to_numeric(covariate_data, errors="coerce")
 
-        if numeric_series.notna().sum() > len(extractions) * 0.5:
+        # Most extractions are numerical values.
+        if numeric_series.notna().sum() > len(extractions) * 0.8:
             quant_50 = numeric_series.describe()["50%"]
             binary_codes = (numeric_series > quant_50).astype(int)
             extractions[discrete_covariate_name] = binary_codes
@@ -747,6 +720,7 @@ class Experiment:
                     ]
                 }
             )
+        # There are non-numerical extractions, so we categorize them.
         else:
             value_counts = covariate_data.value_counts()
             cumulative_counts = value_counts.cumsum()
@@ -774,7 +748,7 @@ class Experiment:
 
             extractions[discrete_covariate_name] = np.where(
                 covariate_data.isin(categories),
-                covariate_data,
+                covariate_data.astype(str),
                 "Other",
             )
             updated_answers = categories + ["Other"]
@@ -789,7 +763,7 @@ class Experiment:
     def _discretize_few_unique(
         self,
         extractions: pd.DataFrame,
-        col_name: str,
+        covariate_data: pd.Series,
         all_answers: np.ndarray,
         discrete_covariate_name: str,
         covariate_name: str,
@@ -797,19 +771,18 @@ class Experiment:
         """Discretize a covariate with few unique values in the extractions DataFrame."""
         cov_map = {name: i for (i, name) in enumerate(all_answers)}
         extractions[discrete_covariate_name] = (
-            extractions[col_name].replace(cov_map).astype(int)
+            covariate_data.replace(cov_map).astype(int)
         )
         self.options.update({covariate_name: [str(name) for name in all_answers]})
 
-    def _discretize_binary_columns(self, extractions: pd.DataFrame) -> None:
+    def _discretize_outcome_column(self, extractions: pd.DataFrame) -> None:
         """ "Discretize binary columns in the extractions DataFrame."""
-        binary_map_num = {"No": 0, "Yes": 1, "Unknown": 2}
-        for feat in self.extended_covariate_names + [OUTCOME_COL_NAME]:
-            if feat not in extractions.columns:
-                raise ValueError(f"`{feat}` column is missing from extractions.")
-            extractions[feat + "_discretized"] = extractions[feat].replace(
-                binary_map_num
-            )
+        if OUTCOME_COL_NAME not in extractions.columns:
+            raise ValueError(f"`{OUTCOME_COL_NAME}` column is missing from extractions.")
+        binary_map_num = {"No": 0, "Yes": 1}
+        extractions[OUTCOME_COL_NAME + "_discretized"] = extractions[OUTCOME_COL_NAME].replace(
+            binary_map_num
+        )
 
     def _discretize_treatment_column(self, extractions: pd.DataFrame) -> None:
         """ "Discretize the treatment column in the extractions DataFrame."""
@@ -980,8 +953,8 @@ class Experiment:
         corresponding feature value. The mappings are created based on the options
         provided for each feature, including treatments, outcomes, and covariates.
         """
-        binary_map_num = {"No": 0, "Yes": 1, "Unknown": 2}
-        binary_map_lang = {0: "No", 1: "Yes", 2: "Unknown"}
+        binary_map_num = {"No": 0, "Yes": 1}
+        binary_map_lang = {0: "No", 1: "Yes"}
 
         self._numerical_repr = {
             TREATMENT_COL_NAME: {
@@ -989,9 +962,6 @@ class Experiment:
             }
         }
         self._numerical_repr.update(dict.fromkeys(self.outcome_names, binary_map_num))
-        self._numerical_repr.update(
-            dict.fromkeys(self.extended_covariate_names, binary_map_num)
-        )
         self._numerical_repr.update(
             {
                 cov: {name: i for (i, name) in enumerate(self.options[cov])}
@@ -1003,9 +973,6 @@ class Experiment:
             TREATMENT_COL_NAME: dict(enumerate(self.options[TREATMENT_COL_NAME]))
         }
         self._language_repr.update(dict.fromkeys(self.outcome_names, binary_map_lang))
-        self._language_repr.update(
-            dict.fromkeys(self.extended_covariate_names, binary_map_lang)
-        )
         self._language_repr.update(
             {cov: dict(enumerate(self.options[cov])) for cov in self.covariate_names}
         )
