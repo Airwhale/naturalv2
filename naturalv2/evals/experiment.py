@@ -747,9 +747,7 @@ class Experiment:
                 categories = value_counts.index.tolist()[:-1]
 
             extractions[discrete_covariate_name] = np.where(
-                covariate_data.isin(categories),
-                covariate_data.astype(str),
-                "Other",
+                covariate_data.isin(categories), covariate_data.astype(str), "Other"
             )
             updated_answers = categories + ["Other"]
             cov_map = {name: i for (i, name) in enumerate(updated_answers)}

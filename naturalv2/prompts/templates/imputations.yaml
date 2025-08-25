@@ -48,6 +48,8 @@ user_prompt_template: |-
   **Response Format:**
   Your JSON must contain exactly these keys with specific values:
   {% for covariate in covariates %}
-  - '{{ covariate }}'
+    {%- if covariate != 'meets_inclusion_criteria' %}
+    - '{{ covariate }}'
+    {%- endif %}
   {% endfor %}
   Return only a valid JSON object with no additional text, code blocks, or explanations.

@@ -421,7 +421,7 @@ class ImputationsStage(SampleExtractionStage):
         return self.data
 
 
-async def extract_covariates(
+async def extract_covariates( # noqa: PLR0912
     input_df: pd.DataFrame,
     experiment: Experiment,
     source_name: str,
