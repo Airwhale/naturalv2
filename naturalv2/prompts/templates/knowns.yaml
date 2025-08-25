@@ -7,8 +7,8 @@ user_prompt_template: |-
   {%- for condition in conditions %}
     - {{ condition }}
   {%- endfor %}
-  
-  1. For each of the following covariates, extract the patient's covariate values from the report below and structure them into a JSON object. 
+
+  1. For each of the following covariates, extract the patient's covariate values from the report below and structure them into a JSON object.
   {%- for covariate in covariates %}
     {%- if covariate in covariate_desc %}
       - Covariate: '{{ covariate }}'
@@ -19,25 +19,24 @@ user_prompt_template: |-
   {%- endfor %}
   Guidelines:
   - If the value of a covariate is explicitly stated or can be inferred from the report, use that value. (Example: "I am an Uncle" strongly suggests male sex, but doesn't explicitly state it).
-  - If it is possible to represent the value of the covariate numerically, you MUST use just a single numerical value. Do not use ranges or categories, even if the description mentions them. 
+  - If it is possible to represent the value of the covariate numerically, you MUST use just a single numerical value. Do not use ranges or categories, even if the description mentions them.
   - If the report provides a specific numerical range, calculate and use the average value.
   - Do not include units (like "mg", "days", "years") or any other text in the final numerical value.
   - Consider common names, misspellings, synonyms, medical abbreviations, and alternative terminology.
-  - Use "Unknown", when there is no information in the report -- either explicit or inferential -- that relates to the covariate at all. 
+  - Use "Unknown", when there is no information in the report -- either explicit or inferential -- that relates to the covariate at all.
 
   2. Based on all the information provided, determine whether the patient in the report meets the following inclusion criteria and record your answer in the JSON object as the value to the key "meets_inclusion_criteria":
   {{ inclusion_criteria }}
   Guidelines:
   - If the patient in the report satisfies the given criteria, use the value Yes.
   - If the inclusion critera satisfaction can not be determined or inferred from the report, use the value Unknown.
-  - If there is explicit information in the report that violates the inclusion criteria, use the value No. 
+  - If there is explicit information in the report that violates the inclusion criteria, use the value No.
 
   **Report found on {{ source }}:**
   ```
   {{ report }}
-  ``` 
-  
+  ```
+
   **Response Format:**
   Return ONLY a valid JSON object with all the covariate names, as well as "meets_inclusion_criteria", as keys and their extracted values as values.
   Ensure the JSON is well-formed, with no additional text or formatting.
- 

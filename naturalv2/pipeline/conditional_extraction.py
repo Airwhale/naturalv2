@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import re
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -15,7 +14,7 @@ from tqdm import tqdm
 
 from naturalv2.evals.experiment import Experiment
 from naturalv2.models.lm import build_lm_instance_from_cfg, get_prompt_logprobs
-from naturalv2.pipeline import INCLUSION_COL_NAME, OUTCOME_COL_NAME, TREATMENT_COL_NAME
+from naturalv2.pipeline import INCLUSION_COL_NAME, TREATMENT_COL_NAME
 from naturalv2.pipeline.natural import PipelineContext, PipelineStage
 from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
 from naturalv2.utils import _get_alphabet_labels, get_answer_dicts, get_save_path
@@ -320,7 +319,7 @@ async def extract_conditionals(  # noqa: PLR0912
         model_name,
         extract_type.value,
         outcome,
-    )   
+    )
     if os.path.exists(file_path):
         existing_data = pd.read_csv(file_path, index_col=0)
         input_df = input_df.loc[~input_df.index.isin(existing_data.index)]
@@ -510,8 +509,8 @@ async def _llm_task_producer(
     """Produce prompts for the LLM based on the input DataFrame.
 
     This function formats the input data into prompts for the LLM, including
-    the report text and any relevant covariates and optionallly treatment information 
-    based on the specified `extract_type`. It handles exceptions during prompt 
+    the report text and any relevant covariates and optionallly treatment information
+    based on the specified `extract_type`. It handles exceptions during prompt
     formatting and puts the prompts into the queue for processing by workers.
     """
     example_prompt: str = ""
@@ -569,7 +568,7 @@ async def _llm_task_producer(
                     return_format="prompt",
                 )
                 prompts.append(prompt)
-            
+
             if not example_prompt:
                 example_prompt = prompts[0]
 

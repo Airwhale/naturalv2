@@ -423,8 +423,10 @@ class RedditSource:
             + final_df.loc[comment_mask, "subreddit"].astype(str)
             + ".\n\n"
             + "**Initial Post**\nThis comment was in response to the following post: "
-            + "\nTitle: " + final_df.loc[comment_mask, "title"].astype(str)
-            + "\nPost content: " + final_df.loc[comment_mask, "initial_post"].astype(str)
+            + "\nTitle: "
+            + final_df.loc[comment_mask, "title"].astype(str)
+            + "\nPost content: "
+            + final_df.loc[comment_mask, "initial_post"].astype(str)
             + "\n\n"
             + "**Date created**\nThis comment was created on "
             + final_df.loc[comment_mask, "date_created"].astype(str)

@@ -27,7 +27,7 @@ user_prompt_template: |-
   - If a common name is mentioned in the report or the treatment name is misspelled, map it to one of the target treatments.
   - If the report strongly suggests a target treatment was used but doesn't explicitly name it, AND there are contextual clues that make one of the target treatments highly likely, use that treatment name.
   - Use "Unknown" if no treatment is mentioned and cannot be reasonably inferred.
-  
+
   2. Does the patient described in the report contain information belong to the following outcome category?
   **{{ outcome }}**
   Description: {{ outcome_desc }}
@@ -39,7 +39,7 @@ user_prompt_template: |-
   **Report found on {{ source }}:**
   ```
   {{ report }}
-  ``` 
+  ```
 
   **Response Format:**
   Respond only with a valid JSON object containing the following keys:

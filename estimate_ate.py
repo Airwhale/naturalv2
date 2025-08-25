@@ -49,7 +49,9 @@ logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
 
-def _weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame, use_weights=True) -> np.ndarray:
+def _weight_by_inclusion(
+    ites: np.ndarray, inclusion_probs: pd.DataFrame, use_weights=True
+) -> np.ndarray:
     """Weight individual treatment effects (ITE) by inclusion probabilities.
 
     Parameters

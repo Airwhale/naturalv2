@@ -12,9 +12,9 @@ user_prompt_template: |-
       - Covariate: '{{ covariate }}'
     {%- endif %}
   {%- endfor %}
-  
+
   **Guidelines:**
-  1. Direct Extraction: Extract all explicitly stated values from the given report. 
+  1. Direct Extraction: Extract all explicitly stated values from the given report.
   2. Contextual Inference: For missing values, infer appropriate values via logical deduction using
     - medical terminology and clinical context,
     - inclusion criteria requirements,
@@ -25,11 +25,11 @@ user_prompt_template: |-
     - Consider population norms and medical standards.
     - Ensure internal consistency across all covariates.
     - Maintain compatibility with inclusion criteria.
-  
+
   **Rules:**
   - Every covariate must have a specific, definitive value.
   - Values must be clinically realistic and internally consistent.
-  - If it is possible to represent the value of the covariate numerically, use just a single numerical value. Do not use ranges or categories, even if the description mentions them. 
+  - If it is possible to represent the value of the covariate numerically, use just a single numerical value. Do not use ranges or categories, even if the description mentions them.
   - If the report provides a specific numerical range, you must calculate and use the average value.
   - Do not include units (like "mg", "days", "years") or any other text in the final numerical value.
   - Profile must satisfy all inclusion criteria.
@@ -40,11 +40,11 @@ user_prompt_template: |-
   **Report found on {{ source }}:**
   ```
   {{ report }}
-  ``` 
+  ```
 
   **Criteria that the patient satisfies:**
   {{ inclusion_criteria }}
-      
+
   **Response Format:**
   Your JSON must contain exactly these keys with specific values:
   {% for covariate in covariates %}

@@ -11,5 +11,5 @@ user_prompt_template: |-
   Finally, I'll give you some multiple choice question(s) and options to choose from. Pick the right answer.
 
   **Report found on {{ source }}:**
-  
+
   {{ report }}

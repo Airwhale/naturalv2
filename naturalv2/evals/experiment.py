@@ -207,7 +207,9 @@ class Experiment:
         )
         self._countries = None
         if locations:
-            self._countries: list[str] = list(set([location.country for location in locations]))
+            self._countries: list[str] = list(
+                set([location.country for location in locations])
+            )
 
         baseline_measures: list[BaselineMeasure] | None = get_nested_value(
             trial, "resultsSection.baselineCharacteristicsModule.measures"
@@ -224,7 +226,9 @@ class Experiment:
                     if covariate.description
                 }
             )
-        self.covariate_desc["Duration"] = "The duration of the treatment in terms of number of days, represented as an integer."
+        self.covariate_desc["Duration"] = (
+            "The duration of the treatment in terms of number of days, represented as an integer."
+        )
         self.covariate_desc["Country"] = "The patient's country of residence."
         self.covariate_desc[INCLUSION_COL_NAME] = (
             "Whether the report indicates that the individual meets the inclusion criteria."
@@ -475,7 +479,9 @@ class Experiment:
             called INCLUSION_COL_NAME.
         """
         if INCLUSION_COL_NAME not in extractions.columns:
-            raise ValueError(f"{INCLUSION_COL_NAME} column is missing from extractions.")
+            raise ValueError(
+                f"{INCLUSION_COL_NAME} column is missing from extractions."
+            )
 
         extractions = extractions[
             extractions[INCLUSION_COL_NAME].str.lower().isin(["yes", "unknown"])
@@ -498,7 +504,7 @@ class Experiment:
         Returns
         -------
         pd.DataFrame
-            DataFrame with discretized covariates and treatments, including binary and 
+            DataFrame with discretized covariates and treatments, including binary and
             categorical encodings for covariates.
 
         Raises
@@ -658,14 +664,18 @@ class Experiment:
 
         return question_prompts
 
-    def _discretize_covariate(self, extractions: pd.DataFrame, covariate_name: str) -> None:
+    def _discretize_covariate(
+        self, extractions: pd.DataFrame, covariate_name: str
+    ) -> None:
         """Discretize a covariate in the extractions DataFrame, after imputations."""
         imputation_col_name = f"{covariate_name}_imputed"
         discrete_covariate_name = f"{covariate_name}_discretized"
         if covariate_name not in extractions.columns:
             raise ValueError(f"`{covariate_name}` column is missing from extractions.")
         if imputation_col_name not in extractions.columns:
-            raise ValueError(f"`{imputation_col_name}` column is missing from extractions.")
+            raise ValueError(
+                f"`{imputation_col_name}` column is missing from extractions."
+            )
 
         knowns = extractions[covariate_name].copy()
         unknowns = knowns.str.lower().isin(["unknown", ""]) | knowns.isna()
@@ -768,19 +778,21 @@ class Experiment:
     ) -> None:
         """Discretize a covariate with few unique values in the extractions DataFrame."""
         cov_map = {name: i for (i, name) in enumerate(all_answers)}
-        extractions[discrete_covariate_name] = (
-            covariate_data.replace(cov_map).astype(int)
+        extractions[discrete_covariate_name] = covariate_data.replace(cov_map).astype(
+            int
         )
         self.options.update({covariate_name: [str(name) for name in all_answers]})
 
     def _discretize_outcome_column(self, extractions: pd.DataFrame) -> None:
         """ "Discretize binary columns in the extractions DataFrame."""
         if OUTCOME_COL_NAME not in extractions.columns:
-            raise ValueError(f"`{OUTCOME_COL_NAME}` column is missing from extractions.")
+            raise ValueError(
+                f"`{OUTCOME_COL_NAME}` column is missing from extractions."
+            )
         binary_map_num = {"No": 0, "Yes": 1}
-        extractions[OUTCOME_COL_NAME + "_discretized"] = extractions[OUTCOME_COL_NAME].replace(
-            binary_map_num
-        )
+        extractions[OUTCOME_COL_NAME + "_discretized"] = extractions[
+            OUTCOME_COL_NAME
+        ].replace(binary_map_num)
 
     def _discretize_treatment_column(self, extractions: pd.DataFrame) -> None:
         """ "Discretize the treatment column in the extractions DataFrame."""

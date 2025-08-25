@@ -62,7 +62,7 @@ def create_response_format(
     literal_fields = {}
 
     for key in keys:
-        field_type = types.get(key, str) 
+        field_type = types.get(key, str)
         # OpenAI API errors with Any; using str
         fields[key] = (field_type, ...)
 
@@ -176,7 +176,8 @@ def get_save_path(
         f"{nct_id}",
         sanitize_filename(f"{model_name}_{extract_type}") + ".csv"
         if outcome is None
-        else sanitize_filename(f"{model_name}_{extract_type}_{outcome.lower()}") + ".csv",
+        else sanitize_filename(f"{model_name}_{extract_type}_{outcome.lower()}")
+        + ".csv",
     )
 
 
@@ -369,7 +370,7 @@ def get_answer_dicts(answer_map: dict[str, list[str]]) -> list[dict[str, str]]:
     Parameters
     ----------
     answer_map : dict[str, list[str]]
-        A dictionary where keys are variables (e.g., "treatment", "outcome") 
+        A dictionary where keys are variables (e.g., "treatment", "outcome")
         and values are lists of possible string values they take.
 
     Returns
