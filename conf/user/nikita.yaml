@@ -1,7 +1,0 @@
-name: nikita
-save_path: /mfs1/u/nikita/naturalv2/
-data_path: /mfs1/u/nikita/naturalv2/
-path_to_main: /h/290/nikita/naturalv2/
-openai_api_key_path: /h/290/nikita/openai_api_key.txt
-anthropic_api_key_path: /h/290/nikita/anthropic_api_key.txt
-vllm_model_cache: /mfs1/u/nikita/cache/

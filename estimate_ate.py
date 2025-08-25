@@ -49,7 +49,7 @@ logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
 
-def _weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame) -> np.ndarray:
+def _weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame, use_weights=True) -> np.ndarray:
     """Weight individual treatment effects (ITE) by inclusion probabilities.
 
     Parameters
@@ -58,9 +58,9 @@ def _weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame) -> np.
         Array of individual treatment effects (ITE) with shape
         ``[num_treatments, num_datapoints]``.
     inclusion_probs : pd.DataFrame
-        DataFrame containing inclusion probabilities for each treatment.
+        DataFrame containing inclusion probabilities for each datapoint.
         It should have a column named 'inclusion_probs' with stringified lists
-        of probabilities for each treatment.
+        of probabilities for each datapoint.
 
     Returns
     -------
@@ -69,9 +69,12 @@ def _weight_by_inclusion(ites: np.ndarray, inclusion_probs: pd.DataFrame) -> np.
         ``[num_treatments]``.
     """
     # ites has shape [num_treatments, num_datapoints]
-    probs = inclusion_probs.apply(
-        lambda row: literal_eval(row["inclusion_probs"])[1], axis=1
-    ).to_numpy()
+    if not use_weights:
+        probs = np.ones(ites.shape[1])
+    else:
+        probs = inclusion_probs.apply(
+            lambda row: literal_eval(row["inclusion_probs"])[1], axis=1
+        ).to_numpy()
     return np.average(ites, axis=1, weights=probs)
 
 
@@ -80,6 +83,7 @@ def _calculate_treatment_effects(
     outcome: str,
     estimator: NaturalIPW | NaturalMC | NaturalOI,
     extractions: pd.DataFrame,
+    use_inclusion_weights: bool = True,
     use_imputed_nones: bool = True,
 ) -> list[dict]:
     """Calculate treatment effects for all outcome-treatment pairs.
@@ -113,7 +117,7 @@ def _calculate_treatment_effects(
         all_ites = estimator.get_individual_treatment_effects(extractions)
 
     weighted_effects = _weight_by_inclusion(
-        all_ites, extractions
+        all_ites, extractions, use_inclusion_weights
     )  # len: num_treatments
 
     for i, treat1 in enumerate(experiment.treatment_names):
@@ -239,6 +243,7 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     outcome,
                     estimator,
                     extractions,
+                    cfg.get("use_inclusion_weights", True),
                     cfg.get("use_imputed_nones", True),
                 )
 

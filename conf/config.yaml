@@ -1,6 +1,5 @@
 defaults:
   - pipeline: natural
-  - user: ${oc.env:USER}
   - model@cheap_model: vllm_server
   - /model/providers@cheap_model.deployment_params.model_1: litellm_proxy
   - model@sample_model: vllm_server
@@ -22,8 +21,8 @@ sources:
   - pubmed
 split: train
 train_ratio: 0.6
-save_path: ${user.save_path}
-data_path: ${user.data_path}
+save_path: ${oc.env:SAVE_PATH}
+data_path: ${oc.env:DATA_PATH}
 date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}
 
 # configs for filter_curate pipleine
@@ -38,29 +37,34 @@ probs_model:
   get_response: False
   local: False
 
+pipeline_max_concurrent_workers: 8
+
 pipeline_stages:
-  - _target_: naturalv2.pipeline.sample_extraction.RelevanceFilterStage
-    model_cfg: ${cheap_model}
-    max_concurrent_workers: 8
+  # - _target_: naturalv2.pipeline.sample_extraction.RelevanceFilterStage
+  #   model_cfg: ${cheap_model}
+  #   max_concurrent_workers: ${pipeline_max_concurrent_workers}
 
   - _target_: naturalv2.pipeline.sample_extraction.TreatmentOutcomeFilterStage
     model_cfg: ${cheap_model}
-    max_concurrent_workers: 8
+    max_concurrent_workers: ${pipeline_max_concurrent_workers}
 
   - _target_: naturalv2.pipeline.sample_extraction.KnownsStage
     model_cfg: ${sample_model}
-    max_concurrent_workers: 8
+    max_concurrent_workers: ${pipeline_max_concurrent_workers}
 
   - _target_: naturalv2.pipeline.sample_extraction.ImputationsStage
     model_cfg: ${sample_model}
-    max_concurrent_workers: 8
+    max_concurrent_workers: ${pipeline_max_concurrent_workers}
 
   - _target_: naturalv2.pipeline.conditional_extraction.InclusionProbStage
     model_cfg: ${probs_model}
-    max_concurrent_workers: 8
+    length_norm: False
+    max_concurrent_workers: ${pipeline_max_concurrent_workers}
 
   - _target_: naturalv2.pipeline.conditional_extraction.ConditionalExtractionStage
     model_cfg: ${probs_model}
-    max_concurrent_workers: 8
+    length_norm: False
+    max_concurrent_workers: ${pipeline_max_concurrent_workers}
 
 use_imputed_nones: True
+use_inclusion_weights: True
