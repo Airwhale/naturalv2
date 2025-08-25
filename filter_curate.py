@@ -569,12 +569,14 @@ def main(cfg: DictConfig) -> None:
     val_ncts = [list(trial.keys())[0] for trial in study.val_trials]
     test_ncts = [list(trial.keys())[0] for trial in study.test_trials]
 
-    splits = (
-        ["train"] * len(train_ncts)
-        + ["val"] * len(val_ncts)
-        + ["test"] * len(test_ncts)
-    )
-    all_ncts = train_ncts + val_ncts + test_ncts
+    # splits = (
+    #     ["train"] * len(train_ncts)
+    #     + ["val"] * len(val_ncts)
+    #     + ["test"] * len(test_ncts)
+    # )
+    # all_ncts = train_ncts + val_ncts + test_ncts
+    all_ncts = ["NCT03828539"]
+    splits = ["val"]
 
     # Create study dataset
     study_dataset_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])[
