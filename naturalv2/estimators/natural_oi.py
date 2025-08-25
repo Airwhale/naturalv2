@@ -7,7 +7,7 @@ import pandas as pd
 
 from naturalv2.evals.experiment import Experiment
 from naturalv2.pipeline import TREATMENT_COL_NAME
-from naturalv2.utils import convert_enum_to_dicts, enumerate_strings
+from naturalv2.utils import get_answer_dicts
 
 
 class NaturalOI:
@@ -74,13 +74,12 @@ class NaturalOI:
         conditionals = conditionals.copy()
         # outcome_idx = self.experiment.outcome_names.index(outcome)
 
-        options = enumerate_strings(
+        idx_to_feat = get_answer_dicts(
             {
                 covariate: self.experiment.options[covariate]
                 for covariate in self._covariate_names
             }
         )
-        idx_to_feat = convert_enum_to_dicts(options, self._covariate_names)
         feat_dicts = [
             self.experiment.apply_transform(dct, repr_type="numeric")
             for dct in idx_to_feat
@@ -112,13 +111,12 @@ class NaturalOI:
 
     def _compute_outcome_conditionals(self, conditionals: pd.DataFrame) -> np.ndarray:
         """Compute the outcome conditionals for each treatment and covariate combination."""
-        options = enumerate_strings(
+        idx_to_feat = get_answer_dicts(
             {
                 covariate: self.experiment.options[covariate]
                 for covariate in self._covariate_names
             }
         )
-        idx_to_feat = convert_enum_to_dicts(options, self._covariate_names)
         feat_dicts = [
             self.experiment.apply_transform(dct, repr_type="numeric")
             for dct in idx_to_feat

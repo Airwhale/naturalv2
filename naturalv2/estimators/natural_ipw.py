@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from naturalv2.evals.experiment import Experiment
-from naturalv2.utils import convert_enum_to_dicts, enumerate_strings
+from naturalv2.utils import get_answer_dicts
 
 
 class NaturalIPW:
@@ -71,13 +71,12 @@ class NaturalIPW:
         conditionals = conditionals.copy()
         # outcome_idx = self.experiment.outcome_names.index(outcome)
 
-        options = enumerate_strings(
+        idx_to_feat = get_answer_dicts(
             {
                 covariate: self.experiment.options[covariate]
                 for covariate in self._covariate_names
             }
         )
-        idx_to_feat = convert_enum_to_dicts(options, self._covariate_names)
         feat_dicts = [
             self.experiment.apply_transform(dct, repr_type="numeric")
             for dct in idx_to_feat
@@ -120,13 +119,12 @@ class NaturalIPW:
 
     def _compute_prop_score(self, conditionals: pd.DataFrame) -> np.ndarray:
         """Compute propensity scores for each treatment given covariates."""
-        options = enumerate_strings(
+        idx_to_feat = get_answer_dicts(
             {
                 covariate: self.experiment.options[covariate]
                 for covariate in self._covariate_names
             }
         )
-        idx_to_feat = convert_enum_to_dicts(options, self._covariate_names)
         feat_dicts = [
             self.experiment.apply_transform(dct, repr_type="numeric")
             for dct in idx_to_feat

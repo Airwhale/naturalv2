@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import re
+import string
 from itertools import product
 from typing import Any, Coroutine, Literal, get_args, get_origin
 
@@ -55,13 +56,14 @@ def create_response_format(
         matching of its values.
     """
     if types is None:
-        types = dict.fromkeys(keys, Any)
+        types = dict.fromkeys(keys, str)
 
     fields = {}
     literal_fields = {}
 
     for key in keys:
-        field_type = types.get(key, Any)
+        field_type = types.get(key, str) 
+        # OpenAI API errors with Any; using str
         fields[key] = (field_type, ...)
 
         if get_origin(field_type) is Literal:
@@ -174,7 +176,7 @@ def get_save_path(
         f"{nct_id}",
         sanitize_filename(f"{model_name}_{extract_type}") + ".csv"
         if outcome is None
-        else sanitize_filename(f"{model_name}_{extract_type}_{outcome}") + ".csv",
+        else sanitize_filename(f"{model_name}_{extract_type}_{outcome.lower()}") + ".csv",
     )
 
 
@@ -361,75 +363,45 @@ def get_nested_value(data: Any, path: str) -> Any | None:
     return current
 
 
-def enumerate_strings(string_map: dict[str, list[str]]) -> list[str]:
+def get_answer_dicts(answer_map: dict[str, list[str]]) -> list[dict[str, str]]:
     """Generate all combinations of strings from a dictionary of lists.
 
     Parameters
     ----------
-    string_map : dict[str, list[str]]
-        A dictionary where keys are labels (e.g., "A1", "A2") and values are lists
-        of strings.
-
-    Returns
-    -------
-    list[str]
-        A list of strings where each string is a combination of the values from
-        the lists in `string_map`, labeled with their corresponding keys.
-    """
-    combinations = product(*list(string_map.values()))
-    result = []
-    for combo in combinations:
-        labeled = [f"A{i + 1}: {v}" for i, v in enumerate(combo)]
-        result.append(", ".join(labeled))
-    return result
-
-
-def convert_enum_to_dicts(
-    enumerated: list[str], enum_keys: list[str]
-) -> list[dict[str, str]]:
-    """Convert a list of enumerated strings into a list of dictionaries.
-
-    Each string is expected to be formatted as "A<digit>: value", where
-    <digit> corresponds to the index in `enum_keys`.
-
-    Parameters
-    ----------
-    enumerated : list[str]
-        A list of strings where each string contains key-value pairs formatted as
-        "A<digit>: value".
-    enum_keys : list[str]
-        A list of keys that correspond to the enumerated values.
+    answer_map : dict[str, list[str]]
+        A dictionary where keys are variables (e.g., "treatment", "outcome") 
+        and values are lists of possible string values they take.
 
     Returns
     -------
     list[dict[str, str]]
-        A list of dictionaries where each dictionary maps the keys from `enum_keys`
-        to their corresponding values extracted from the enumerated strings.
+        A list of dictionaries where each dictionary maps the keys of answer_map
+        to a possible value it takes.
     """
-    return_dcts = []
-    for elem in enumerated:
-        separate = _parse_key_value_pairs(elem)
-        dct = {}
-        for field in range(len(enum_keys)):
-            dct[enum_keys[field]] = separate[field][1]
-        return_dcts.append(dct)
-    return return_dcts
-
-
-def _parse_key_value_pairs(text: str) -> list[list[str]]:
-    """Parse a string containing key-value pairs formatted as "A<digit>: value."""
-    # Split on pattern A<digit>: but keep the delimiter
-    parts = re.split(r"(A\d+):", text)
-
-    # Remove empty strings and strip whitespace
-    parts = [part.strip() for part in parts if part.strip()]
-
-    # Group into pairs
+    combinations = product(*list(answer_map.values()))
     result = []
-    for i in range(0, len(parts), 2):
-        if i + 1 < len(parts):
-            key = parts[i]
-            value = parts[i + 1].rstrip(",")  # Remove trailing comma
-            result.append([key, value])
-
+    for combo in combinations:
+        answer_dict = {}
+        for i, key in enumerate(answer_map.keys()):
+            answer_dict[key] = combo[i]
+        result.append(answer_dict)
     return result
+
+
+def _get_alphabet_labels(n: int) -> list[str]:
+    """Generate alphabet labels for multiple choice options.
+
+    For a given number n, generate labels like a), b), ..., z), aa), ab), etc.
+    """
+    labels = []
+    alphabet = string.ascii_lowercase
+    for i in range(n):
+        label = ""
+        idx = i
+        while True:  # allow for more than 26 labels
+            label = alphabet[idx % 26] + label
+            idx = idx // 26 - 1
+            if idx < 0:
+                break
+        labels.append(f"{label}) ")
+    return labels
