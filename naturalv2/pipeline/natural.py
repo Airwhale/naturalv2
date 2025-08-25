@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Literal
 
+import json
 import pandas as pd
 from omegaconf import DictConfig
 from rich.console import Console
@@ -112,6 +113,9 @@ class PipelineStage(ABC):
         """
         pass
 
+    def prompt_template(self) -> dict[str, Any]:
+        return {}
+        
     def get_stats(self) -> dict[str, Any]:
         """Return a dictionary of statistics collected during processing."""
         if "cost" not in self._stats:
@@ -131,6 +135,9 @@ class PipelineStage(ABC):
 
         for key, value in self.get_stats().items():
             stats_table.add_row(str(key), Pretty(value, expand_all=True))
+
+        for key, value in self.prompt_template().items():
+            stats_table.add_row(str(key), str(value))
 
         console = Console()
         console.print(stats_table)
@@ -245,6 +252,11 @@ class NATURALPipeline:
                     # TODO: add prompt template to stats
                     stage_stats = stage.get_stats()
                     logger.info(f"Stage {stage.stage_name} completed successfully.")
+                    logger.info(
+                        f"Stats:\n{json.dumps(stage.get_stats(), indent=2)}"
+                    )
+                    for key, value in stage.prompt_template().items():
+                        logger.info(f"{key}\n{str(value)}")
                     stage.render_stats_table()
 
                     self._data_flow[stage.stage_name] = stage_stats
@@ -261,7 +273,7 @@ class NATURALPipeline:
 
         logger.info(
             "Pipeline execution completed with the following data flow:\n"
-            f"{self._data_flow}"
+            f"{json.dumps(self._data_flow, indent=2)}"
         )
 
         return current_data

@@ -4,12 +4,14 @@ import asyncio
 import logging
 import os
 from enum import Enum
+from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
 from omegaconf import DictConfig
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm
+import yaml
 
 from naturalv2.evals.experiment import Experiment
 from naturalv2.models.lm import (
@@ -73,6 +75,7 @@ class SampleExtractionStage(PipelineStage):
         super().__init__(model_cfg)
         self.max_concurrent_workers = max_concurrent_workers
         self.data: pd.DataFrame | None = None
+        self.extract_type: str | None = None
 
     def get_language_model(self) -> LM:
         """Return the language model used in this stage.
@@ -83,6 +86,15 @@ class SampleExtractionStage(PipelineStage):
             An instance of the language model configured for this stage.
         """
         return build_lm_instance_from_cfg(self.model_cfg)
+
+    def prompt_template(self):
+        prompt_data: dict[str, Any] = {}
+        if self.extract_type:
+            prompts_dir = str(Path(__file__).resolve().parents[1] / "prompts" / "templates")
+            filepath = os.path.join(prompts_dir, f"{self.extract_type}.yaml")
+            with open(filepath, "r") as stream:
+                prompt_data = yaml.safe_load(stream)
+        return prompt_data
 
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
@@ -120,6 +132,13 @@ class RelevanceFilterStage(SampleExtractionStage):
         Name of the stage, derived from the class name.
     """
 
+    def __init__(
+        self, model_cfg: DictConfig, max_concurrent_workers: int | None = None
+    ) -> None:
+        super().__init__(model_cfg, max_concurrent_workers)
+        self.extract_type = ExtractType.RELEVANCE.value
+        
+        
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
     ) -> pd.DataFrame:
@@ -196,6 +215,13 @@ class TreatmentOutcomeFilterStage(SampleExtractionStage):
         Name of the stage, derived from the class name.
     """
 
+    def __init__(
+        self, model_cfg: DictConfig, max_concurrent_workers: int | None = None
+    ) -> None:
+        super().__init__(model_cfg, max_concurrent_workers)
+        self.extract_type = ExtractType.TY_FILTER.value
+        
+        
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
     ) -> pd.DataFrame:
@@ -220,26 +246,13 @@ class TreatmentOutcomeFilterStage(SampleExtractionStage):
         Exception
             If there is an error during the extraction process.
         """
-        treatment_options = (
-            context.experiment.treatment_names
-            + list(
-                context.experiment.treatment_common_names[context.source_name].keys()
-            )
-            + [
-                item
-                for sublist in context.experiment.treatment_common_names[
-                    context.source_name
-                ].values()
-                for item in sublist
-            ]
-            + ["None"]
-        )
+        treatment_options = (context.experiment.treatment_names + ["Unknown"])
         response_format = create_response_format(
             "TYFilterResponse",
             [TREATMENT_COL_NAME, OUTCOME_COL_NAME],
             types={
                 TREATMENT_COL_NAME: Literal[*treatment_options],
-                OUTCOME_COL_NAME: Literal["Yes", "No"],
+                OUTCOME_COL_NAME: Literal["Yes", "No", "Unknown"],
             },
         )
         ty_samples = await extract_covariates(
@@ -289,6 +302,13 @@ class KnownsStage(SampleExtractionStage):
 
     """
 
+    def __init__(
+        self, model_cfg: DictConfig, max_concurrent_workers: int | None = None
+    ) -> None:
+        super().__init__(model_cfg, max_concurrent_workers)
+        self.extract_type = ExtractType.KNOWNS.value
+        
+    
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
     ) -> pd.DataFrame:
@@ -317,9 +337,10 @@ class KnownsStage(SampleExtractionStage):
         response_format = create_response_format(
             "KnownsResponse",
             keys=context.experiment.covariate_names
-            + context.experiment.extended_covariate_names,
+            + [INCLUSION_COL_NAME],
             types={
-                "Duration": str | Literal["Unknown", "None"],
+                "Country": str | Literal["Unknown"],
+                "Duration": str | Literal["Unknown"],
                 INCLUSION_COL_NAME: Literal["Yes", "No", "Unknown"],
             },
         )
@@ -371,6 +392,7 @@ class ImputationsStage(SampleExtractionStage):
         self, model_cfg: DictConfig, max_concurrent_workers: int | None = None
     ) -> None:
         super().__init__(model_cfg, max_concurrent_workers)
+        self.extract_type = ExtractType.IMPUTATIONS.value
 
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
@@ -378,7 +400,7 @@ class ImputationsStage(SampleExtractionStage):
         response_format = create_response_format(
             "ImputationsResponse",
             keys=context.experiment.covariate_names,
-            types={"Duration": str},
+            # types={"Country": str, "Duration": int},
         )
         self.data = await extract_covariates(
             input_df=data,
@@ -392,7 +414,9 @@ class ImputationsStage(SampleExtractionStage):
             response_format=response_format,
             max_concurrent_requests=self.max_concurrent_workers,
         )
+        
 
+        self.data = context.experiment.discretize(self.data)
         logger.info(f"Final: {len(self.data)} reports after imputation.")
         return self.data
 
@@ -463,7 +487,7 @@ async def extract_covariates(
 
     """
     file_path = get_save_path(
-        save_path, experiment.nct_id, model_name, extract_type.value
+        save_path, experiment.nct_id, model_name, extract_type.value, outcome
     )
 
     if os.path.exists(file_path):

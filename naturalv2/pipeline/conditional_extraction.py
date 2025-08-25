@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import re
-import string
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -19,7 +18,7 @@ from naturalv2.models.lm import build_lm_instance_from_cfg, get_prompt_logprobs
 from naturalv2.pipeline import INCLUSION_COL_NAME, OUTCOME_COL_NAME, TREATMENT_COL_NAME
 from naturalv2.pipeline.natural import PipelineContext, PipelineStage
 from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
-from naturalv2.utils import convert_enum_to_dicts, enumerate_strings, get_save_path
+from naturalv2.utils import _get_alphabet_labels, get_answer_dicts, get_save_path
 
 
 if TYPE_CHECKING:
@@ -70,6 +69,7 @@ class ConditionalExtractionStage(PipelineStage):
         super().__init__(model_cfg)
         self.length_norm = length_norm
         self.max_concurrent_workers = max_concurrent_workers
+        self.prompt_example: str = ""
 
     def get_language_model(self) -> "LM":
         """Instantiate the language model for conditional extraction.
@@ -122,6 +122,9 @@ class ConditionalExtractionStage(PipelineStage):
 
         return model
 
+    def prompt_template(self):
+        return {"prompt_example": self.prompt_example}
+
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
     ) -> pd.DataFrame:
@@ -166,7 +169,7 @@ class ConditionalExtractionStage(PipelineStage):
                 f"{list(extract_type_map.keys())}."
             )
 
-        self.data = await extract_conditionals(
+        self.data, prompt_example = await extract_conditionals(
             data,
             context.experiment,
             context.source_name,
@@ -182,13 +185,14 @@ class ConditionalExtractionStage(PipelineStage):
             f"Extracted {extract_type.value} conditional probabilities from "
             f"{len(self.data)} reports."
         )
+        self.prompt_example = prompt_example
         return self.data
 
 
 class InclusionProbStage(ConditionalExtractionStage):
     """Stage for extracting inclusion probabilities.
 
-    This stage uses an LLM capabale of returning prompt log probabilities
+    This stage uses an LLM capable of returning prompt log probabilities
     to compute the probabilities of the covariates matching the inclusion criteria
     given a text report (P(X ∈ Inclusion | report)).
 
@@ -227,7 +231,7 @@ class InclusionProbStage(ConditionalExtractionStage):
 
         """
         extract_type = ConditionalsExtractType.INCLUSION
-        self.data = await extract_conditionals(
+        self.data, prompt_example = await extract_conditionals(
             data,
             context.experiment,
             context.source_name,
@@ -243,6 +247,7 @@ class InclusionProbStage(ConditionalExtractionStage):
             f"Extracted {extract_type.value} conditional probabilities from "
             f"{len(self.data)} reports."
         )
+        self.prompt_example = prompt_example
         return self.data
 
 
@@ -257,7 +262,7 @@ async def extract_conditionals(  # noqa: PLR0912
     extract_type: ConditionalsExtractType,
     length_norm: bool = False,
     max_concurrent_requests: int | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, str]:
     """Extract conditional probabilities from input data.
 
     This function computes conditional probabilities based on the specified
@@ -298,6 +303,8 @@ async def extract_conditionals(  # noqa: PLR0912
     pd.DataFrame
         DataFrame containing the original input data with additional columns
         for the extracted conditional probabilities.
+    str
+        An example input prompt dict used for conditional extraction.
 
     """
 
@@ -307,31 +314,21 @@ async def extract_conditionals(  # noqa: PLR0912
         return input_df
 
     # Generate save path
-    disallowed_chars = r"[^\w\-.]"
     file_path = get_save_path(
         save_path,
         experiment.nct_id,
         model_name,
-        re.sub(disallowed_chars, "_", f"inclusion_probs_{outcome.lower()}")
-        if extract_type == ConditionalsExtractType.INCLUSION
-        else re.sub(disallowed_chars, "_", f"{extract_type.value}_{outcome}".lower()),
-    )
-
+        extract_type.value,
+        outcome,
+    )   
     if os.path.exists(file_path):
-        logging.info(f"File {file_path} already exists. Loading existing results.")
-        return pd.read_csv(file_path, index_col=0)
-
-    discretized_cols = [
-        col + "_discretized"
-        for col in experiment.covariate_names
-        + experiment.extended_covariate_names
-        + [TREATMENT_COL_NAME, OUTCOME_COL_NAME]
-    ]
-    if not input_df.empty and not all(
-        col in input_df.columns for col in discretized_cols
-    ):
-        # Discretize input dataframe
-        input_df = experiment.discretize(input_df)
+        existing_data = pd.read_csv(file_path, index_col=0)
+        input_df = input_df.loc[~input_df.index.isin(existing_data.index)]
+        logger.info(
+            f"Found {len(existing_data)} existing records, {len(input_df)} left to process."
+        )
+        if len(input_df) == 0:
+            return existing_data, "No prompts left to process."
 
     # Features to enumerate based on extraction type
     conditional_feature_mapping = {
@@ -340,7 +337,7 @@ async def extract_conditionals(  # noqa: PLR0912
         "inclusion": [INCLUSION_COL_NAME],
     }
     features_to_enumerate = conditional_feature_mapping[extract_type.value]
-    _, interleaved_options, idx_to_feat = _prepare_for_conditional_extraction(
+    interleaved_options, answer_dicts = _prepare_for_conditional_extraction(
         experiment, features_to_enumerate
     )
 
@@ -384,7 +381,7 @@ async def extract_conditionals(  # noqa: PLR0912
                 llm,
                 extract_type,
                 length_norm,
-                idx_to_feat,
+                answer_dicts,
                 worker_pbar,
             ),
             name=f"Prompt-Processor-{worker_id}",
@@ -399,7 +396,8 @@ async def extract_conditionals(  # noqa: PLR0912
 
     try:
         # Wait for the producer to finish producing tasks
-        await producer_task
+        example_prompt = await producer_task
+        await prompt_queue.join()  # Ensure all prompts are processed
 
         # Signal workers to stop by putting None in the queue
         for _ in range(len(worker_tasks)):
@@ -438,46 +436,37 @@ async def extract_conditionals(  # noqa: PLR0912
             if not pbar.disable:
                 pbar.close()
 
-    return pd.read_csv(file_path, index_col=0)
+    return pd.read_csv(file_path, index_col=0), example_prompt
 
 
 def _prepare_for_conditional_extraction(
     experiment: Experiment, features_to_enumerate: list[str]
 ) -> tuple[list[str], list[str], list[dict[str, str] | dict[str, int]]]:
     """Prepare data structures for conditional extraction."""
-    # Enumerate answer combinations for the specified keys
-    answer_combinations = enumerate_strings(
+
+    # Get all possible answer combos as dictionaries
+    answer_dicts = get_answer_dicts(
         {key: experiment.options[key] for key in features_to_enumerate}
     )
 
-    # Convert the combination to a list of dictionaries, where each dictionary
-    # has the possible answers for each key in `keys_to_enumerate`
-    enum_dicts = convert_enum_to_dicts(answer_combinations, features_to_enumerate)
-
-    # Use the numerical representation of the answers for each key in each dictionary
-    index_to_features = [
-        experiment.apply_transform(enum_dict, repr_type="numeric")
-        for enum_dict in enum_dicts
-    ]
-
     # Build interleaved multiple choice questions
     # For each answer combination, add the question, choices and the answer
-    # to a string
+    # to a string, following the same order as answer_dicts
     question_prompts = experiment.get_question_prompts()
     interleaved_mcqa = _build_interleaved_multiple_choice_questions(
         {key: question_prompts[key] for key in features_to_enumerate},
         {key: experiment.options[key] for key in features_to_enumerate},
-        answer_combinations,
+        answer_dicts,
         features_to_enumerate,
     )
 
-    return answer_combinations, interleaved_mcqa, index_to_features
+    return interleaved_mcqa, answer_dicts
 
 
 def _build_interleaved_multiple_choice_questions(
     question_lookup: dict[str, str],
     answer_choices: dict[str, list[str]],
-    answer_combinations: list[str],
+    answer_dicts: list[dict[str, str]],
     enumeration_keys: list[str],
 ) -> list[str]:
     """Build interleaved multiple choice questions from answer combinations.
@@ -486,8 +475,8 @@ def _build_interleaved_multiple_choice_questions(
     the question text and the corresponding answer choice.
     """
     all_interleaved_options = []
-    for option in answer_combinations:
-        interleaved_enum = "\n\nMultiple Choice Questions"  # Header for MCQA
+    for answer in answer_dicts:
+        interleaved_enum = "\n\n**Multiple Choice Question(s):**"  # Header for MCQA
         for index in range(len(enumeration_keys)):
             key = enumeration_keys[index]
 
@@ -495,15 +484,14 @@ def _build_interleaved_multiple_choice_questions(
             interleaved_enum += "\n\nQ: " + question_lookup[key]
 
             # Add options/choices
-            num_choices = len(answer_choices[enumeration_keys[index]])
+            num_choices = len(answer_choices[key])
             option_labels = _get_alphabet_labels(num_choices)
             interleaved_enum += "\nOptions: "
             for i in range(num_choices):
                 interleaved_enum += option_labels[i] + answer_choices[key][i] + " "
 
             # Add the answer choice
-            split_option = [i.split(":") for i in option.split(",")]
-            interleaved_enum += "\nA: " + split_option[index][1][1:]
+            interleaved_enum += "\nA: " + answer[key]
 
         all_interleaved_options.append(interleaved_enum)
     return all_interleaved_options
@@ -522,10 +510,12 @@ async def _llm_task_producer(
     """Produce prompts for the LLM based on the input DataFrame.
 
     This function formats the input data into prompts for the LLM, including
-    the report text and any relevant covariates or treatment information based on
-    the specified `extract_type`. It handles exceptions during prompt formatting
-    and puts the prompts into the queue for processing by workers.
+    the report text and any relevant covariates and optionallly treatment information 
+    based on the specified `extract_type`. It handles exceptions during prompt 
+    formatting and puts the prompts into the queue for processing by workers.
     """
+    example_prompt: str = ""
+
     for idx, row in input_df.iterrows():
         try:
             report = row["report"]
@@ -549,12 +539,12 @@ async def _llm_task_producer(
                     to_transform, repr_type="language"
                 )
                 question_prompts = experiment.get_question_prompts()
-                qa_text = "\n\nQuestions and their correct answers:"
+                qa_text = "\n\n**Questions and their correct answers:**"
                 for key in covariate_answers:
                     qa_text += (
                         "\nQ: "
                         + question_prompts[key]
-                        + "A: "
+                        + " A: "
                         + str(covariate_answers[key])
                         + "."
                     )
@@ -579,6 +569,9 @@ async def _llm_task_producer(
                     return_format="prompt",
                 )
                 prompts.append(prompt)
+            
+            if not example_prompt:
+                example_prompt = prompts[0]
 
             # Put the prompts into the queue as a unit (must be processed together)
             await queue.put((idx, row, prompts))
@@ -592,6 +585,8 @@ async def _llm_task_producer(
         finally:
             pbar.update(1)
 
+    return example_prompt
+
 
 async def _prompt_processor(
     worker_id: int,
@@ -600,7 +595,7 @@ async def _prompt_processor(
     llm: "LM",
     extract_type: ConditionalsExtractType,
     length_norm: bool,
-    index_to_features: list[dict[str, Any]],
+    answer_dicts: list[dict[str, str]],
     pbar: tqdm,
 ) -> int:
     """Worker function to process prompts.
@@ -639,7 +634,7 @@ async def _prompt_processor(
                 row,
                 responses,
                 length_norm=length_norm,
-                index_to_features=index_to_features,
+                answer_dicts=answer_dicts,
                 extract_type=extract_type,
             )
 
@@ -665,7 +660,7 @@ def _result_processor(
     row: pd.Series,
     responses: list["ResponseType"],
     length_norm: bool,
-    index_to_features: list[dict[str, Any]],
+    answer_dicts: list[dict[str, str]],
     extract_type: ConditionalsExtractType,
 ) -> dict[str, Any]:
     """Process the LLM response and combine it with the original row data.
@@ -688,33 +683,15 @@ def _result_processor(
     probs: np.ndarray = softmax(np.array(logprobs), axis=0)
     sample_index = np.random.choice(len(probs), p=probs)
 
-    sampled_features = index_to_features[sample_index]
+    sampled_features = answer_dicts[sample_index]
     sampled_features = {
         f"{key}_sampled": value for key, value in sampled_features.items()
     }
 
     # Add the sampled features to the row data
-    parsed_row_data: dict[str, Any] = row.to_dict()
+    parsed_row_data = {"index": row.name}
+    parsed_row_data.update(row.to_dict())
     parsed_row_data.update(sampled_features)
     parsed_row_data[f"{extract_type.value}_probs"] = probs.tolist()
 
     return parsed_row_data
-
-
-def _get_alphabet_labels(n: int) -> list[str]:
-    """Generate alphabet labels for multiple choice options.
-
-    For a given number n, generate labels like a), b), ..., z), aa), ab), etc.
-    """
-    labels = []
-    alphabet = string.ascii_lowercase
-    for i in range(n):
-        label = ""
-        idx = i
-        while True:  # allow for more than 26 labels
-            label = alphabet[idx % 26] + label
-            idx = idx // 26 - 1
-            if idx < 0:
-                break
-        labels.append(f"{label}) ")
-    return labels
