@@ -422,8 +422,9 @@ class RedditSource:
             "**Subreddit**\nThis comment was found on the subreddit r/"
             + final_df.loc[comment_mask, "subreddit"].astype(str)
             + ".\n\n"
-            + "**Title**\nThis comment was in response to a post titled: "
-            + final_df.loc[comment_mask, "title"].astype(str)
+            + "**Initial Post**\nThis comment was in response to the following post: "
+            + "\nTitle: " + final_df.loc[comment_mask, "title"].astype(str)
+            + "\nPost content: " + final_df.loc[comment_mask, "initial_post"].astype(str)
             + "\n\n"
             + "**Date created**\nThis comment was created on "
             + final_df.loc[comment_mask, "date_created"].astype(str)
