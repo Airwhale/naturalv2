@@ -1,2 +1,2 @@
 user_prompt_template: |-
-  Does the individual described in the report count positively towards: {{ outcome }}{%- if outcome_timeframe %} after taking the treatment for {{ outcome_timeframe }}{%- endif %}?
+  Does the individual described in the report count positively towards the {{ outcome }}{%- if outcome_timeframe %}, after taking the treatment for {{ outcome_timeframe }}{%- endif %}?

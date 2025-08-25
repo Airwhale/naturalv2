@@ -3,4 +3,4 @@ user_prompt_template: |-
 
   {{ inclusion_criteria }}
 
-  Does the available information in the report satisfy these criteria?
+  Does the patient described in the report satisfy these criteria?
