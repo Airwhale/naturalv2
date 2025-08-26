@@ -150,7 +150,7 @@ def sanitize_filename(filename: str) -> str:
 def get_save_path(
     base_path: str,
     nct_id: str,
-    exp_name:str,
+    exp_name: str,
     model_name: str,
     extract_type: str,
     outcome: str | None = None,

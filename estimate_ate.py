@@ -147,10 +147,14 @@ def _calculate_treatment_effects(
     return result_dicts
 
 
-def _save_results(results: list[dict], save_path: str, nct_id: str, exp_name: str) -> None:
+def _save_results(
+    results: list[dict], save_path: str, nct_id: str, exp_name: str
+) -> None:
     """Save results to CSV file."""
     result_df = pd.DataFrame(results)
-    results_path = os.path.join(save_path, "results", f"{nct_id}_{exp_name}/ate_results.csv")
+    results_path = os.path.join(
+        save_path, "results", f"{nct_id}_{exp_name}/ate_results.csv"
+    )
 
     if os.path.exists(results_path):
         existing_df = pd.read_csv(results_path, index_col=0)
@@ -255,7 +259,9 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     result["source_name"] = source_name
                     result["initial_curated"] = len(curated_df)
 
-                _save_results(results, cfg.save_path, experiment.nct_id, cfg.experiment_name)
+                _save_results(
+                    results, cfg.save_path, experiment.nct_id, cfg.experiment_name
+                )
             except Exception as e:
                 logger.error(
                     f"Error processing {nct_id} with source '{source_name}' and outcome '{outcome}': {e}",
