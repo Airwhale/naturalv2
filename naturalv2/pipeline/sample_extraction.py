@@ -178,6 +178,7 @@ class RelevanceFilterStage(SampleExtractionStage):
             llm=self.llm,
             model_name=self._model_name,
             save_path=context.save_path,
+            exp_name=context.exp_name,
             response_format=response_format,
             max_concurrent_requests=self.max_concurrent_workers,
         )
@@ -264,6 +265,7 @@ class TreatmentOutcomeFilterStage(SampleExtractionStage):
             llm=self.llm,
             model_name=self._model_name,
             save_path=context.save_path,
+            exp_name=context.exp_name,
             response_format=response_format,
             max_concurrent_requests=self.max_concurrent_workers,
         )
@@ -351,6 +353,7 @@ class KnownsStage(SampleExtractionStage):
             llm=self.llm,
             model_name=self._model_name,
             save_path=context.save_path,
+            exp_name=context.exp_name,
             response_format=response_format,
             max_concurrent_requests=self.max_concurrent_workers,
         )
@@ -409,6 +412,7 @@ class ImputationsStage(SampleExtractionStage):
             llm=self.llm,
             model_name=self._model_name,
             save_path=context.save_path,
+            exp_name=context.exp_name,
             response_format=response_format,
             max_concurrent_requests=self.max_concurrent_workers,
         )
@@ -427,6 +431,7 @@ async def extract_covariates(  # noqa: PLR0912
     llm: LM,
     model_name: str,
     save_path: str,
+    exp_name: str,
     response_format: BaseModel | None = None,
     max_concurrent_requests: int | None = None,
 ) -> pd.DataFrame:
@@ -454,6 +459,8 @@ async def extract_covariates(  # noqa: PLR0912
         Name of the language model being used.
     save_path : str
         Base path where the processed data for this experiment will be saved.
+    exp_name: str
+        Identifier string for a particular run, included in results directory name.
     response_format : BaseModel | None, optional, default=None
         Pydantic model defining the expected format of the LLM response.
         If None, no validation will be performed on the response.
@@ -484,7 +491,7 @@ async def extract_covariates(  # noqa: PLR0912
 
     """
     file_path = get_save_path(
-        save_path, experiment.nct_id, model_name, extract_type.value, outcome
+        save_path, experiment.nct_id, exp_name, model_name, extract_type.value, outcome
     )
 
     if os.path.exists(file_path):

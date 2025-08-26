@@ -176,6 +176,7 @@ class ConditionalExtractionStage(PipelineStage):
             self.llm,
             self._model_name,
             context.save_path,
+            context.exp_name,
             extract_type,
             length_norm=self.length_norm,
             max_concurrent_requests=self.max_concurrent_workers,
@@ -238,6 +239,7 @@ class InclusionProbStage(ConditionalExtractionStage):
             self.llm,
             self._model_name,
             context.save_path,
+            context.exp_name,
             extract_type,
             length_norm=self.length_norm,
             max_concurrent_requests=self.max_concurrent_workers,
@@ -258,6 +260,7 @@ async def extract_conditionals(  # noqa: PLR0912
     llm: "LM",
     model_name: str,
     save_path: str,
+    exp_name: str,
     extract_type: ConditionalsExtractType,
     length_norm: bool = False,
     max_concurrent_requests: int | None = None,
@@ -285,6 +288,8 @@ async def extract_conditionals(  # noqa: PLR0912
         Name of the language model used for conditional extraction.
     save_path : str
         Path where the results will be saved.
+    exp_name: str
+        Identifier string for a particular run, included in results directory name.
     extract_type : ConditionalsExtractType
         Type of conditional probabilities to extract. Options are:
         - ConditionalsExtractType.TY_GIVEN_X: P(T,Y|X)
@@ -316,6 +321,7 @@ async def extract_conditionals(  # noqa: PLR0912
     file_path = get_save_path(
         save_path,
         experiment.nct_id,
+        exp_name,
         model_name,
         extract_type.value,
         outcome,

@@ -46,6 +46,9 @@ class PipelineContext:
     #: The path where the processed data will be saved.
     save_path: str
 
+    # Identifier string for a particular run, included in results directory name.
+    exp_name: str
+
 
 class PipelineStage(ABC):
     """Base class for stages in a pipeline.

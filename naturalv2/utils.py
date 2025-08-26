@@ -150,6 +150,7 @@ def sanitize_filename(filename: str) -> str:
 def get_save_path(
     base_path: str,
     nct_id: str,
+    exp_name:str,
     model_name: str,
     extract_type: str,
     outcome: str | None = None,
@@ -173,7 +174,7 @@ def get_save_path(
     return os.path.join(
         base_path,
         "results",
-        f"{nct_id}",
+        f"{nct_id}_{exp_name}",
         sanitize_filename(f"{model_name}_{extract_type}") + ".csv"
         if outcome is None
         else sanitize_filename(f"{model_name}_{extract_type}_{outcome.lower()}")
