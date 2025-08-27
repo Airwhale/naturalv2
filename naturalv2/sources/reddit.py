@@ -2,6 +2,7 @@
 
 import asyncio
 import concurrent.futures
+import importlib.resources
 import json
 import logging
 import os
@@ -494,7 +495,7 @@ class RedditSource:
     ) -> list[str]:
         """Get subreddits from the language model based on the condition."""
         messages: list[dict[str, str]] = load_prompt(
-            base_dir="naturalv2/prompts/templates",
+            base_dir=str(importlib.resources.files("naturalv2.prompts.templates")),
             prompt_type="condition_subreddits",
             return_format="messages",
             **llm_input,

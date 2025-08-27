@@ -1,10 +1,10 @@
 """Sample extraction stages of the NATURAL pipeline."""
 
 import asyncio
+import importlib.resources
 import logging
 import os
 from enum import Enum
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
@@ -89,14 +89,17 @@ class SampleExtractionStage(PipelineStage):
         """
         return build_lm_instance_from_cfg(self.model_cfg)
 
-    def prompt_template(self):
+    def prompt_template(self) -> dict[str, Any]:
         prompt_data: dict[str, Any] = {}
         if self.extract_type:
-            prompts_dir = str(
-                Path(__file__).resolve().parents[1] / "prompts" / "templates"
+            prompt_filepath = (
+                importlib.resources.files("naturalv2.prompts.templates")
+                / f"{self.extract_type}.yaml"
             )
-            filepath = os.path.join(prompts_dir, f"{self.extract_type}.yaml")
-            with open(filepath, "r") as stream:
+            if not prompt_filepath.is_file():
+                raise FileNotFoundError(f"Prompt file not found: {prompt_filepath}")
+
+            with open(prompt_filepath, "r") as stream:
                 prompt_data = yaml.safe_load(stream)
         return prompt_data
 

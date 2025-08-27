@@ -1,5 +1,6 @@
 """Experiment class for managing a clinical trial and related data."""
 
+import importlib.resources
 import logging
 import os
 import re
@@ -600,7 +601,7 @@ class Experiment:
             on the `return_format` parameter.
 
         """
-        prompts_dir = str(Path(__file__).resolve().parents[1] / "prompts" / "templates")
+        prompts_dir = str(importlib.resources.files("naturalv2.prompts.templates"))
 
         format_inputs = {
             "conditions": self._conditions,
@@ -634,7 +635,7 @@ class Experiment:
             covariates, treatments, outcomes) and values are the corresponding
             formatted question prompts.
         """
-        prompts_dir = str(Path(__file__).resolve().parents[1] / "prompts" / "templates")
+        prompts_dir = str(importlib.resources.files("naturalv2.prompts.templates"))
         question_prompts: dict[str, str] = {}
 
         question_prompts[INCLUSION_COL_NAME] = load_prompt(  # type: ignore[assignment]
