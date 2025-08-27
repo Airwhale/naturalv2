@@ -1,3 +1,5 @@
+"""Utility functions for loading and formatting prompts."""
+
 import logging
 import os
 from typing import Any, Literal
@@ -5,6 +7,13 @@ from typing import Any, Literal
 import jinja2
 import yaml
 
+
+try:
+    import weave
+
+    weave_available = True
+except ImportError:
+    weave_available = False
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +68,13 @@ def load_prompt(
     # load yaml file
     with open(filepath, "r") as stream:
         prompt_data: dict[str, Any] = yaml.safe_load(stream)
+
+        if weave_available:
+            # Concatenate all string values into one and save to weave
+            template_str = "\n".join(
+                str(value) for value in prompt_data.values() if isinstance(value, str)
+            )
+            weave.publish(weave.StringPrompt(template_str), name=prompt_type)
 
     # 'user_prompt_template' must be in the yaml file
     if "user_prompt_template" not in prompt_data:

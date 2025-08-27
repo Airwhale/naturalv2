@@ -1,13 +1,17 @@
+"""Module to filter and curate PubMed articles based on specific conditions."""
+
 import json
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import pandas as pd
 from omegaconf import DictConfig
 
-from naturalv2.evals.experiment import Experiment
-
 from .pubmed_utils import fetch_articles, search_pubmed
+
+
+if TYPE_CHECKING:
+    from naturalv2.experiment import Experiment
 
 
 class PubMedSet:
@@ -59,7 +63,7 @@ class PubMedSet:
 
     def curate_experiment_data(
         self,
-        experiment: Experiment,
+        experiment: "Experiment",
         study_name: str,
         filter_by_date: bool,
         clean_data_path: str,
