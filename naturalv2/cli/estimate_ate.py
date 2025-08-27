@@ -18,6 +18,13 @@ from naturalv2.pipeline import NATURALPipeline, PipelineContext, PipelineStage
 from naturalv2.study import Study, get_study_filepaths
 
 
+try:
+    import weave
+
+    is_weave_available = True
+except ImportError:
+    is_weave_available = False
+
 load_dotenv()
 
 LOGGING_CONFIG = {
@@ -271,6 +278,9 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
 @hydra.main(config_path="../../conf", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     """Main function to estimate average treatment effects."""
+    if is_weave_available:
+        weave.init("naturalv2")
+
     # Load study object from YAML file
     study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])["study"]
     study = Study.from_yaml(study_file)

@@ -22,6 +22,13 @@ from naturalv2.study import Study, StudyDataset, get_study_filepaths
 from naturalv2.utils import ListResponse
 
 
+try:
+    import weave
+
+    is_weave_available = True
+except ImportError:
+    is_weave_available = False
+
 load_dotenv()
 
 LOGGING_CONFIG = {
@@ -556,6 +563,9 @@ async def _curate_experiments(
 # TODO: improve on relative path for config
 @hydra.main(config_path="../../conf/", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
+    if is_weave_available:
+        weave.init("naturalv2")
+
     # Load study from yaml
     study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])["study"]
     study = Study.from_yaml(study_file)
