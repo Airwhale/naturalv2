@@ -113,38 +113,3 @@ def load_prompt(
 
     return user_prompt_template
 
-
-def get_common_name_prompts(
-    attribute: Literal["treatment", "outcome"],
-    source: str,
-    **prompt_format_kwargs: Any,
-) -> list[dict[str, str]]:
-    """Get common name prompts based on the attribute.
-
-    Parameters
-    ----------
-    attribute : Literal["treatment", "outcome"]
-        The attribute for which to get the common name prompts.
-    source : str
-        The source/dataset of the prompts, used for loading the correct template.
-    prompt_format_kwargs : Any
-        Additional keyword arguments to format the prompt with Jinja2.
-
-    Returns
-    -------
-    list[dict[str, str]]
-        A list of dictionaries with 'role' and 'content' keys for the common name prompts.
-    """
-    base_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "prompts",
-        "templates",
-    )
-
-    return load_prompt(
-        base_dir,
-        "common_name_treatment" if attribute == "treatment" else "common_name_outcome",
-        return_format="messages",
-        source=source,
-        **prompt_format_kwargs,
-    )

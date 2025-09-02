@@ -29,6 +29,19 @@ date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}
 curate_max_concurrency: 10
 filter_by_date: True
 
+condition_config:
+  _target_: naturalv2.pipeline.curation.ConditionStage
+  model_cfg: ${sample_model}
+  source_name: 
+  max_concurrent_workers: ${curate_max_concurrency}
+
+synonym_config:
+  _target_: naturalv2.pipeline.curation.SynonymStage
+  model_cfg: ${sample_model}
+  source_name: 
+  attribute: "treatment"
+  max_concurrent_workers: ${curate_max_concurrency}
+
 probs_model:
   completion_type: text
   temperature: 1.0
