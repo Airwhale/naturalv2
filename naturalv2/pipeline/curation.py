@@ -7,7 +7,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import pandas as pd
 import yaml
@@ -17,7 +17,6 @@ from rich.pretty import Pretty
 from rich.table import Table
 from tqdm.asyncio import tqdm
 
-from naturalv2.evals.experiment import Experiment
 from naturalv2.models.lm import LM, build_lm_instance_from_cfg, extract_list_response
 from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
 from naturalv2.prompts.utils import load_prompt
@@ -26,6 +25,10 @@ from naturalv2.sources.reddit import RedditSource
 from naturalv2.utils import ListResponse
 
 
+if TYPE_CHECKING:
+    from naturalv2.experiment import Experiment
+    
+    
 logger = logging.getLogger(__name__)
 
 
@@ -109,7 +112,7 @@ class CurationStage(ABC):
 
     @abstractmethod
     async def process(
-        self, exp_list: list[Experiment], context: CurationContext
+        self, exp_list: list["Experiment"], context: CurationContext
     ) -> Any:
         """Use the input data and context to return information or curated data.
 
@@ -194,7 +197,7 @@ class ConditionStage(CurationStage):
         self.extract_type = "condition"
 
     async def process(
-        self, exp_list: list[Experiment], context: CurationContext
+        self, exp_list: list["Experiment"], context: CurationContext
     ) -> list[str]:
         """Find data dumps related to condition keywords.
 
@@ -274,8 +277,8 @@ class SynonymStage(CurationStage):
         self.extract_type = f"synonym_{attribute}"
 
     async def process(
-        self, exp_list: list[Experiment], context: CurationContext
-    ) -> list[Experiment]:
+        self, exp_list: list["Experiment"], context: CurationContext
+    ) -> list["Experiment"]:
         """Get synonyms for ``attribute`` found on ``source``.
 
          This method takes a list of Experiments and generates synonyms for their ``attribute``

@@ -42,6 +42,7 @@ synonym_config:
   attribute: "treatment"
   max_concurrent_workers: ${curate_max_concurrency}
 
+# configs for estimate_ate pipeline
 probs_model:
   completion_type: text
   temperature: 1.0

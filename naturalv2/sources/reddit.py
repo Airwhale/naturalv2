@@ -24,7 +24,6 @@ from tenacity import (
 from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 
-from naturalv2.evals.experiment import Experiment
 from naturalv2.sources.anonymizer import Anonymizer
 from naturalv2.sources.reddit_utils import (
     download_sub_data,
