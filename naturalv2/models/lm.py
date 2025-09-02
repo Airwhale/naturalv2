@@ -1,14 +1,14 @@
 """Litellm-backed LLM interface."""
 
-import  os
 import asyncio
-from dotenv import load_dotenv
 import logging
+import os
 import warnings
 from dataclasses import dataclass
 from typing import Any, Literal, Optional, Union
 
 import httpx
+from dotenv import load_dotenv
 from litellm import Router, model_cost, token_counter
 from litellm._logging import verbose_logger, verbose_router_logger
 from litellm.cost_calculator import completion_cost
@@ -28,7 +28,7 @@ if is_weave_available:
 
     weave_op = weave.op
 else:
-#     # Fallback decorator: does nothing
+    #     # Fallback decorator: does nothing
     def weave_op(*args, **kwargs):
         def decorator(func):
             return func
