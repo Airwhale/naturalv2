@@ -22,7 +22,7 @@ from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
 from naturalv2.prompts.utils import load_prompt
 from naturalv2.sources.pubmed import PubMedSet
 from naturalv2.sources.reddit import RedditSource
-from naturalv2.utils import ListResponse
+from naturalv2.utils import ListResponse, sanitize_filename
 
 
 if TYPE_CHECKING:
@@ -238,7 +238,8 @@ class ConditionStage(CurationStage):
             return pd.DataFrame()
 
         # Set up file path for saving results
-        save_dir = os.path.join(context.save_path, "curation_results")
+        condition_safe = sanitize_filename(context.condition.lower())
+        save_dir = os.path.join(context.save_path, "curation_results", condition_safe)
         os.makedirs(save_dir, exist_ok=True)
         file_path = os.path.join(save_dir, f"condition_queries_{context.exp_name}.csv")
 
@@ -340,7 +341,8 @@ class SynonymStage(CurationStage):
             return exp_list
 
         # Set up file path for saving results
-        save_dir = os.path.join(context.save_path, "curation_results")
+        condition_safe = sanitize_filename(context.condition.lower())
+        save_dir = os.path.join(context.save_path, "curation_results", condition_safe)
         os.makedirs(save_dir, exist_ok=True)
         file_path = os.path.join(
             save_dir, f"{self.attribute}_synonyms_{context.exp_name}.csv"
