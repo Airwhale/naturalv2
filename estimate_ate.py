@@ -163,11 +163,11 @@ def _save_results(
     result_df.to_csv(results_path)
 
 
-def _get_nct_ids(cfg: DictConfig, study: Study) -> list[str]:
+def _get_nct_ids(split: str, study: Study) -> list[str]:
     """Get NCT IDs based on the split."""
-    if cfg.split == "train":
+    if split == "train":
         return [list(trial.keys())[0] for trial in study.train_trials]
-    if cfg.split == "val":
+    if split == "val":
         return [list(trial.keys())[0] for trial in study.val_trials]
 
     return [list(trial.keys())[0] for trial in study.test_trials]
@@ -283,7 +283,7 @@ def main(cfg: DictConfig) -> None:
         )
 
     # Get NCT IDs based on the split
-    nct_ids = _get_nct_ids(cfg, study)
+    nct_ids = _get_nct_ids(cfg.split, study)
     logger.info(f"Processing {len(nct_ids)} trials for split '{cfg.split}'.")
 
     for nct_id in nct_ids:
