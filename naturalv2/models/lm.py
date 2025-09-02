@@ -28,7 +28,7 @@ if is_weave_available:
 
     weave_op = weave.op
 else:
-    #     # Fallback decorator: does nothing
+    # Fallback decorator: does nothing
     def weave_op(*args, **kwargs):
         def decorator(func):
             return func
