@@ -18,14 +18,8 @@ from naturalv2.pipeline import NATURALPipeline, PipelineContext, PipelineStage
 from naturalv2.study import Study, get_study_filepaths
 
 
-try:
-    import weave
-
-    is_weave_available = True
-except ImportError:
-    is_weave_available = False
-
 load_dotenv()
+is_weave_available = os.getenv("USE_WEAVE", "false").lower() == "true"
 
 LOGGING_CONFIG = {
     "version": 1,

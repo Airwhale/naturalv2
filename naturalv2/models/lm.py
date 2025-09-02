@@ -1,6 +1,8 @@
 """Litellm-backed LLM interface."""
 
+import  os
 import asyncio
+from dotenv import load_dotenv
 import logging
 import warnings
 from dataclasses import dataclass
@@ -18,12 +20,15 @@ from typing_extensions import TypedDict
 from naturalv2.utils import ListResponse
 
 
-try:
+load_dotenv()
+is_weave_available = os.getenv("USE_WEAVE", "false").lower() == "true"
+
+if is_weave_available:
     import weave
 
     weave_op = weave.op
-except ImportError:
-    # Fallback decorator: does nothing
+else:
+#     # Fallback decorator: does nothing
     def weave_op(*args, **kwargs):
         def decorator(func):
             return func
