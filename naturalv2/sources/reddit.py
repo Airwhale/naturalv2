@@ -2,11 +2,13 @@
 
 import asyncio
 import concurrent.futures
+import importlib.resources
 import json
 import logging
 import os
 import re
 from functools import partial
+from typing import TYPE_CHECKING
 
 import asyncpraw
 import numpy as np
@@ -34,8 +36,11 @@ from naturalv2.sources.reddit_utils import (
     is_retryable_error,
     rule_based_filter,
 )
-from naturalv2.study import StudyDataset
 from naturalv2.utils import sanitize_filename
+
+
+if TYPE_CHECKING:
+    from naturalv2.experiment import Experiment
 
 
 logger = logging.getLogger(__name__)
@@ -280,7 +285,7 @@ class RedditSource:
 
     def curate_experiment_data(
         self,
-        experiment: Experiment,
+        experiment: "Experiment",
         study_name: str,
         apply_date_filter: bool,
         clean_data_paths: list[str],

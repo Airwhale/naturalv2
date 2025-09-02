@@ -1,11 +1,11 @@
 """Sample extraction stages of the NATURAL pipeline."""
 
 import asyncio
+import importlib.resources
 import logging
 import os
 from enum import Enum
-from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
 import yaml
@@ -13,18 +13,20 @@ from omegaconf import DictConfig
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm
 
-from naturalv2.evals.experiment import Experiment
-from naturalv2.models.lm import (
-    LM,
-    ResponseType,
-    build_lm_instance_from_cfg,
-    get_message_content,
+from naturalv2.models.lm import build_lm_instance_from_cfg, get_message_content
+from naturalv2.pipeline.constants import (
+    INCLUSION_COL_NAME,
+    OUTCOME_COL_NAME,
+    TREATMENT_COL_NAME,
 )
-from naturalv2.pipeline import INCLUSION_COL_NAME, OUTCOME_COL_NAME, TREATMENT_COL_NAME
 from naturalv2.pipeline.natural import PipelineContext, PipelineStage
 from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
 from naturalv2.utils import create_response_format, get_save_path
 
+
+if TYPE_CHECKING:
+    from naturalv2.experiment import Experiment
+    from naturalv2.models.lm import LM, ResponseType
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +79,7 @@ class SampleExtractionStage(PipelineStage):
         self.data: pd.DataFrame | None = None
         self.extract_type: str | None = None
 
-    def get_language_model(self) -> LM:
+    def get_language_model(self) -> "LM":
         """Return the language model used in this stage.
 
         Returns
@@ -87,14 +89,17 @@ class SampleExtractionStage(PipelineStage):
         """
         return build_lm_instance_from_cfg(self.model_cfg)
 
-    def prompt_template(self):
+    def prompt_template(self) -> dict[str, Any]:
         prompt_data: dict[str, Any] = {}
         if self.extract_type:
-            prompts_dir = str(
-                Path(__file__).resolve().parents[1] / "prompts" / "templates"
+            prompt_filepath = (
+                importlib.resources.files("naturalv2.prompts.templates")
+                / f"{self.extract_type}.yaml"
             )
-            filepath = os.path.join(prompts_dir, f"{self.extract_type}.yaml")
-            with open(filepath, "r") as stream:
+            if not prompt_filepath.is_file():
+                raise FileNotFoundError(f"Prompt file not found: {prompt_filepath}")
+
+            with open(prompt_filepath, "r") as stream:
                 prompt_data = yaml.safe_load(stream)
         return prompt_data
 
@@ -424,11 +429,11 @@ class ImputationsStage(SampleExtractionStage):
 
 async def extract_covariates(  # noqa: PLR0912
     input_df: pd.DataFrame,
-    experiment: Experiment,
+    experiment: "Experiment",
     source_name: str,
     outcome: str,
     extract_type: ExtractType,
-    llm: LM,
+    llm: "LM",
     model_name: str,
     save_path: str,
     exp_name: str,
@@ -602,7 +607,7 @@ async def extract_covariates(  # noqa: PLR0912
 
 def _prompt_formatter(
     row: pd.Series,
-    experiment: Experiment,
+    experiment: "Experiment",
     prompt_type: str,
     outcome: str,
     source_name: str,
@@ -622,7 +627,7 @@ def _prompt_formatter(
 
 def _result_processor(
     row: pd.Series,
-    response: ResponseType,
+    response: "ResponseType",
     extract_type: ExtractType,
     response_format: BaseModel | None = None,
 ) -> dict[str, Any] | None:
@@ -664,7 +669,7 @@ def _result_processor(
 async def _llm_task_producer(
     queue: asyncio.Queue,
     input_df: pd.DataFrame,
-    experiment: Experiment,
+    experiment: "Experiment",
     prompt_type: str,
     outcome: str,
     source_name: str,
@@ -691,7 +696,7 @@ async def _prompt_processor(
     worker_id: int,
     prompt_queue: asyncio.Queue,
     result_queue: asyncio.Queue,
-    llm: LM,
+    llm: "LM",
     pbar: tqdm,
     extract_type: ExtractType,
     response_format: BaseModel | None = None,

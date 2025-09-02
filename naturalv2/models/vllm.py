@@ -1,10 +1,15 @@
+"""Wrapper around the LLM class from vLLM for offline inference."""
+
 import warnings
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
-from vllm import LLM, SamplingParams
-from vllm.outputs import RequestOutput
-from vllm.transformers_utils.tokenizer import AnyTokenizer
+from vllm.sampling_params import SamplingParams
+
+
+if TYPE_CHECKING:
+    from vllm.outputs import RequestOutput
+    from vllm.transformers_utils.tokenizer import AnyTokenizer
 
 
 class VLLM:
@@ -28,11 +33,13 @@ class VLLM:
         prompt_logprobs: Optional[int] = None,
         max_tokens: Optional[int] = 16,
         **kwargs,
-    ):
+    ) -> None:
         self.add_bos = add_bos
 
         if not num_gpus:
             num_gpus = torch.cuda.device_count()
+
+        from vllm.entrypoints.llm import LLM  # noqa: PLC0415
 
         self.llm = LLM(
             model=model,
@@ -49,7 +56,7 @@ class VLLM:
             **kwargs,
         )
 
-        self.tokenizer: AnyTokenizer = self.llm.get_tokenizer()
+        self.tokenizer: "AnyTokenizer" = self.llm.get_tokenizer()
         self.check_bos()
 
         self._sampling_params = {
@@ -74,7 +81,7 @@ class VLLM:
 
     def get_completions(
         self, prompt: Union[str, list[str]], **sampling_params
-    ) -> list[RequestOutput]:
+    ) -> list["RequestOutput"]:
         sampling_params = SamplingParams(**{**self._sampling_params, **sampling_params})
         if isinstance(prompt, str):
             prompt = [prompt]
@@ -84,7 +91,7 @@ class VLLM:
 
         return self.llm.generate(prompt, sampling_params)
 
-    def get_prompt_logprobs(self, outputs: list[RequestOutput]) -> list[list[float]]:
+    def get_prompt_logprobs(self, outputs: list["RequestOutput"]) -> list[list[float]]:
         logprobs = []
         for output in outputs:
             input_tokens = self.tokenizer.encode(output.prompt, add_special_tokens=True)
