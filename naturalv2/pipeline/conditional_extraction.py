@@ -17,7 +17,7 @@ from naturalv2.models.lm import build_lm_instance_from_cfg, get_prompt_logprobs
 from naturalv2.pipeline import INCLUSION_COL_NAME, TREATMENT_COL_NAME
 from naturalv2.pipeline.natural import PipelineContext, PipelineStage
 from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
-from naturalv2.utils import _get_alphabet_labels, get_answer_dicts, get_save_path
+from naturalv2.utils import get_alphabet_labels, get_answer_dicts, get_save_path
 
 
 if TYPE_CHECKING:
@@ -490,7 +490,7 @@ def _build_interleaved_multiple_choice_questions(
 
             # Add options/choices
             num_choices = len(answer_choices[key])
-            option_labels = _get_alphabet_labels(num_choices)
+            option_labels = get_alphabet_labels(num_choices)
             interleaved_enum += "\nOptions: "
             for i in range(num_choices):
                 interleaved_enum += option_labels[i] + answer_choices[key][i] + " "
