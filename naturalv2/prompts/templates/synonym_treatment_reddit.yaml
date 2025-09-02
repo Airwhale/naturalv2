@@ -24,10 +24,10 @@ user_prompt_template: |-
   {%- endif %}
 
   Here are some guidelines to follow:
-  - Include brand names, common misspellings, common abbreviations, or colloquial terms.
+  - Include brand names, common abbreviations, or colloquial terms.
   - Focus on terms patients on {{ source }} would actually use.
-  - If a term is plural, also include its singular version.
-  - Each common name should be a single word. If a common name is a phrase, split the phrase into separate words.
+  - For each treatment name above and each common name, include common mispellings of that name. 
+  - Include as many names as possible.
   - Avoid single letters or abbreviations that may be confused with other unrelated words, to minimize false positives.
 
   Return **only** a valid JSON object with only one key, 'output', whose value is the list of strings containing the common names for the treatment. Do not include any explanation, preamble, or markdown.
