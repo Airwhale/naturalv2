@@ -26,7 +26,7 @@ user_prompt_template: |-
   Here are some guidelines to follow:
   - Include brand names, common abbreviations, or colloquial terms.
   - Focus on terms patients on {{ source }} would actually use.
-  - For each treatment name above and each common name, include common mispellings of that name. 
+  - For each treatment name above and each common name, include common mispellings of that name.
   - Include as many names as possible.
   - Avoid single letters or abbreviations that may be confused with other unrelated words, to minimize false positives.
 

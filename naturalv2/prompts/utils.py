@@ -4,9 +4,9 @@ import logging
 import os
 from typing import Any, Literal
 
-from dotenv import load_dotenv
 import jinja2
 import yaml
+from dotenv import load_dotenv
 
 
 load_dotenv()
