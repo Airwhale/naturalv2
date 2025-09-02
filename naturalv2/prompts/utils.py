@@ -4,16 +4,13 @@ import logging
 import os
 from typing import Any, Literal
 
+from dotenv import load_dotenv
 import jinja2
 import yaml
 
 
-try:
-    import weave
-
-    is_weave_available = True
-except ImportError:
-    is_weave_available = False
+load_dotenv()
+is_weave_available = os.getenv("USE_WEAVE", "false").lower() == "true"
 
 logger = logging.getLogger(__name__)
 
