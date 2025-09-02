@@ -25,7 +25,7 @@ user_prompt_template: |-
   - Memes or off-topic content.
 
   ## Input Data
-  {{ input_data }} 
+  {{ input_data }}
 
   ## Output
   Return **only** a valid JSON object with only one key, 'output', whose value is the list of strings containing the names of the **relevant** subreddits. Do not include any explanation, preamble, or markdown.

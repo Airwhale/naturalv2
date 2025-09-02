@@ -128,4 +128,3 @@ def load_prompt(
     logger.debug(f"Returning user prompt template as a string: {user_prompt_template}")
 
     return user_prompt_template
-

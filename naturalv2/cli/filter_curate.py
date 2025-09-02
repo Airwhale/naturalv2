@@ -1,12 +1,12 @@
 """Pipeline for filtering and curating experiments using LLMs."""
 
 import asyncio
+import json
 import logging
 import os
 from typing import Literal, Union
 
 import hydra
-import json
 from dotenv import load_dotenv
 from hydra.utils import instantiate
 from omegaconf import DictConfig
@@ -59,10 +59,10 @@ def _get_nct_ids(study: Study) -> list[str]:
     test_ncts = [list(trial.keys())[0] for trial in study.test_trials]
     all_ncts = train_ncts + val_ncts + test_ncts
     splits = (
-            ["train"] * len(train_ncts)
-            + ["val"] * len(val_ncts)
-            + ["test"] * len(test_ncts)
-        )
+        ["train"] * len(train_ncts)
+        + ["val"] * len(val_ncts)
+        + ["test"] * len(test_ncts)
+    )
     # TODO: remove after testing
     all_ncts = ["NCT03828539"]
     splits = ["val"]
@@ -76,7 +76,7 @@ def _get_curated_dataset(exp_list, context, source_name, clean_data_paths):
             exp, context.condition, context.filter_by_date, clean_data_paths
         )
         exp.source_paths[source_name].extend(exp_data_path)
-        
+
         all_exp_data_paths[exp.nct_id] = exp_data_path
         all_exp_data_sizes[exp.nct_id] = exp_data_size
     return all_exp_data_paths, all_exp_data_sizes
@@ -132,12 +132,18 @@ def main(cfg: DictConfig) -> None:
                     )
                     exp = Experiment(cfg.data_path, nct_id, status=status)
                 exp_list.append(exp)
-            
-            condition_stage: CurationStage = instantiate(cfg.condition_config, source_name=source_name)
-            treat_synonym_stage: CurationStage = instantiate(cfg.synonym_config, source_name=source_name, attribute="treatment")
+
+            condition_stage: CurationStage = instantiate(
+                cfg.condition_config, source_name=source_name
+            )
+            treat_synonym_stage: CurationStage = instantiate(
+                cfg.synonym_config, source_name=source_name, attribute="treatment"
+            )
 
             # Get condition related queries to download data from ``source_name``.
-            condition_metadata = await condition_stage.process(exp_list, curation_context)
+            condition_metadata = await condition_stage.process(
+                exp_list, curation_context
+            )
             study_dataset.sources[source_name] = condition_metadata
             study_dataset.to_yaml(study_dataset_file)
 
@@ -153,32 +159,29 @@ def main(cfg: DictConfig) -> None:
             study_dataset.to_yaml(study_dataset_file)
             logger.info(f"Data cleaning for {source_name} completed successfully.")
 
-
             # Get treatment synonyms and curate data based on string-matching.
-            exp_list = await treat_synonym_stage.process(
-                exp_list, curation_context
-            )
+            exp_list = await treat_synonym_stage.process(exp_list, curation_context)
 
-            logger.info(f"Stage {treat_synonym_stage.stage_name} completed successfully.")
-            logger.info(f"Stats:\n{json.dumps(treat_synonym_stage.get_stats(), indent=2)}")
+            logger.info(
+                f"Stage {treat_synonym_stage.stage_name} completed successfully."
+            )
+            logger.info(
+                f"Stats:\n{json.dumps(treat_synonym_stage.get_stats(), indent=2)}"
+            )
             for key, value in treat_synonym_stage.prompt_template().items():
                 logger.info(f"{key}\n{str(value)}")
             treat_synonym_stage.render_stats_table()
 
             # Get curated dataset and its size for each experiment.
             all_exp_data_paths, all_exp_data_sizes = _get_curated_dataset(
-                exp_list, 
-                curation_context,
-                source_name, 
-                all_clean_paths
+                exp_list, curation_context, source_name, all_clean_paths
             )
             logger.info(f"Curation for {source_name} completed successfully.")
             logger.info(f"Data sizes:\n{json.dumps(all_exp_data_sizes, indent=2)}")
-        
+
             study_dataset.data_paths.update(all_exp_data_paths)
             study_dataset.data_sizes.update(all_exp_data_sizes)
             study_dataset.to_yaml(study_dataset_file)
-
 
     asyncio.run(process_all_sources())
 

@@ -2,7 +2,6 @@
 
 import asyncio
 import concurrent.futures
-import importlib.resources
 import json
 import logging
 import os
@@ -16,7 +15,6 @@ import pandas as pd
 import psutil
 import pyarrow.parquet as pq
 from aiolimiter import AsyncLimiter
-from omegaconf import DictConfig
 from tenacity import (
     before_sleep_log,
     retry,
@@ -123,7 +121,7 @@ class RedditSource:
 
         # Collect results for DataFrame
         results_data = []
-        
+
         async with asyncpraw.Reddit(
             client_id=os.environ.get("PRAW_CLIENT_ID"),
             client_secret=os.environ.get("PRAW_CLIENT_SECRET"),
@@ -164,14 +162,16 @@ class RedditSource:
                                 llm_input.append(
                                     {"Subreddit": subreddit, "Example Posts": posts}
                                 )
-                        llm_input = json.dumps(llm_input, indent=4)            
+                        llm_input = json.dumps(llm_input, indent=4)
 
                         # Store results for DataFrame
-                        results_data.append({
-                            "keyword": word,
-                            "candidate_subs": candidate_subs,
-                            "input_data": llm_input
-                        })
+                        results_data.append(
+                            {
+                                "keyword": word,
+                                "candidate_subs": candidate_subs,
+                                "input_data": llm_input,
+                            }
+                        )
 
                         logger.info(
                             f"{len(candidate_subs)} candidate subreddits "
@@ -186,12 +186,10 @@ class RedditSource:
             await asyncio.gather(*(process_keyword(word) for word in keywords))
 
             logger.info(f"Total of {len(results_data)} keywords processed!")
-        
+
         if results_data:
             return pd.DataFrame(results_data)
-        else:
-            return pd.DataFrame(columns=['keyword', 'candidate_subs', 'input_data'])
-
+        return pd.DataFrame(columns=["keyword", "candidate_subs", "input_data"])
 
     async def clean_data(self, relevant_subreddits: list[str]) -> list[str]:
         """Download and clean data for relevant subreddits.
@@ -207,8 +205,8 @@ class RedditSource:
 
         Parameters
         ----------
-        relevant_subreddits : list[str] 
-            List of relevant subreddits to clean. 
+        relevant_subreddits : list[str]
+            List of relevant subreddits to clean.
 
         Returns
         -------
@@ -222,7 +220,9 @@ class RedditSource:
         subs_about = await get_sub_about_info(self.data_path, self.reddit_api_qpm)
         pushshift_subreddits = set(subs_about["subreddit"].to_list())
         available_subs = set(relevant_subreddits).intersection(pushshift_subreddits)
-        logger.info(f"{len(available_subs)} out of {len(relevant_subreddits)} available.")
+        logger.info(
+            f"{len(available_subs)} out of {len(relevant_subreddits)} available."
+        )
 
         clean_paths = []
         subs_to_filter = []
