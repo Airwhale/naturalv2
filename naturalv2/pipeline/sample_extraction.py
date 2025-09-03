@@ -461,7 +461,7 @@ class SampleTYStage(SampleExtractionStage):
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
     ) -> pd.DataFrame:
-        treatment_options = context.experiment.options[TREATMENT_COL_NAME] 
+        treatment_options = context.experiment.options[TREATMENT_COL_NAME]
         response_format = create_response_format(
             "SampleTYResponse",
             [TREATMENT_COL_NAME, OUTCOME_COL_NAME],
@@ -680,9 +680,7 @@ def _prompt_formatter(
 
     covariate_answers = None
     if prompt_type == "sample_ty":
-        to_sample = [
-            col + "_discretized" for col in experiment.covariate_names
-        ]
+        to_sample = [col + "_discretized" for col in experiment.covariate_names]
         to_transform = {
             k.replace("_discretized", ""): v
             for k, v in row[to_sample].to_dict().items()
@@ -733,7 +731,7 @@ def _result_processor(
     if extract_type == ExtractType.TY_FILTER:
         # append "_filter" to each key in the parsed data
         parsed_data = {f"{key}_filter": value for key, value in parsed_data.items()}
-        
+
     if extract_type == ExtractType.IMPUTATIONS:
         # append "_imputed" to each key in the parsed data
         parsed_data = {f"{key}_imputed": value for key, value in parsed_data.items()}

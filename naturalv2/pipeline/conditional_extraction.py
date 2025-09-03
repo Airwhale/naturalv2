@@ -548,7 +548,7 @@ async def _llm_task_producer(
                 # question_prompts = experiment.get_question_prompts()
                 qa_text = "\n\n**Covariate information about this individual:**"
                 for key in covariate_answers:
-                    qa_text += (f"\n{key}: {str(covariate_answers[key])}."                    )
+                    qa_text += f"\n{key}: {str(covariate_answers[key])}."
                 report += qa_text
 
             # Repeat the report for all interleaved options

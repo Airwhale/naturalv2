@@ -459,7 +459,9 @@ class Experiment:
             )
 
         return extractions[
-            extractions[f"{TREATMENT_COL_NAME}_filter"].isin(self.options[TREATMENT_COL_NAME])
+            extractions[f"{TREATMENT_COL_NAME}_filter"].isin(
+                self.options[TREATMENT_COL_NAME]
+            )
             & (extractions[f"{OUTCOME_COL_NAME}_filter"].isin(["Yes", "No"]))
         ]
 
