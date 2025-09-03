@@ -135,7 +135,7 @@ class CurationStage(ABC):
         if self.extract_type:
             prompt_filepath = (
                 importlib.resources.files("naturalv2.prompts.templates")
-                / f"{self.extract_type}.yaml"
+                / f"{self.extract_type}_{self.source_name}.yaml"
             )
             if not prompt_filepath.is_file():
                 raise FileNotFoundError(f"Prompt file not found: {prompt_filepath}")
