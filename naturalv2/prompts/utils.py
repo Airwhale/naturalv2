@@ -68,6 +68,7 @@ def load_prompt(
 
         if is_weave_available:
             import weave
+
             # Concatenate all string values into one and save to weave
             template_str = "\n".join(
                 str(value) for value in prompt_data.values() if isinstance(value, str)

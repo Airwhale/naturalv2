@@ -81,6 +81,7 @@ def _get_curated_dataset(exp_list, context, source_name, clean_data_paths):
 def main(cfg: DictConfig) -> None:
     if is_weave_available:
         import weave
+
         weave.init("naturalv2")
 
     # Load study from yaml

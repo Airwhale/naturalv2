@@ -274,6 +274,7 @@ def main(cfg: DictConfig) -> None:
     """Main function to estimate average treatment effects."""
     if is_weave_available:
         import weave
+
         weave.init("naturalv2")
 
     # Load study object from YAML file
