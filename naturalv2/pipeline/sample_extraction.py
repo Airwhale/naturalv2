@@ -683,7 +683,7 @@ def _prompt_formatter(
         all_covariates = row[experiment.covariate_names].dropna()
         covariate_answers = all_covariates[all_covariates.str.lower() != "unknown"]
         covariate_answers = covariate_answers.to_dict()
-        
+
     elif prompt_type == "sample_ty":
         to_sample = [col + "_discretized" for col in experiment.covariate_names]
         to_transform = {
