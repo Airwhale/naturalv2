@@ -80,7 +80,7 @@ def _get_curated_dataset(exp_list, context, source_name, clean_data_paths):
 @hydra.main(config_path="../../conf/", config_name="config.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     if is_weave_available:
-        import weave
+        import weave  # type: ignore # noqa: PLC0415
 
         weave.init("naturalv2")
 

@@ -273,7 +273,7 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
 def main(cfg: DictConfig) -> None:
     """Main function to estimate average treatment effects."""
     if is_weave_available:
-        import weave
+        import weave  # type: ignore # noqa: PLC0415
 
         weave.init("naturalv2")
 

@@ -2,11 +2,11 @@
 
 import ast
 import asyncio
+import importlib.resources
 import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union
 
 import pandas as pd
@@ -130,16 +130,17 @@ class CurationStage(ABC):
         """
         pass
 
-    def prompt_template(self):
+    def prompt_template(self) -> dict[str, Any]:
         prompt_data: dict[str, Any] = {}
         if self.extract_type:
-            prompts_dir = str(
-                Path(__file__).resolve().parents[1] / "prompts" / "templates"
+            prompt_filepath = (
+                importlib.resources.files("naturalv2.prompts.templates")
+                / f"{self.extract_type}.yaml"
             )
-            filepath = os.path.join(
-                prompts_dir, f"{self.extract_type}_{self.source_name}.yaml"
-            )
-            with open(filepath, "r") as stream:
+            if not prompt_filepath.is_file():
+                raise FileNotFoundError(f"Prompt file not found: {prompt_filepath}")
+
+            with open(prompt_filepath, "r") as stream:
                 prompt_data = yaml.safe_load(stream)
         return prompt_data
 
@@ -253,8 +254,7 @@ class ConditionStage(CurationStage):
         )
         condition_metadata = []
         for output in output_df["llm_output"]:
-            output = ast.literal_eval(output)
-            condition_metadata.extend(output)
+            condition_metadata.extend(ast.literal_eval(output))
 
         condition_metadata = list(set(condition_metadata))
         self.add_stat("len_metadata", len(condition_metadata))
@@ -381,7 +381,7 @@ class SynonymStage(CurationStage):
         return exp_list
 
 
-async def extract_curation_info(
+async def extract_curation_info(  # noqa: PLR0912
     input_df: pd.DataFrame,
     source_name: str,
     extract_type: str,

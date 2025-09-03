@@ -67,7 +67,7 @@ def load_prompt(
         prompt_data: dict[str, Any] = yaml.safe_load(stream)
 
         if is_weave_available:
-            import weave
+            import weave  # type: ignore # noqa: PLC0415
 
             # Concatenate all string values into one and save to weave
             template_str = "\n".join(
