@@ -187,6 +187,7 @@ class ConditionalExtractionStage(PipelineStage):
             f"{len(self.data)} reports."
         )
         self.prompt_example = prompt_example
+        self.data = context.experiment.discretize_ty(self.data)
         return self.data
 
 
@@ -544,16 +545,10 @@ async def _llm_task_producer(
                 covariate_answers = experiment.apply_transform(
                     to_transform, repr_type="language"
                 )
-                question_prompts = experiment.get_question_prompts()
-                qa_text = "\n\n**Questions and their correct answers:**"
+                # question_prompts = experiment.get_question_prompts()
+                qa_text = "\n\n**Covariate information about this individual:**"
                 for key in covariate_answers:
-                    qa_text += (
-                        "\nQ: "
-                        + question_prompts[key]
-                        + " A: "
-                        + str(covariate_answers[key])
-                        + "."
-                    )
+                    qa_text += (f"\n{key}: {str(covariate_answers[key])}."                    )
                 report += qa_text
 
             # Repeat the report for all interleaved options

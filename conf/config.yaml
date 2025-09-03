@@ -70,6 +70,11 @@ pipeline_stages:
     model_cfg: ${sample_model}
     max_concurrent_workers: ${pipeline_max_concurrent_workers}
 
+  # # Use this for NATURAL-MC
+  # - _target_: naturalv2.pipeline.sample_extraction.SampleTYStage
+  #   model_cfg: ${sample_model}
+  #   max_concurrent_workers: ${pipeline_max_concurrent_workers}
+
   - _target_: naturalv2.pipeline.conditional_extraction.InclusionProbStage
     model_cfg: ${probs_model}
     length_norm: False
