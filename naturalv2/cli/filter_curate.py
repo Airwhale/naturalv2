@@ -58,8 +58,8 @@ def _get_nct_ids(study: Study) -> list[str]:
         + ["test"] * len(test_ncts)
     )
     # TODO: remove after testing
-    all_ncts = ["NCT03828539"]
-    splits = ["val"]
+    # all_ncts = ["NCT03828539"]
+    # splits = ["val"]
     return all_ncts, splits
 
 
@@ -137,11 +137,14 @@ def main(cfg: DictConfig) -> None:
             )
 
             # Get condition related queries to download data from ``source_name``.
-            condition_metadata = await condition_stage.process(
-                exp_list, curation_context
-            )
-            study_dataset.sources[source_name] = condition_metadata
-            study_dataset.to_yaml(study_dataset_file)
+            if study_dataset.sources[source_name]:
+                condition_metadata = study_dataset.sources[source_name]
+            else:
+                condition_metadata = await condition_stage.process(
+                    exp_list, curation_context
+                )
+                study_dataset.sources[source_name] = condition_metadata
+                study_dataset.to_yaml(study_dataset_file)
 
             logger.info(f"Stage {condition_stage.stage_name} completed successfully.")
             logger.info(f"Stats:\n{json.dumps(condition_stage.get_stats(), indent=2)}")
