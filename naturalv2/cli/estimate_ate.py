@@ -124,7 +124,6 @@ def _calculate_treatment_effects(
         for j, treat2 in enumerate(experiment.treatment_names):
             if i < j:
                 try:
-
                     pred_ate = weighted_effects[j] - weighted_effects[i]
                     results = {
                         "estimator": estimator.__class__.__name__,
@@ -145,7 +144,9 @@ def _calculate_treatment_effects(
                     result_dicts.append(results)
 
                 except:
-                    logger.info(f"ATE prediction errored for {treat1}, {treat2}, {outcome}.")
+                    logger.info(
+                        f"ATE prediction errored for {treat1}, {treat2}, {outcome}."
+                    )
                     continue
 
     return result_dicts
@@ -192,7 +193,9 @@ def _process_trial(cfg: DictConfig, nct_id: str) -> None:
         )
         return
     os.makedirs(
-        os.path.join(cfg.save_path, "results", f"{experiment.nct_id}_{cfg.experiment_name}"),
+        os.path.join(
+            cfg.save_path, "results", f"{experiment.nct_id}_{cfg.experiment_name}"
+        ),
         exist_ok=True,
     )
 
