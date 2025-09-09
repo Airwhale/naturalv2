@@ -2,44 +2,81 @@
 
 This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) to larger data and evaluation scales.
 
-______________________________________________________________________
+---
 
-## Set-up
-Prior to installing the dependencies for this project, it is recommended to install [uv](https://github.com/astral-sh/uv?tab=readme-ov-file#installation) and create a virtual environment. You may use whatever virtual environment management tool that you like, including uv, conda, and virtualenv.
+## Setup
+
+It is recommended to use [uv](https://github.com/astral-sh/uv?tab=readme-ov-file#installation) for dependency management and virtual environments.
 
 ```bash
 git clone https://github.com/nikitadhawan/naturalv2.git
 cd naturalv2
-uv sync --no-cache --dev --no-build-isolation
+uv sync --no-cache --dev
 ```
-**Note**: Add `--active` to the `uv sync` command if you prefer to use the active virtual environment. Otherwise, the virtual environment will be created in the `.venv` directory inside the project root.
+> **Tip:** Add `--active` to `uv sync` to use your current virtual environment. Otherwise, `.venv` will be created in the project root.
 
-Create a user file `conf/user/{your_name}.yaml` and add your own paths. See [nikita.yaml](https://github.com/nikitadhawan/naturalv2/tree/main/conf/user/nikita.yaml) for an example.
-______________________________________________________________________
+Copy the example environment file and edit as needed:
+```bash
+cp .env.example .env
+```
+
+---
 
 ## Retrospective Study
 
-To create a retrospective study for some `condition` (e.g. "diabetes"), with temporally split training and validation clinical trials, run:
+Create a retrospective study for a condition (e.g. "diabetes") with temporally split training and validation clinical trials:
 
 ```bash
-create_study condition={condition}
+uv run --active --env-file=.env create_study conditions=[<condition>] experiment_name=test
 ```
 
-______________________________________________________________________
+---
 
 ## Data Filtering and Curation
 
+Filter and curate data for a source (e.g. Reddit):
 
-______________________________________________________________________
+```bash
+uv run --active --env-file=.env filter_curate \
+    sample_model.model_id=gemini-2.5-pro \
+    sample_model.rpm=5 \
+    sample_model.tpm=250000 \
+    sample_model.rpd=100 \
+    +sample_model.thinking.type=enabled \
+    +sample_model.thinking.budget_tokens=-1 \
+    sources.reddit.max_download_workers=8 \
+    experiment_name=test
+```
+> This will filter subreddits, download and clean relevant Reddit data, and curate experiment datasets.
+
+---
 
 ## Estimating NATURAL ATEs
 
-To convert a curated set of Reddit data to the NATURAL-IPW ATE for the trial with NCT ID: NCT03987919, run:
+Convert curated Reddit data to NATURAL-IPW ATE:
 
 ```bash
-estimate_ate cheap_model.model_name=gpt-4.1-nano cheap_model.deployment_params.model_1.model=openai/natural-gpt-4.1-nano sample_model.model_name=gpt-4.1-mini sample_model.deployment_params.model_1.model=openai/natural-gpt-4.1-mini probs_model.model_name=gemma-3-27b-it probs_model.deployment_params.model_1.model=hosted_vllm/gemma-3-27b-it estimator=natural_ipw
+uv run --active --env-file=.env estimate_ate \
+    cheap_model.model_id=gemini-2.5-flash \
+    cheap_model.rpm=10 \
+    cheap_model.tpm=250000 \
+    cheap_model.rpd=250 \
+    cheap_model.max_parallel_requests=10 \
+    +cheap_model.reasoning_effort=medium \
+    sample_model.model_id=gemini-2.5-pro \
+    sample_model.rpm=5 \
+    sample_model.tpm=250000 \
+    sample_model.rpd=100 \
+    sample_model.max_parallel_requests=10 \
+    +sample_model.thinking.type=enabled \
+    +sample_model.thinking.budget_tokens=-1 \
+    probs_model.model_id="meta-llama/Llama-3.3-70B-Instruct" \
+    probs_model.model_kwargs.tensor_parallel_size=4 \
+    +probs_model.model_kwargs.max_model_len=16384 \
+    estimator=natural_ipw \
+    split=train \
+    experiment_name=test
 ```
+> Model choices and parameters can be adjusted based on your budget and hardware.
 
-Model choices can be changed based on budget. The above are the models used in the NATURAL paper. The only exception is that the LLAMA2-70B model above is the HF version, while NATURAL used Meta's official release (which hopefully doesn't matter too much).
-
-Currently, this script is hard-coded to use the manually defined [SvT experiment](https://github.com/nikitadhawan/naturalv2/blob/main/naturalv2/evals/svt.py) corresponding to NCT ID NCT03987919. Eventually, we would like to create experiments in an automated fashion and store them as yamls, to be loaded in by this script.
+---
