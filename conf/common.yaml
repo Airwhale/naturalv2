@@ -1,0 +1,13 @@
+defaults:
+  - source@sources.reddit: reddit
+  - _self_
+
+seed: 42
+experiment_name: ???
+conditions:
+  - Nervous System Diseases
+save_path: ${oc.env:SAVE_PATH,./outputs}
+data_path: ${oc.env:DATA_PATH,./data}
+
+# Metadata
+date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}

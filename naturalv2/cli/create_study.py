@@ -8,6 +8,7 @@ import yaml
 from omegaconf import DictConfig
 from tqdm.contrib.concurrent import process_map
 
+import naturalv2.hydra_setup  # noqa: F401 # Ensure custom resolvers are registered
 from naturalv2.clinical_trial import ClinicalTrial, Mesh, download_clinical_trials
 from naturalv2.study import Study, get_study_filepaths
 from naturalv2.utils import check_trial, get_nested_value
@@ -219,7 +220,7 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
 
 
 # TODO: improve on relative path for config
-@hydra.main(config_path="../../conf/", config_name="config.yaml", version_base="1.2")
+@hydra.main(config_path="../../conf/", config_name="common.yaml", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     stats = run_study_and_get_stats(cfg)
     print(yaml.safe_dump(stats, sort_keys=False))

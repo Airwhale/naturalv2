@@ -7,17 +7,18 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import pandas as pd
 import yaml
+from hydra.utils import instantiate as hydra_instantiate
 from omegaconf import DictConfig
 from rich.console import Console
 from rich.pretty import Pretty
 from rich.table import Table
 from tqdm.asyncio import tqdm
 
-from naturalv2.models.lm import LM, build_lm_instance_from_cfg, extract_list_response
+from naturalv2.models.utils import TokenTracker
 from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
 from naturalv2.prompts.utils import load_prompt
 from naturalv2.sources.pubmed import PubMedSet
@@ -27,6 +28,7 @@ from naturalv2.utils import ListResponse, sanitize_filename
 
 if TYPE_CHECKING:
     from naturalv2.experiment import Experiment
+    from naturalv2.models.lm import APIModel
 
 
 logger = logging.getLogger(__name__)
@@ -54,8 +56,11 @@ class CurationContext:
     #: The path where the processed data will be saved.
     save_path: str
 
-    # Identifier string for a particular run, included in curated data directory name.
+    #: Identifier string for a particular run, included in curated data directory name.
     exp_name: str
+
+    #: Tracker for tokens used in LLM calls.
+    _token_tracker: TokenTracker = TokenTracker()
 
 
 class CurationStage(ABC):
@@ -67,12 +72,14 @@ class CurationStage(ABC):
     ----------
     model_cfg : DictConfig
         Configuration for the language model used in this stage.
+    source_name : str
+        Name of the source being curated from (e.g., "pubmed", "reddit").
 
     Attributes
     ----------
     model_cfg : DictConfig
         Configuration for the language model used in this stage.
-    llm : LM | None
+    llm : APIModel | None
         Lazy-loaded language model instance.
     stage_name : str
         Name of the stage, derived from the class name.
@@ -83,32 +90,38 @@ class CurationStage(ABC):
         """Initialize the pipeline stage with model configuration."""
         self.model_cfg = model_cfg
         self.source_name = source_name
-        self._llm: LM | None = None
+        self._llm: Optional["APIModel"] = None
         self._model_name: str = model_cfg.get("model_name", "")
         self._stats: dict[str, Any] = {}
         self.extract_type = None
 
     @property
     def stage_name(self) -> str:
-        """Return the name of the stage."""
+        """Return the name of the stage.
+
+        Returns
+        -------
+        str
+            The name of the stage, derived from the class name.
+        """
         return self.__class__.__name__
 
     @property
-    def llm(self) -> LM:
+    def llm(self) -> "APIModel":
         """Lazy-loaded language model property."""
         if self._llm is None:
             self._llm = self.get_language_model()
         return self._llm
 
-    def get_language_model(self) -> LM:
+    def get_language_model(self) -> "APIModel":
         """Return the language model used in this stage.
 
         Returns
         -------
-        LM
+        APIModel
             An instance of the language model configured for this stage.
         """
-        return build_lm_instance_from_cfg(self.model_cfg)
+        return hydra_instantiate(self.model_cfg, _convert_="partial")
 
     @abstractmethod
     async def process(
@@ -120,7 +133,7 @@ class CurationStage(ABC):
         ----------
         exp_list : list[Experiment]
             List of Experiments in a study.
-        context : PipelineContext
+        context : CurationContext
             Context for the pipeline execution.
 
         Returns
@@ -131,6 +144,18 @@ class CurationStage(ABC):
         pass
 
     def prompt_template(self) -> dict[str, Any]:
+        """Return the prompt template used in this stage.
+
+        Returns
+        -------
+        dict[str, Any]
+            The prompt template loaded from the corresponding YAML file.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the prompt file does not exist.
+        """
         prompt_data: dict[str, Any] = {}
         if self.extract_type:
             prompt_filepath = (
@@ -145,13 +170,15 @@ class CurationStage(ABC):
         return prompt_data
 
     def get_stats(self) -> dict[str, Any]:
-        """Return a dictionary of statistics collected during processing."""
+        """Return a dictionary of statistics collected during processing.
+
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary containing statistics collected during processing.
+        """
         if "cost" not in self._stats:
             self._stats["cost"] = self.llm.cost
-        if "total_prompt_tokens" not in self._stats:
-            self._stats["total_prompt_tokens"] = self.llm.total_prompt_tokens
-        if "total_completion_tokens" not in self._stats:
-            self._stats["total_completion_tokens"] = self.llm.total_completion_tokens
 
         return self._stats
 
@@ -184,6 +211,21 @@ class CurationStage(ABC):
 
 
 class ConditionStage(CurationStage):
+    """Stage to find data dumps related to condition keywords.
+
+    This stage uses an LLM to determine queries or other information to download data
+    from ``source_name``.
+
+    Parameters
+    ----------
+    model_cfg : DictConfig
+        Configuration for the language model used in this stage.
+    source_name : str
+        Name of the source being curated from (e.g., "pubmed", "reddit").
+    max_concurrent_workers : int | None, optional, default=None
+        Maximum number of concurrent workers for LLM requests.
+    """
+
     def __init__(
         self,
         model_cfg: DictConfig,
@@ -246,10 +288,12 @@ class ConditionStage(CurationStage):
 
         output_df = await extract_curation_info(
             input_df=condition_queries,
+            stage_name=self.stage_name,
             source_name=self.source_name,
             extract_type=self.extract_type,
             llm=self.llm,
             file_path=file_path,
+            token_tracker=context._token_tracker,
             max_concurrent_requests=self.max_concurrent_workers,
         )
         condition_metadata = []
@@ -262,6 +306,23 @@ class ConditionStage(CurationStage):
 
 
 class SynonymStage(CurationStage):
+    """Stage to find synonyms for a given attribute.
+
+    This stage uses an LLM to find synonyms for a specified attribute (e.g., treatments)
+    from a given source (e.g., "pubmed", "reddit").
+
+    Parameters
+    ----------
+    model_cfg : DictConfig
+        Configuration for the language model used in this stage.
+    source_name : str
+        Name of the source being curated from (e.g., "pubmed", "reddit").
+    attribute : str
+        The attribute for which synonyms are to be found (e.g., "treatments").
+    max_concurrent_workers : int | None, optional, default=None
+        Maximum number of concurrent workers for LLM requests.
+    """
+
     def __init__(
         self,
         model_cfg: DictConfig,
@@ -282,25 +343,25 @@ class SynonymStage(CurationStage):
     ) -> list["Experiment"]:
         """Get synonyms for ``attribute`` found on ``source``.
 
-         This method takes a list of Experiments and generates synonyms for their ``attribute``
-         found on ``source``, using a language model.
+        This method takes a list of Experiments and generates synonyms for their ``attribute``
+        found on ``source``, using a language model.
 
-         Parameters
-         ----------
-         exp_list : list[Experiment]
-             List of Experiments in a study.
-         context : CurationContext
-             Context for the stage execution.
+        Parameters
+        ----------
+        exp_list : list[Experiment]
+            List of Experiments in a study.
+        context : CurationContext
+            Context for the stage execution.
 
-         Returns
-         -------
+        Returns
+        -------
         list[Experiment]
-             List of experiments with updated common names and synonyms.
+            List of experiments with updated common names and synonyms.
 
-         Raises
-         ------
-         Exception
-             If there is an error during the extraction process.
+        Raises
+        ------
+        Exception
+            If there is an error during the extraction process.
         """
         if not exp_list:
             logger.warning("No experiments provided to process.")
@@ -352,10 +413,12 @@ class SynonymStage(CurationStage):
 
         output_df = await extract_curation_info(
             input_df=input_df,
+            stage_name=self.stage_name,
             source_name=self.source_name,
             extract_type=self.extract_type,
             llm=self.llm,
             file_path=file_path,
+            token_tracker=context._token_tracker,
             max_concurrent_requests=self.max_concurrent_workers,
         )
 
@@ -383,12 +446,47 @@ class SynonymStage(CurationStage):
 
 async def extract_curation_info(  # noqa: PLR0912
     input_df: pd.DataFrame,
+    stage_name: str,
     source_name: str,
     extract_type: str,
-    llm: LM,
+    llm: "APIModel",
     file_path: str,
+    token_tracker: TokenTracker,
     max_concurrent_requests: int | None = None,
 ) -> pd.DataFrame:
+    """Extract curation information using an LLM.
+
+    This function processes an input DataFrame using an LLM to extract curation information.
+
+    Parameters
+    ----------
+    input_df : pd.DataFrame
+        DataFrame containing input data for the LLM.
+    stage_name : str
+        Name of the current stage in the pipeline.
+    source_name : str
+        Name of the source being curated from (e.g., "pubmed", "reddit").
+    extract_type : str
+        Type of extraction being performed (e.g., "condition", "synonym_treatments").
+    llm : APIModel
+        An instance of the language model to use for extraction.
+    file_path : str
+        Path to save the output CSV file.
+    token_tracker : TokenTracker
+        Tracker for tokens used in LLM calls.
+    max_concurrent_requests : int | None, optional, default=None
+        Maximum number of concurrent requests to the LLM.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing the extracted curation information.
+
+    Raises
+    ------
+    Exception
+        If there is an error during the extraction process.
+    """
     if os.path.exists(file_path):
         existing_data = pd.read_csv(file_path, index_col=0)
         input_df = input_df.loc[~input_df.index.isin(existing_data.index)]
@@ -432,6 +530,8 @@ async def extract_curation_info(  # noqa: PLR0912
                 result_queue,
                 llm,
                 worker_pbar,
+                stage_name,
+                token_tracker,
             ),
             name=f"Prompt-Processor-{worker_id}",
         )
@@ -506,7 +606,7 @@ async def _llm_task_producer(
             messages = load_prompt(
                 base_dir="naturalv2/prompts/templates",
                 prompt_type=f"{extract_type}_{source_name}",
-                return_format="messages",
+                return_format="responses" if "synonym" in extract_type else "messages",
                 **llm_inputs,
             )
 
@@ -525,8 +625,10 @@ async def _prompt_processor(
     worker_id: int,
     prompt_queue: asyncio.Queue,
     result_queue: asyncio.Queue,
-    llm: LM,
+    llm: "APIModel",
     pbar: tqdm,
+    stage_name: str,
+    token_tracker: TokenTracker,
 ) -> int:
     """Worker function to process prompts.
 
@@ -550,11 +652,14 @@ async def _prompt_processor(
                 await result_queue.put(False)  # Signal failure to writer
                 continue
 
-            result = await llm(messages=messages, response_format=ListResponse)
-            llm_output = extract_list_response(result)[0]
+            response = await llm.ainvoke(
+                messages, response_format=ListResponse, parse_output=True
+            )
+            token_tracker.add(stage_name, response)
+
             processed_result = {"index": index}
             processed_result.update(row.to_dict())
-            processed_result["llm_output"] = llm_output
+            processed_result["llm_output"] = response.output_parsed.output
 
             if processed_result is not None:
                 await result_queue.put(processed_result)

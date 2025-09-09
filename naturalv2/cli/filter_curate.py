@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
+import naturalv2.hydra_setup  # noqa: F401 # Ensure custom resolvers are registered
 from naturalv2.experiment import Experiment
 from naturalv2.pipeline import CurationContext, CurationStage
 from naturalv2.sources import PubMedSet, RedditSource
@@ -80,23 +81,24 @@ def _get_curated_dataset(exp_list, context, source_name, clean_data_paths):
 
 
 # TODO: improve on relative path for config
-@hydra.main(config_path="../../conf/", config_name="config.yaml", version_base="1.2")
-def main(cfg: DictConfig) -> None:
+@hydra.main(
+    config_path="../../conf/", config_name="filter_curate.yaml", version_base="1.2"
+)
+def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     if is_weave_available:
         import weave  # type: ignore # noqa: PLC0415
 
         weave.init("naturalv2")
 
+    study_filepaths = get_study_filepaths(cfg.save_path, cfg.conditions[0])
+
     # Load study from yaml
-    study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])["study"]
-    study = Study.from_yaml(study_file)
+    study = Study.from_yaml(study_filepaths["study"])
 
     all_ncts, splits = _get_nct_ids(study)
 
     # Create study dataset
-    study_dataset_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])[
-        "study_dataset"
-    ]
+    study_dataset_file = study_filepaths["study_dataset"]
     if os.path.exists(study_dataset_file):
         study_dataset = StudyDataset.from_yaml(study_dataset_file)
     else:
@@ -105,7 +107,7 @@ def main(cfg: DictConfig) -> None:
     async def process_all_sources() -> None:
         for source_name in cfg.sources:
             source_dataset: Union[RedditSource, PubMedSet] = instantiate(
-                cfg[source_name]
+                cfg.sources[source_name]
             )
 
             curation_context = CurationContext(
@@ -133,10 +135,13 @@ def main(cfg: DictConfig) -> None:
                 exp_list.append(exp)
 
             condition_stage: CurationStage = instantiate(
-                cfg.condition_config, source_name=source_name
+                cfg.condition_config, source_name=source_name, _recursive_=False
             )
             treat_synonym_stage: CurationStage = instantiate(
-                cfg.synonym_config, source_name=source_name, attribute="treatment"
+                cfg.synonym_config,
+                source_name=source_name,
+                attribute="treatment",
+                _recursive_=False,
             )
 
             # Get condition related queries to download data from ``source_name``.
@@ -150,6 +155,10 @@ def main(cfg: DictConfig) -> None:
                 study_dataset.to_yaml(study_dataset_file)
 
             logger.info(f"Stage {condition_stage.stage_name} completed successfully.")
+            token_counts = curation_context._token_tracker.get_stage_stats(
+                condition_stage.stage_name
+            )
+            condition_stage._stats.update(token_counts)
             logger.info(f"Stats:\n{json.dumps(condition_stage.get_stats(), indent=2)}")
             for key, value in condition_stage.prompt_template().items():
                 logger.info(f"{key}\n{str(value)}")
@@ -167,6 +176,10 @@ def main(cfg: DictConfig) -> None:
             logger.info(
                 f"Stage {treat_synonym_stage.stage_name} completed successfully."
             )
+            token_counts = curation_context._token_tracker.get_stage_stats(
+                treat_synonym_stage.stage_name
+            )
+            treat_synonym_stage._stats.update(token_counts)
             logger.info(
                 f"Stats:\n{json.dumps(treat_synonym_stage.get_stats(), indent=2)}"
             )
