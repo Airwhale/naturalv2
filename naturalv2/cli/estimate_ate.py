@@ -280,18 +280,24 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
 
 async def _process_all_trials(cfg: DictConfig) -> None:
     """Process all trials in the specified split to estimate treatment effects."""
-    # Load study object from YAML file
-    study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])["study"]
-    study = Study.from_yaml(study_file)
+    
+    if cfg.nct_id:
+        nct_ids = [cfg.nct_id]
+        logger.info(f"Processing trial {cfg.nct_id}.")
+    
+    else:
+        # Load study object from YAML file
+        study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])["study"]
+        study = Study.from_yaml(study_file)
 
-    if cfg.split not in ["train", "val", "test"]:
-        raise ValueError(
-            f"Invalid split '{cfg.split}'. Must be one of 'train', 'val', or 'test'."
-        )
+        if cfg.split not in ["train", "val", "test"]:
+            raise ValueError(
+                f"Invalid split '{cfg.split}'. Must be one of 'train', 'val', or 'test'."
+            )
 
-    # Get NCT IDs based on the split
-    nct_ids = _get_nct_ids(cfg.split, study)
-    logger.info(f"Processing {len(nct_ids)} trials for split '{cfg.split}'.")
+        # Get NCT IDs based on the split
+        nct_ids = _get_nct_ids(cfg.split, study)
+        logger.info(f"Processing {len(nct_ids)} trials for split '{cfg.split}'.")
 
     for nct_id in nct_ids:
         await _process_trial(cfg, nct_id)
