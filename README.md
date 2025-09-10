@@ -38,7 +38,7 @@ Filter and curate data for a source (e.g. Reddit):
 
 ```bash
 uv run --active --env-file=.env filter_curate \
-    sample_model.model_id=gemini-2.5-pro \
+    sample_model.model_id="gemini/gemini-2.5-pro" \
     sample_model.rpm=5 \
     sample_model.tpm=250000 \
     sample_model.rpd=100 \
@@ -57,13 +57,13 @@ Convert curated Reddit data to NATURAL-IPW ATE:
 
 ```bash
 uv run --active --env-file=.env estimate_ate \
-    cheap_model.model_id=gemini-2.5-flash \
+    cheap_model.model_id="gemini/gemini-2.5-flash" \
     cheap_model.rpm=10 \
     cheap_model.tpm=250000 \
     cheap_model.rpd=250 \
     cheap_model.max_parallel_requests=10 \
     +cheap_model.reasoning_effort=medium \
-    sample_model.model_id=gemini-2.5-pro \
+    sample_model.model_id="gemini/gemini-2.5-pro" \
     sample_model.rpm=5 \
     sample_model.tpm=250000 \
     sample_model.rpd=100 \
