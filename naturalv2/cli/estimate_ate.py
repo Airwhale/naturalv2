@@ -125,17 +125,21 @@ def _calculate_treatment_effects(
         all_ites, extractions, use_inclusion_weights
     )  # len: num_treatments
 
-    bootstrap_weighted_effects = np.zeros((bootstrap_size, len(experiment.treatment_names)))
+    bootstrap_weighted_effects = np.zeros(
+        (bootstrap_size, len(experiment.treatment_names))
+    )
     for b in range(bootstrap_size):
         bootstrap_data = extractions.copy().sample(
             n=len(extractions),
             replace=True,
-            random_state=seed+b,
+            random_state=seed + b,
             axis="index",
         )
 
         if isinstance(estimator, NaturalMC):
-            all_ites = estimator.get_individual_treatment_effects(bootstrap_data, outcome)
+            all_ites = estimator.get_individual_treatment_effects(
+                bootstrap_data, outcome
+            )
         else:
             all_ites = estimator.get_individual_treatment_effects(bootstrap_data)
 
@@ -148,10 +152,15 @@ def _calculate_treatment_effects(
             if i < j:
                 try:
                     pred_ate = weighted_effects[j] - weighted_effects[i]
-                    bootstrap_pred_ate = bootstrap_weighted_effects[:, j] - bootstrap_weighted_effects[:, i] # len: bootstrap_size
+                    bootstrap_pred_ate = (
+                        bootstrap_weighted_effects[:, j]
+                        - bootstrap_weighted_effects[:, i]
+                    )  # len: bootstrap_size
                     avg_bootstrap_pred_ate = np.mean(bootstrap_pred_ate)
-                    sample_variance = np.sum((bootstrap_pred_ate - avg_bootstrap_pred_ate)**2) / (bootstrap_size - 1)
-                    conf_delta = norm.ppf(1 - alpha/2) * np.sqrt(sample_variance)
+                    sample_variance = np.sum(
+                        (bootstrap_pred_ate - avg_bootstrap_pred_ate) ** 2
+                    ) / (bootstrap_size - 1)
+                    conf_delta = norm.ppf(1 - alpha / 2) * np.sqrt(sample_variance)
                     results = {
                         "estimator": estimator.__class__.__name__,
                         "outcome": outcome,
@@ -313,11 +322,11 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
 
 async def _process_all_trials(cfg: DictConfig) -> None:
     """Process all trials in the specified split to estimate treatment effects."""
-    
+
     if cfg.nct_id:
         nct_ids = [cfg.nct_id]
         logger.info(f"Processing trial {cfg.nct_id}.")
-    
+
     else:
         # Load study object from YAML file
         study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])["study"]
