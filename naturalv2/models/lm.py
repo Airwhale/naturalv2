@@ -752,6 +752,7 @@ class LiteLLMModel(APIModel):
                         model=self.model_id,
                         messages=input_item,
                         atext_completion=(endpoint == "text_completion"),
+                        response_format=response_format,
                         **request_kwargs,
                     )
                 self._update_cost(resp)

@@ -2,6 +2,7 @@ defaults:
   - common
   - model@cheap_model: gemini
   - model@sample_model: gemini
+  - model@imputations_model: gemini
   - model@probs_model: vllm_offline
   - estimator: natural_ipw
   - _self_
@@ -11,6 +12,8 @@ split: train
 train_ratio: 0.6
 use_imputed_nones: True
 use_inclusion_weights: True
+bootstratp_size: 5
+alpha: 0.05
 probs_model:
   endpoint: text_completion
   max_tokens: 1
@@ -35,8 +38,8 @@ pipeline:
       max_concurrent_workers: ${coalesce:sample_model.max_parallel_requests, sample_model.client_kwargs.default_max_parallel_requests, default_max_concurrent_workers}
     imputations:
       _target_: naturalv2.pipeline.sample_extraction.ImputationsStage
-      model_cfg: ${sample_model}
-      max_concurrent_workers: ${coalesce:sample_model.max_parallel_requests}, sample_model.client_kwargs.default_max_parallel_requests} default_max_concurrent_workers}
+      model_cfg: ${imputations_model}
+      max_concurrent_workers: ${coalesce:sample_model.max_parallel_requests, sample_model.client_kwargs.default_max_parallel_requests, default_max_concurrent_workers}
     sample_ty:  # Use this for NATURAL-MC in place of inclusion_prob and conditional_extraction
       _target_: naturalv2.pipeline.sample_extraction.SampleTYStage
       model_cfg: ${sample_model}

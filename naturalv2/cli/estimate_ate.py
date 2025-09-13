@@ -11,6 +11,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from hydra.utils import instantiate
 from omegaconf import DictConfig
+from scipy.stats import norm
 
 import naturalv2.hydra_setup  # noqa: F401 # Ensure custom resolvers are registered
 from naturalv2.estimators import NaturalIPW, NaturalMC, NaturalOI
@@ -84,6 +85,9 @@ def _calculate_treatment_effects(
     outcome: str,
     estimator: NaturalIPW | NaturalMC | NaturalOI,
     extractions: pd.DataFrame,
+    bootstrap_size: int,
+    seed: int,
+    alpha: float = 0.05,
     use_inclusion_weights: bool = True,
     use_imputed_nones: bool = True,
 ) -> list[dict]:
@@ -121,18 +125,44 @@ def _calculate_treatment_effects(
         all_ites, extractions, use_inclusion_weights
     )  # len: num_treatments
 
+    bootstrap_weighted_effects = np.zeros((bootstrap_size, len(experiment.treatment_names)))
+    for b in range(bootstrap_size):
+        bootstrap_data = extractions.copy().sample(
+            n=len(extractions),
+            replace=True,
+            random_state=seed+b,
+            axis="index",
+        )
+
+        if isinstance(estimator, NaturalMC):
+            all_ites = estimator.get_individual_treatment_effects(bootstrap_data, outcome)
+        else:
+            all_ites = estimator.get_individual_treatment_effects(bootstrap_data)
+
+        bootstrap_weighted_effects[b, :] = _weight_by_inclusion(
+            all_ites, bootstrap_data, use_inclusion_weights
+        )  # len: num_treatments
+
     for i, treat1 in enumerate(experiment.treatment_names):
         for j, treat2 in enumerate(experiment.treatment_names):
             if i < j:
                 try:
                     pred_ate = weighted_effects[j] - weighted_effects[i]
+                    bootstrap_pred_ate = bootstrap_weighted_effects[:, j] - bootstrap_weighted_effects[:, i] # len: bootstrap_size
+                    avg_bootstrap_pred_ate = np.mean(bootstrap_pred_ate)
+                    sample_variance = np.sum((bootstrap_pred_ate - avg_bootstrap_pred_ate)**2) / (bootstrap_size - 1)
+                    conf_delta = norm.ppf(1 - alpha/2) * np.sqrt(sample_variance)
                     results = {
                         "estimator": estimator.__class__.__name__,
                         "outcome": outcome,
                         "treatments": f"{treat2}-{treat1}",
                         "pred_ate": pred_ate,
+                        "CI_lower": pred_ate - conf_delta,
+                        "CI_upper": pred_ate + conf_delta,
                     }
-                    logger.info(f"Predicted ATE: {pred_ate}")
+                    logger.info(
+                        f"Predicted ATE: {pred_ate}, ({pred_ate - conf_delta}, {pred_ate + conf_delta})"
+                    )
                     if experiment.status == "completed":
                         effect_idx = experiment.outcome_treatment.index(
                             [outcome, [treat1, treat2]]
@@ -258,6 +288,9 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     outcome,
                     estimator,
                     extractions,
+                    cfg.get("bootstrap_size", 10),
+                    cfg.get("seed", 0),
+                    cfg.get("alpha", 0.05),
                     cfg.get("use_inclusion_weights", True),
                     cfg.get("use_imputed_nones", True),
                 )
