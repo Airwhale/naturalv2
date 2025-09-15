@@ -7,7 +7,7 @@ defaults:
   - estimator: natural_ipw
   - _self_
 
-nct_id: null
+nct_id: null # NCT03828539 to test
 split: train
 train_ratio: 0.6
 use_imputed_nones: True
@@ -24,10 +24,10 @@ default_max_concurrent_workers: 8
 
 pipeline:
   stages:
-    # relevance_filter:
-    #   _target_: naturalv2.pipeline.sample_extraction.RelevanceFilterStage
-    #   model_cfg: ${cheap_model}
-    #   max_concurrent_workers: ${coalesce:cheap_model.max_parallel_requests, cheap_model.client_kwargs.default_max_parallel_requests, default_max_concurrent_workers}
+    relevance_filter:
+      _target_: naturalv2.pipeline.sample_extraction.RelevanceFilterStage
+      model_cfg: ${cheap_model}
+      max_concurrent_workers: ${coalesce:cheap_model.max_parallel_requests, cheap_model.client_kwargs.default_max_parallel_requests, default_max_concurrent_workers}
     treatment_outcome_filter:
       _target_: naturalv2.pipeline.sample_extraction.TreatmentOutcomeFilterStage
       model_cfg: ${cheap_model}
