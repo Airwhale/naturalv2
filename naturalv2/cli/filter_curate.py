@@ -58,9 +58,6 @@ def _get_nct_ids(study: Study) -> list[str]:
         + ["val"] * len(val_ncts)
         + ["test"] * len(test_ncts)
     )
-    # TODO: remove after testing
-    # all_ncts = ["NCT03828539"]
-    # splits = ["val"]
     return all_ncts, splits
 
 
@@ -95,7 +92,12 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     # Load study from yaml
     study = Study.from_yaml(study_filepaths["study"])
 
-    all_ncts, splits = _get_nct_ids(study)
+    if cfg.nct_id:
+        all_ncts = [cfg.nct_id]
+        splits = [cfg.split]
+        logger.info(f"Curating data for trial {cfg.nct_id}.")
+    else:
+        all_ncts, splits = _get_nct_ids(study)
 
     # Create study dataset
     study_dataset_file = study_filepaths["study_dataset"]
@@ -145,14 +147,12 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
             )
 
             # Get condition related queries to download data from ``source_name``.
-            if study_dataset.sources[source_name]:
-                condition_metadata = study_dataset.sources[source_name]
-            else:
-                condition_metadata = await condition_stage.process(
-                    exp_list, curation_context
-                )
-                study_dataset.sources[source_name] = condition_metadata
-                study_dataset.to_yaml(study_dataset_file)
+            condition_metadata = study_dataset.sources.get(source_name, {})
+            condition_metadata = await condition_stage.process(
+                exp_list, curation_context, condition_metadata
+            )
+            study_dataset.sources[source_name] = condition_metadata
+            study_dataset.to_yaml(study_dataset_file)
 
             logger.info(f"Stage {condition_stage.stage_name} completed successfully.")
             token_counts = curation_context._token_tracker.get_stage_stats(
@@ -165,7 +165,7 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
             condition_stage.render_stats_table()
 
             # Clean and download data.
-            all_clean_paths = await source_dataset.clean_data(condition_metadata)
+            all_clean_paths = await source_dataset.clean_data(exp_list, condition_metadata)
             study_dataset.data_paths[f"{source_name}_cleaned"] = all_clean_paths
             study_dataset.to_yaml(study_dataset_file)
             logger.info(f"Data cleaning for {source_name} completed successfully.")

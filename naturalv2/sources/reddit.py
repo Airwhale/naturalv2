@@ -190,7 +190,7 @@ class RedditSource:
             return pd.DataFrame(results_data)
         return pd.DataFrame(columns=["keyword", "candidate_subs", "input_data"])
 
-    async def clean_data(self, relevant_subreddits: list[str]) -> list[str]:
+    async def clean_data(self, exp_list: list["Experiment"], relevant_subreddit_map: dict[str, list]) -> list[str]:
         """Download and clean data for relevant subreddits.
 
         This method checks if the cleaned data for each relevant subreddit already
@@ -204,14 +204,21 @@ class RedditSource:
 
         Parameters
         ----------
-        relevant_subreddits : list[str]
-            List of relevant subreddits to clean.
+        exp_list: list[Experiment]
+            List of experiments for which to download and clean data.
+        relevant_subreddit_map : dict[str, list]
+            Mapping of condition keywords to relevant subreddits for cleaning.
 
         Returns
         -------
         list[str]
             List of paths to the cleaned data files for each relevant subreddit.
         """
+        relevant_subreddits = []
+        for exp in exp_list:
+            for keyword in exp.conditions:
+                relevant_subreddits.extend(relevant_subreddit_map[keyword])
+
         if not relevant_subreddits:
             logger.info("No relevant subreddits found to clean.")
             return []

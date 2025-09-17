@@ -240,8 +240,11 @@ class ConditionStage(CurationStage):
         self.extract_type = "condition"
 
     async def process(
-        self, exp_list: list["Experiment"], context: CurationContext
-    ) -> list[str]:
+        self, 
+        exp_list: list["Experiment"], 
+        context: CurationContext, 
+        condition_metadata: dict[str, list[str]]
+    ) -> dict[str, list[str]]:
         """Find data dumps related to condition keywords.
 
         This method optionally uses an LLM to determine queries or other information
@@ -253,11 +256,13 @@ class ConditionStage(CurationStage):
             List of Experiments in a study.
         context : CurationContext
             Context for the stage execution.
+        condition_metadata: dict[str, list[str]]
+            Existing metadata mapping keywords to list of strings
 
         Returns
         -------
-        list[str]
-            List of strings containing information or queries to download data.
+        dict[str, list[str]]
+            Dictionary mapping keywords to a list of strings containing information or queries to download data.
 
         Raises
         ------
@@ -270,6 +275,7 @@ class ConditionStage(CurationStage):
             if exp.conditions:
                 all_condition_keywords.extend(exp.conditions)
         all_condition_keywords = list(set(all_condition_keywords))
+        all_condition_keywords = [word for word in all_condition_keywords if word not in condition_metadata.keys()]
 
         # Get condition query data from source dataset
         condition_queries = await context.source_dataset.condition_filter(
@@ -296,12 +302,13 @@ class ConditionStage(CurationStage):
             token_tracker=context._token_tracker,
             max_concurrent_requests=self.max_concurrent_workers,
         )
-        condition_metadata = []
-        for output in output_df["llm_output"]:
-            condition_metadata.extend(ast.literal_eval(output))
+        condition_metadata_list = []
+        for keyword, output in zip(output_df["keyword"], output_df["llm_output"]):
+            condition_metadata[keyword] = ast.literal_eval(output)
+            condition_metadata_list.extend(ast.literal_eval(output))
 
-        condition_metadata = list(set(condition_metadata))
-        self.add_stat("len_metadata", len(condition_metadata))
+        condition_metadata_unique = list(set(condition_metadata_list))
+        self.add_stat("len_metadata", len(condition_metadata_unique))
         return condition_metadata
 
 

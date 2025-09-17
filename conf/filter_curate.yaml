@@ -4,6 +4,8 @@ defaults:
   - model@search_model: openai
   - _self_
 
+nct_id: null # NCT03828539 to test
+split: train
 filter_by_date: True
 
 search_model:
