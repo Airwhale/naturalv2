@@ -57,7 +57,7 @@ Convert curated Reddit data to NATURAL-IPW ATE:
 
 ```bash
 uv run --active --env-file=.env estimate_ate \
-    ~pipeline.stages.relevance_filter \ 
+    ~pipeline.stages.relevance_filter \
     cheap_model.model_id="gemini/gemini-2.5-flash" \
     cheap_model.rpm=10 \
     cheap_model.tpm=250000 \

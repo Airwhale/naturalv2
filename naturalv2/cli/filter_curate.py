@@ -165,7 +165,9 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
             condition_stage.render_stats_table()
 
             # Clean and download data.
-            all_clean_paths = await source_dataset.clean_data(exp_list, condition_metadata)
+            all_clean_paths = await source_dataset.clean_data(
+                exp_list, condition_metadata
+            )
             study_dataset.data_paths[f"{source_name}_cleaned"] = all_clean_paths
             study_dataset.to_yaml(study_dataset_file)
             logger.info(f"Data cleaning for {source_name} completed successfully.")

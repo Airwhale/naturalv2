@@ -240,10 +240,10 @@ class ConditionStage(CurationStage):
         self.extract_type = "condition"
 
     async def process(
-        self, 
-        exp_list: list["Experiment"], 
-        context: CurationContext, 
-        condition_metadata: dict[str, list[str]]
+        self,
+        exp_list: list["Experiment"],
+        context: CurationContext,
+        condition_metadata: dict[str, list[str]],
     ) -> dict[str, list[str]]:
         """Find data dumps related to condition keywords.
 
@@ -275,7 +275,9 @@ class ConditionStage(CurationStage):
             if exp.conditions:
                 all_condition_keywords.extend(exp.conditions)
         all_condition_keywords = list(set(all_condition_keywords))
-        all_condition_keywords = [word for word in all_condition_keywords if word not in condition_metadata.keys()]
+        all_condition_keywords = [
+            word for word in all_condition_keywords if word not in condition_metadata
+        ]
 
         # Get condition query data from source dataset
         condition_queries = await context.source_dataset.condition_filter(

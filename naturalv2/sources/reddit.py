@@ -190,7 +190,9 @@ class RedditSource:
             return pd.DataFrame(results_data)
         return pd.DataFrame(columns=["keyword", "candidate_subs", "input_data"])
 
-    async def clean_data(self, exp_list: list["Experiment"], relevant_subreddit_map: dict[str, list]) -> list[str]:
+    async def clean_data(
+        self, exp_list: list["Experiment"], relevant_subreddit_map: dict[str, list]
+    ) -> list[str]:
         """Download and clean data for relevant subreddits.
 
         This method checks if the cleaned data for each relevant subreddit already
