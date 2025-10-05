@@ -159,9 +159,7 @@ def _process_condition_trial(
     meshes: list[Mesh] | None = get_nested_value(
         trial, "derivedSection.conditionBrowseModule.meshes"
     )
-    trial_disease_mesh = (
-        [mesh.term for mesh in meshes] if meshes else []
-    )
+    trial_disease_mesh = [mesh.term for mesh in meshes] if meshes else []
     trial_mesh_set = {mesh.lower() for mesh in trial_disease_mesh}
 
     # Remove "disease" or "diseases" from the set

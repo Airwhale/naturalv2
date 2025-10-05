@@ -180,8 +180,12 @@ class Experiment:
                 "protocolSection.statusModule.resultsFirstPostDateStruct.date",
             )
         )
-        self._enrollment: int = get_nested_value(trial, "protocolSection.designModule.enrollmentInfo").count
-        self._enrollment_type = str(get_nested_value(trial, "protocolSection.designModule.enrollmentInfo").type)
+        self._enrollment: int = get_nested_value(
+            trial, "protocolSection.designModule.enrollmentInfo"
+        ).count
+        self._enrollment_type = str(
+            get_nested_value(trial, "protocolSection.designModule.enrollmentInfo").type
+        )
         self._trial_keywords: list[str] | None = get_nested_value(
             trial, "protocolSection.conditionsModule.keywords"
         )
@@ -913,7 +917,10 @@ class Experiment:
             for i, arm1 in enumerate(treatments):
                 for j, arm2 in enumerate(treatments):
                     if i < j:
-                        normalized = [normalize_treatment(arm1.label), normalize_treatment(arm2.label)]
+                        normalized = [
+                            normalize_treatment(arm1.label),
+                            normalize_treatment(arm2.label),
+                        ]
                         unique_treatments = set(normalized)
                         if len(unique_treatments) > 1:
                             self._outcome_treatment.append(
@@ -955,7 +962,10 @@ class Experiment:
             for i, cohort1 in enumerate(measure_groups):
                 for j, cohort2 in enumerate(measure_groups):
                     if i < j:
-                        normalized = [normalize_treatment(cohort1.title), normalize_treatment(cohort2.title)]
+                        normalized = [
+                            normalize_treatment(cohort1.title),
+                            normalize_treatment(cohort2.title),
+                        ]
                         unique_treatments = set(normalized)
                         if len(unique_treatments) <= 1:
                             continue
@@ -976,8 +986,16 @@ class Experiment:
                             effect1: float = literal_eval(measure1.value)
                             effect2: float = literal_eval(measure2.value)
                             if outcome.dispersionType is not None:
-                                dispersion1 = (measure1.lowerLimit, measure1.upperLimit) if "confidence" in outcome.dispersionType.lower() else measure1.spread
-                                dispersion2 = (measure2.lowerLimit, measure2.upperLimit) if "confidence" in outcome.dispersionType.lower() else measure2.spread
+                                dispersion1 = (
+                                    (measure1.lowerLimit, measure1.upperLimit)
+                                    if "confidence" in outcome.dispersionType.lower()
+                                    else measure1.spread
+                                )
+                                dispersion2 = (
+                                    (measure2.lowerLimit, measure2.upperLimit)
+                                    if "confidence" in outcome.dispersionType.lower()
+                                    else measure2.spread
+                                )
                             else:
                                 dispersion1, dispersion2 = None, None
                         else:
@@ -998,7 +1016,11 @@ class Experiment:
                             [outcome.title, [cohort1.title, cohort2.title]]
                         )
                         self._outcome_treatment_stats.append(
-                            [outcome.dispersionType, [dispersion1, dispersion2], [denom1, denom2]]
+                            [
+                                outcome.dispersionType,
+                                [dispersion1, dispersion2],
+                                [denom1, denom2],
+                            ]
                         )
                         self._effect_sizes.append(effect_size)
 

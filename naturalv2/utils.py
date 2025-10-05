@@ -220,11 +220,18 @@ def check_noncontrol(intervention_type: ArmGroupType | None) -> bool:
     bool
         True if the intervention type is not a control group, False otherwise.
     """
-    return intervention_type != ArmGroupType.NO_INTERVENTION and intervention_type != ArmGroupType.PLACEBO_COMPARATOR and intervention_type != ArmGroupType.SHAM_COMPARATOR 
+    return (
+        intervention_type != ArmGroupType.NO_INTERVENTION
+        and intervention_type != ArmGroupType.PLACEBO_COMPARATOR
+        and intervention_type != ArmGroupType.SHAM_COMPARATOR
+    )
 
 
 def check_arm(intervention_type: ArmGroupType | None) -> bool:
-    return intervention_type == ArmGroupType.ACTIVE_COMPARATOR or intervention_type == ArmGroupType.EXPERIMENTAL
+    return (
+        intervention_type == ArmGroupType.ACTIVE_COMPARATOR
+        or intervention_type == ArmGroupType.EXPERIMENTAL
+    )
 
 
 def normalize_treatment(name: str) -> str:
@@ -233,7 +240,11 @@ def normalize_treatment(name: str) -> str:
     # Remove dosage info (e.g. "5 mg", "200-mg", "0.5 ml")
     name = re.sub(r"\b\d+(\.\d+)?\s*(mg|g|ml|mcg|µg|kg|units?)\b", "", name)
     # Remove administration/formulation terms
-    name = re.sub(r"\b(oral|tablet|capsule|injection|iv|intravenous|subcutaneous|sc|placebo)\b", "", name)
+    name = re.sub(
+        r"\b(oral|tablet|capsule|injection|iv|intravenous|subcutaneous|sc|placebo)\b",
+        "",
+        name,
+    )
     # Remove punctuation and extra spaces
     name = re.sub(r"[^a-z\s]", " ", name)
     name = re.sub(r"\s+", " ", name).strip()
@@ -309,9 +320,12 @@ def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
         == DesignAllocation.RANDOMIZED
     ):
         stats["randomized"] = 1
-        if get_nested_value(
-            trial, "protocolSection.designModule.designInfo.interventionModel"
-        ) == InterventionalAssignment.PARALLEL:
+        if (
+            get_nested_value(
+                trial, "protocolSection.designModule.designInfo.interventionModel"
+            )
+            == InterventionalAssignment.PARALLEL
+        ):
             stats["parallel"] = 1
 
             arm_groups: list[ArmGroup] | None = get_nested_value(
@@ -323,9 +337,7 @@ def check_trial(trial: ClinicalTrial) -> tuple[dict[str, int], bool]:
             # nonplacebo_arms = [
             #     arm for arm in noncontrol_arms if check_nonplacebo(arm.interventionNames)
             # ]
-            active_exp_arms = [
-                arm for arm in (arm_groups or []) if check_arm(arm.type)
-            ]
+            active_exp_arms = [arm for arm in (arm_groups or []) if check_arm(arm.type)]
             if len(active_exp_arms) >= 2:
                 stats["multiple_noncontrol"] = 1
 
