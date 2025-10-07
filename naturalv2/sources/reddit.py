@@ -334,7 +334,9 @@ class RedditSource:
         if len(clean_data_paths) == 0:
             empty_df = pd.DataFrame()
             empty_df.to_csv(save_path, index=False)
-            logger.warning(f"No clean data paths found for experiment {experiment.nct_id}")
+            logger.warning(
+                f"No clean data paths found for experiment {experiment.nct_id}"
+            )
             return save_path, 0
 
         drugbank_names = [
