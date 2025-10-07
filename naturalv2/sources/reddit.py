@@ -325,7 +325,9 @@ class RedditSource:
         os.makedirs(study_dir, exist_ok=True)
         save_path = os.path.join(study_dir, f"reddit_{experiment.nct_id}.csv")
         if os.path.exists(save_path):
-            logger.info(f"Skipping reddit curation for {experiment.nct_id}. Existing data found.")
+            logger.info(
+                f"Skipping reddit curation for {experiment.nct_id}. Existing data found."
+            )
             exp_df = pd.read_csv(save_path, index_col=0)
             return save_path, len(exp_df)
 
