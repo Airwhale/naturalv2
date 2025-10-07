@@ -191,7 +191,7 @@ class RedditSource:
         return pd.DataFrame(columns=["keyword", "candidate_subs", "input_data"])
 
     async def clean_data(
-        self, exp_list: list["Experiment"], relevant_subreddit_map: dict[str, list]
+        self, experiment: "Experiment", relevant_subreddit_map: dict[str, list]
     ) -> list[str]:
         """Download and clean data for relevant subreddits.
 
@@ -217,9 +217,8 @@ class RedditSource:
             List of paths to the cleaned data files for each relevant subreddit.
         """
         relevant_subreddits = []
-        for exp in exp_list:
-            for keyword in exp.conditions:
-                relevant_subreddits.extend(relevant_subreddit_map[keyword])
+        for keyword in experiment.conditions:
+            relevant_subreddits.extend(relevant_subreddit_map[keyword])
 
         if not relevant_subreddits:
             logger.info("No relevant subreddits found to clean.")
@@ -322,7 +321,6 @@ class RedditSource:
             that mention both treatments and outcomes.
 
         """
-        assert len(clean_data_paths) > 0
         study_dir = os.path.join(self.data_path, sanitize_filename(study_name.lower()))
         os.makedirs(study_dir, exist_ok=True)
         save_path = os.path.join(study_dir, f"reddit_{experiment.nct_id}.csv")
@@ -330,6 +328,12 @@ class RedditSource:
             logger.info(f"Skipping reddit curation for {experiment.nct_id}. Existing data found.")
             exp_df = pd.read_csv(save_path, index_col=0)
             return save_path, len(exp_df)
+
+        if len(clean_data_paths) == 0:
+            empty_df = pd.DataFrame()
+            empty_df.to_csv(save_path, index=False)
+            logger.warning(f"No clean data paths found for experiment {experiment.nct_id}")
+            return save_path, 0
 
         drugbank_names = [
             item for sublist in experiment.drugbank_names.values() for item in sublist

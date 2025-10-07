@@ -66,7 +66,7 @@ def _get_curated_dataset(exp_list, context, source_name, clean_data_paths):
     exp_dir = os.path.join(context.save_path, "experiments")
     for exp in exp_list:
         exp_data_path, exp_data_size = context.source_dataset.curate_experiment_data(
-            exp, context.condition, context.filter_by_date, clean_data_paths
+            exp, context.condition, context.filter_by_date, clean_data_paths[exp.nct_id]
         )
         exp.source_paths[source_name] = exp_data_path
         exp_file = os.path.join(exp_dir, f"{exp.nct_id}.yaml")
@@ -165,9 +165,12 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
             condition_stage.render_stats_table()
 
             # Clean and download data.
-            all_clean_paths = await source_dataset.clean_data(
-                exp_list, condition_metadata
-            )
+            all_clean_paths = {}
+            for exp in exp_list:
+                exp_clean_paths = await source_dataset.clean_data(
+                    exp, condition_metadata
+                )
+                all_clean_paths[exp.nct_id] = exp_clean_paths
             study_dataset.data_paths[f"{source_name}_cleaned"] = all_clean_paths
             study_dataset.to_yaml(study_dataset_file)
             logger.info(f"Data cleaning for {source_name} completed successfully.")
