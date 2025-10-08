@@ -285,7 +285,9 @@ class ConditionStage(CurationStage):
         )
 
         if condition_queries.empty:
-            logger.warning("No condition query data found to process. Returning existing.")
+            logger.warning(
+                "No condition query data found to process. Returning existing."
+            )
             return condition_metadata
 
         # Set up file path for saving results
@@ -304,7 +306,9 @@ class ConditionStage(CurationStage):
             token_tracker=context._token_tracker,
             max_concurrent_requests=self.max_concurrent_workers,
         )
-        output_df["llm_output"] = output_df["llm_output"].apply(lambda x: x if pd.notna(x) else "[]") 
+        output_df["llm_output"] = output_df["llm_output"].apply(
+            lambda x: x if pd.notna(x) else "[]"
+        )
         condition_metadata_list = []
         for keyword, output in zip(output_df["keyword"], output_df["llm_output"]):
             output = ast.literal_eval(output)
