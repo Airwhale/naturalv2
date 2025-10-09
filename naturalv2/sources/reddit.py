@@ -332,7 +332,7 @@ class RedditSource:
             return save_path, len(exp_df)
 
         if len(clean_data_paths) == 0:
-            empty_df = pd.DataFrame()
+            empty_df = pd.DataFrame(columns=["report_text", "treatments_mentioned", "outcome_words"])
             empty_df.to_csv(save_path, index=False)
             logger.warning(
                 f"No clean data paths found for experiment {experiment.nct_id}"
@@ -373,7 +373,7 @@ class RedditSource:
             ) as executor,
             tqdm(
                 total=len(clean_data_paths),
-                desc="Curating Reddit data for experiment",
+                desc=f"Curating Reddit data for experiment {experiment.nct_id}",
                 unit="file",
                 leave=False,
                 dynamic_ncols=True,
