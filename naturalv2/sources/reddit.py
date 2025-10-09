@@ -332,7 +332,9 @@ class RedditSource:
             return save_path, len(exp_df)
 
         if len(clean_data_paths) == 0:
-            empty_df = pd.DataFrame(columns=["report_text", "treatments_mentioned", "outcome_words"])
+            empty_df = pd.DataFrame(
+                columns=["report_text", "treatments_mentioned", "outcome_words"]
+            )
             empty_df.to_csv(save_path, index=False)
             logger.warning(
                 f"No clean data paths found for experiment {experiment.nct_id}"
