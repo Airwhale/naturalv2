@@ -123,6 +123,24 @@ async def concurrency_limited(coro: Coroutine, semaphore: asyncio.Semaphore) -> 
         return await coro
 
 
+def get_experiment_filepath(root_dir: str, nct_id: str) -> str:
+    """Get the file path for an experiment YAML file.
+
+    Parameters
+    ----------
+    root_dir : str
+        The root directory where experiments are stored.
+    nct_id : str
+        The National Clinical Trial ID (NCT ID) of the clinical trial.
+
+    Returns
+    -------
+    str
+        The full file path for the experiment YAML file.
+    """
+    return os.path.join(root_dir, "experiments", f"{nct_id}.yaml")
+
+
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename by replacing disallowed characters with underscores.
 
@@ -220,17 +238,17 @@ def check_noncontrol(intervention_type: ArmGroupType | None) -> bool:
     bool
         True if the intervention type is not a control group, False otherwise.
     """
-    return (
-        intervention_type != ArmGroupType.NO_INTERVENTION
-        and intervention_type != ArmGroupType.PLACEBO_COMPARATOR
-        and intervention_type != ArmGroupType.SHAM_COMPARATOR
+    return intervention_type not in (
+        ArmGroupType.NO_INTERVENTION,
+        ArmGroupType.PLACEBO_COMPARATOR,
+        ArmGroupType.SHAM_COMPARATOR,
     )
 
 
 def check_arm(intervention_type: ArmGroupType | None) -> bool:
-    return (
-        intervention_type == ArmGroupType.ACTIVE_COMPARATOR
-        or intervention_type == ArmGroupType.EXPERIMENTAL
+    return intervention_type in (
+        ArmGroupType.ACTIVE_COMPARATOR,
+        ArmGroupType.EXPERIMENTAL,
     )
 
 
@@ -247,8 +265,7 @@ def normalize_treatment(name: str) -> str:
     )
     # Remove punctuation and extra spaces
     name = re.sub(r"[^a-z\s]", " ", name)
-    name = re.sub(r"\s+", " ", name).strip()
-    return name
+    return re.sub(r"\s+", " ", name).strip()
 
 
 def check_binary_endpoint(text: str) -> bool:
