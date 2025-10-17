@@ -37,7 +37,7 @@ def tokenize_casefold(text: str) -> set[str]:
 
     if not text:
         return set()
-    return set(_TOKEN_PATTERN.findall(text.casefold()))
+    return {match.group(0).casefold() for match in _TOKEN_PATTERN.finditer(text)}
 
 
 def build_term_pattern(terms: Iterable[str]) -> re.Pattern:

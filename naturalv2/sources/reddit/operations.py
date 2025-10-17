@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import logging
 import os
-import re
+from typing import Iterable, Union
 
 import asyncpraw
-import numpy as np
 import pandas as pd
 from aiolimiter import AsyncLimiter
 from tenacity import (
@@ -24,6 +23,7 @@ from tenacity import (
 
 from naturalv2.sources.anonymizer import Anonymizer
 from naturalv2.sources.components import filter_by_date
+from naturalv2.sources.components.helpers import tokenize_casefold
 from naturalv2.sources.reddit.utils import (
     download_sub_data,
     get_context_post_df,
@@ -215,8 +215,8 @@ def download_submissions_and_comments(
 
 
 def get_study_relevant_posts(
-    clean_data_path: str,
-    treatment_pattern: re.Pattern,
+    clean_data: Union[str, pd.DataFrame],
+    treatment_names: Iterable[str],
     cutoff_dt: pd.Timestamp | None,
     *,
     date_column: str = "date_created",
@@ -225,11 +225,11 @@ def get_study_relevant_posts(
 
     Parameters
     ----------
-    clean_data_path : str
-        Path to a cleaned subreddit parquet file created by
-        :func:`download_submissions_and_comments`.
-    treatment_pattern : re.Pattern
-        Compiled regex matching any treatment term of interest.
+    clean_data : str | pandas.DataFrame
+        Either the path to a cleaned subreddit parquet file created by
+        :func:`download_submissions_and_comments` or a pre-loaded DataFrame.
+    treatment_names : Iterable[str]
+        Collection of treatment aliases to match (case-insensitive).
     cutoff_dt : pandas.Timestamp | None
         If provided, only posts with dates before this timestamp are
         considered.
@@ -243,7 +243,13 @@ def get_study_relevant_posts(
         ``treatments_mentioned`` column listing the matched terms.
     """
 
-    df = pd.read_parquet(clean_data_path)
+    if isinstance(clean_data, str):
+        df = pd.read_parquet(clean_data)
+        data_label = clean_data
+    else:
+        df = clean_data
+        data_label = "provided DataFrame chunk"
+
     if df.empty:
         return pd.DataFrame()
 
@@ -252,24 +258,51 @@ def get_study_relevant_posts(
         if df.empty:
             return pd.DataFrame()
 
-    text_cols = ["subreddit", "title", "report_text", "initial_post"]
-    for col in text_cols:
-        df[col] = df[col].fillna("").astype(str)
+    alias_token_map: dict[str, set[str]] = {}
+    for alias in sorted({alias for alias in treatment_names if alias}):
+        tokens = tokenize_casefold(alias)
+        if tokens:
+            alias_token_map[alias] = tokens
 
-    treatment_finds = [
-        df[col].str.lower().str.findall(treatment_pattern) for col in text_cols
-    ]
-    has_treatment_mask = np.any(
-        [series.str.len() > 0 for series in treatment_finds], axis=0
-    )
+    if not alias_token_map:
+        logger.warning(
+            "No treatment aliases available when processing %s; skipping.",
+            data_label,
+        )
+        return pd.DataFrame()
 
-    result = df[has_treatment_mask].copy()
-    if result.empty:
-        return result
+    if "report" in df.columns:
+        reports = df["report"].fillna("").astype(str)
+    else:
+        text_cols = [
+            col
+            for col in ("report_text", "title", "initial_post", "subreddit")
+            if col in df.columns
+        ]
+        if not text_cols:
+            logger.warning(
+                "No textual columns found in %s to evaluate treatment matches.",
+                data_label,
+            )
+            return pd.DataFrame()
+        reports = df[text_cols].fillna("").astype(str).agg(" ".join, axis=1)
 
-    valid_finds = [series[has_treatment_mask] for series in treatment_finds]
-    result["treatments_mentioned"] = [
-        list({item for sublist in row for item in sublist}) for row in zip(*valid_finds)
-    ]
+    report_tokens = reports.apply(tokenize_casefold)
+
+    def match_treatments(tokens: set[str]) -> list[str]:
+        return [
+            alias
+            for alias, alias_tokens in alias_token_map.items()
+            if alias_tokens <= tokens
+        ]
+
+    matched_treatments = report_tokens.apply(match_treatments)
+    has_treatment_mask = matched_treatments.apply(bool)
+
+    if not has_treatment_mask.any():
+        return pd.DataFrame()
+
+    result = df.loc[has_treatment_mask].copy()
+    result["treatments_mentioned"] = matched_treatments[has_treatment_mask]
 
     return result.reset_index(drop=True)
