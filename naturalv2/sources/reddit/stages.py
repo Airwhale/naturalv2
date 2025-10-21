@@ -645,6 +645,7 @@ class RedditCurateStage(SourceStage):
                     "No clean data paths found for experiment with NCT ID: %s",
                     experiment.nct_id,
                 )
+                curated_data_sizes[experiment.nct_id] = 0
                 continue
 
             treatment_names = experiment.get_all_treatment_names_for_source(
@@ -662,6 +663,7 @@ class RedditCurateStage(SourceStage):
             )
             if rows_written == 0:
                 self._handle_empty_result(save_path, experiment.nct_id, header_written)
+                curated_data_sizes[experiment.nct_id] = 0
                 continue
 
             curated_paths[experiment.nct_id] = save_path
