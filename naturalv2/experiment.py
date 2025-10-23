@@ -180,12 +180,18 @@ class Experiment:
                 "protocolSection.statusModule.resultsFirstPostDateStruct.date",
             )
         )
-        self._enrollment: int = get_nested_value(
+        _enrollment_info = get_nested_value(
             trial, "protocolSection.designModule.enrollmentInfo"
-        ).count
-        self._enrollment_type = str(
-            get_nested_value(trial, "protocolSection.designModule.enrollmentInfo").type
         )
+        self._enrollment: int = _enrollment_info.count if _enrollment_info else -1
+
+        _enrollment_type = get_nested_value(
+            trial, "protocolSection.designModule.enrollmentInfo"
+        )
+        self._enrollment_type: str = (
+            str(_enrollment_type.type) if _enrollment_type else ""
+        )
+
         self._trial_keywords: list[str] | None = get_nested_value(
             trial, "protocolSection.conditionsModule.keywords"
         )
