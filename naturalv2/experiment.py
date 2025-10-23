@@ -185,11 +185,8 @@ class Experiment:
         )
         self._enrollment: int = _enrollment_info.count if _enrollment_info else -1
 
-        _enrollment_type = get_nested_value(
-            trial, "protocolSection.designModule.enrollmentInfo"
-        )
         self._enrollment_type: str = (
-            str(_enrollment_type.type) if _enrollment_type else ""
+            str(_enrollment_info.type) if _enrollment_info else ""
         )
 
         self._trial_keywords: list[str] | None = get_nested_value(
