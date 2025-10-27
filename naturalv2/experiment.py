@@ -250,6 +250,7 @@ class Experiment:
         )
 
         self._effect_sizes: list[float] = []
+        self._avg_potential_outcomes: list[float] = []
 
         # Set treatment and outcome names and common names per data source
         # E.g. {"reddit": {
@@ -364,13 +365,23 @@ class Experiment:
 
     @property
     def outcome_treatment(self) -> list[list[str | list[str]]]:
-        """List of tuples containing outcome and treatment pairs."""
+        """List of tuples containing outcome and binary treatment pairs."""
         return self._outcome_treatment
+
+    @property
+    def apo_outcome_treatment(self) -> list[list[str | list[str]]]:
+        """List of tuples containing outcome and single treatment pairs."""
+        return self._apo_outcome_treatment
 
     @property
     def outcome_treatment_stats(self) -> list[list[str | list[str]]]:
         """List of tuples containing outcome dispersion type, cohort dispersion, and cohort sizes."""
         return self._outcome_treatment_stats
+
+    @property
+    def apo_stats(self) -> list[list[str | list[str]]]:
+        """List of tuples containing outcome dispersion type, dispersion, and size per cohort."""
+        return self._apo_stats
 
     @property
     def treatment_desc(self) -> dict[str, str | None]:
@@ -384,8 +395,13 @@ class Experiment:
 
     @property
     def effect_sizes(self) -> list[float]:
-        """List of effect sizes for each outcome-treatment pair."""
+        """List of effect sizes for each outcome and binary-treatment pair."""
         return self._effect_sizes
+
+    @property
+    def avg_potential_outcomes(self) -> list[float]:
+        """List of potential outcomes for each outcome and treatment."""
+        return self._avg_potential_outcomes
 
     @property
     def drugbank_names(self) -> dict[str, list[str]]:
@@ -886,6 +902,9 @@ class Experiment:
         self._outcome_treatment_stats: list[list[str | list[float]]] = []
         self._treatment_desc, self._outcome_desc = {}, {}
 
+        self._apo_outcome_treatment: list[list[str]] = []
+        self._apo_stats: list[list[str | float]] = []
+
         if self.status == "active":
             outcomes, treatments = self._get_active_outcomes_treatments(trial)
             self._build_active_outcome_treatment(outcomes, treatments)
@@ -992,6 +1011,41 @@ class Experiment:
                 if check_nonplacebo([cohort.title])
             ]
             for i, cohort1 in enumerate(measure_groups):
+                measure1: Measurement | None = outcome.get_group_stats(cohort1)
+                denom1 = literal_eval(
+                    cohort1.extract_denom_value_by_id(outcome.denoms)
+                )
+                if (
+                    (measure1 is not None and measure1.value != "None")
+                    and (denom1 is not None and denom1 > 0)
+                ):
+                    effect1: float = literal_eval(measure1.value)
+                else:
+                    continue
+                if outcome.dispersionType is not None:
+                    dispersion1 = (
+                        (measure1.lowerLimit, measure1.upperLimit)
+                        if "confidence" in outcome.dispersionType.lower()
+                        else measure1.spread
+                    )
+                else:
+                    dispersion1 = None
+                unit = (
+                    outcome.unitOfMeasure.lower()
+                    if outcome.unitOfMeasure is not None
+                    else ""
+                )
+                effect1 = (
+                    effect1 / 100 if "percent" in unit else effect1 / denom1
+                )
+                self._apo_outcome_treatment.append(
+                    [outcome.title, cohort1.title]
+                )
+                self._apo_stats.append(
+                    [outcome.dispersionType, dispersion1, denom1]
+                )
+                self._avg_potential_outcomes.append(effect1)
+
                 for j, cohort2 in enumerate(measure_groups):
                     if i < j:
                         normalized = [
@@ -1001,11 +1055,7 @@ class Experiment:
                         unique_treatments = set(normalized)
                         if len(unique_treatments) <= 1:
                             continue
-                        measure1: Measurement | None = outcome.get_group_stats(cohort1)
                         measure2: Measurement | None = outcome.get_group_stats(cohort2)
-                        denom1 = literal_eval(
-                            cohort1.extract_denom_value_by_id(outcome.denoms)
-                        )
                         denom2 = literal_eval(
                             cohort2.extract_denom_value_by_id(outcome.denoms)
                         )

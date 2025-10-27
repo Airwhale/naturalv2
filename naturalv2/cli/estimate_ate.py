@@ -371,6 +371,7 @@ async def _process_all_trials(cfg: DictConfig) -> None:
 
     else:
         # Load study object from YAML file
+        # TODO: add apo=cfg.apo and log apo results
         study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0])["study"]
         study = Study.from_yaml(study_file)
 

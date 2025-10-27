@@ -2,6 +2,7 @@ defaults:
   - source@sources.reddit: reddit
   - _self_
 
+apo: False
 seed: 42
 experiment_name: ???
 conditions:

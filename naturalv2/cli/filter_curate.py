@@ -79,7 +79,7 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
 
         weave.init("naturalv2")
 
-    study_filepaths = get_study_filepaths(cfg.save_path, cfg.conditions[0])
+    study_filepaths = get_study_filepaths(cfg.save_path, cfg.conditions[0], apo=cfg.apo)
 
     # Load study from yaml
     study = Study.from_yaml(study_filepaths["study"])
