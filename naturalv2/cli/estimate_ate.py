@@ -323,6 +323,8 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     result.update(pipeline._data_flow)
                     result["source_name"] = source_name
                     result["initial_curated"] = len(curated_df)
+                    result["conditions"] = cfg.conditions
+                    result["filter_by_date"] = cfg.filter_by_date
                     _save_results(
                         [result], cfg.save_path, experiment.nct_id, cfg.experiment_name
                     )
@@ -346,6 +348,8 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     result.update(pipeline._data_flow)
                     result["source_name"] = source_name
                     result["initial_curated"] = len(curated_df)
+                    result["conditions"] = cfg.conditions
+                    result["filter_by_date"] = cfg.filter_by_date
 
                 _save_results(
                     results, cfg.save_path, experiment.nct_id, cfg.experiment_name
