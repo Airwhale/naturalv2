@@ -763,10 +763,10 @@ class Experiment:
 
         knowns = extractions[covariate_name].copy().astype(str)
         unknowns = knowns.str.lower().isin(["unknown", ""]) | knowns.isna()
-        covariate_data = knowns.mask(unknowns, extractions[imputation_col_name])
+        covariate_data = knowns.mask(unknowns, extractions[imputation_col_name].copy().astype(str))
         all_answers = covariate_data.unique()
 
-        if len(all_answers) > 10:
+        if len(all_answers) > 2:
             self._discretize_many_unique(
                 extractions,
                 covariate_data,
@@ -861,6 +861,7 @@ class Experiment:
         covariate_name: str,
     ) -> None:
         """Discretize a covariate with few unique values in the extractions DataFrame."""
+        assert len(set(all_answers)) == len(all_answers), "all_answers must contain unique elements"
         cov_map = {name: i for (i, name) in enumerate(all_answers)}
         extractions[discrete_covariate_name] = covariate_data.replace(cov_map).astype(
             int
