@@ -172,7 +172,10 @@ def _calculate_treatment_responses(
             pred_response - conf_delta,
             pred_response + conf_delta,
         )
-        if experiment.status == "completed":
+        if (
+            experiment.status == "completed"
+            and [outcome, treatment] in experiment.apo_outcome_treatment
+        ):
             response_idx = experiment.apo_outcome_treatment.index(
                 [outcome, treatment]
             )
@@ -219,7 +222,10 @@ def _calculate_treatment_effects(
                         "pred_ate": pred_ate,
                     }
                     logger.info("Predicted ATE: %f", pred_ate,)
-                    if experiment.status == "completed":
+                    if (
+                        experiment.status == "completed" 
+                        and [outcome, [treat1, treat2]] in experiment.outcome_treatment
+                    ):
                         effect_idx = experiment.outcome_treatment.index(
                             [outcome, [treat1, treat2]]
                         )
@@ -333,7 +339,7 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                         f"{source_name}_no_date_filter"
                     )
 
-                if not curated_filepath:
+                if not curated_filepath or not os.path.exists(curated_filepath):
                     logger.warning(
                         "The source '%s' does not have a curated dataset for the "
                         "experiment %s. Skipping...",
