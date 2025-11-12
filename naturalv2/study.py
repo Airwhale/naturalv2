@@ -249,7 +249,9 @@ class StudyDataset:
         return study_dataset
 
 
-def get_study_filepaths(base_dir: str, condition: str, apo: bool = False) -> dict[str, str]:
+def get_study_filepaths(
+    base_dir: str, condition: str, apo: bool = False
+) -> dict[str, str]:
     """Get file paths for the study and study dataset YAML files.
 
     Parameters

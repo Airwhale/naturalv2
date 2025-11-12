@@ -149,14 +149,14 @@ def _calculate_treatment_responses(
         bootstrap_weighted_responses[b, :] = _weight_by_inclusion(
             all_responses, bootstrap_data, use_inclusion_weights
         )  # len: num_treatments
-    
+
     for i, treatment in enumerate(experiment.treatment_names):
         pred_response = weighted_responses[i]
         bootstrap_response = bootstrap_weighted_responses[:, i]
         avg_bootstrap_response = np.mean(bootstrap_response)
-        sample_variance = np.sum(
-            (bootstrap_response - avg_bootstrap_response) ** 2
-        ) / (bootstrap_size - 1)
+        sample_variance = np.sum((bootstrap_response - avg_bootstrap_response) ** 2) / (
+            bootstrap_size - 1
+        )
         conf_delta = norm.ppf(1 - alpha / 2) * np.sqrt(sample_variance)
         results = {
             "estimator": estimator.__class__.__name__,
@@ -176,20 +176,20 @@ def _calculate_treatment_responses(
             experiment.status == "completed"
             and [outcome, treatment] in experiment.apo_outcome_treatment
         ):
-            response_idx = experiment.apo_outcome_treatment.index(
-                [outcome, treatment]
-            )
+            response_idx = experiment.apo_outcome_treatment.index([outcome, treatment])
             true_response = experiment.avg_potential_outcomes[response_idx]
             error = abs(pred_response - true_response)
             true_stats = experiment.apo_stats[response_idx]
             dispersion_type, dispersion, cohort_size = true_stats
-            results.update({
-                "true_response": true_response, 
-                "abs_error": error,
-                "true_dispersion_type": dispersion_type, 
-                "true_dispersion": dispersion, 
-                "true_cohort_size": cohort_size,
-            })
+            results.update(
+                {
+                    "true_response": true_response,
+                    "abs_error": error,
+                    "true_dispersion_type": dispersion_type,
+                    "true_dispersion": dispersion,
+                    "true_cohort_size": cohort_size,
+                }
+            )
             logger.info(
                 "True Response: %f, %s: %s, Cohort Size: %s",
                 true_response,
@@ -199,7 +199,7 @@ def _calculate_treatment_responses(
             )
             logger.info("Absolute Error: %f", error)
         result_dicts.append(results)
-    
+
     return result_dicts, weighted_responses
 
 
@@ -221,9 +221,9 @@ def _calculate_treatment_effects(
                         "treatments": f"{treat2}-{treat1}",
                         "pred_ate": pred_ate,
                     }
-                    logger.info("Predicted ATE: %f", pred_ate,)
+                    logger.info("Predicted ATE: %f", pred_ate)
                     if (
-                        experiment.status == "completed" 
+                        experiment.status == "completed"
                         and [outcome, [treat1, treat2]] in experiment.outcome_treatment
                     ):
                         effect_idx = experiment.outcome_treatment.index(
@@ -291,8 +291,12 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
         return
     # If the experiment has no _avg_potential_outcomes or it is an empty list, calculate them from the trial.
     # Note: we can remove this once all our experiment yamls are updated to include APOs.
-    if not hasattr(experiment, "_avg_potential_outcomes") or not experiment._avg_potential_outcomes:
+    if (
+        not hasattr(experiment, "_avg_potential_outcomes")
+        or not experiment._avg_potential_outcomes
+    ):
         from naturalv2.clinical_trial import ClinicalTrial
+
         trial = ClinicalTrial.from_json_file(experiment.trial_path)
         experiment._avg_potential_outcomes = []
         experiment._set_outcome_treatment_effects(trial)
@@ -381,7 +385,11 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     result["conditions"] = cfg.conditions
                     result["filter_by_date"] = cfg.filter_by_date
                     _save_results(
-                        [result], cfg.save_path, experiment.nct_id, cfg.experiment_name, "apo"
+                        [result],
+                        cfg.save_path,
+                        experiment.nct_id,
+                        cfg.experiment_name,
+                        "apo",
                     )
                     continue
 
@@ -405,9 +413,13 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     result["initial_curated"] = len(curated_df)
                     result["conditions"] = cfg.conditions
                     result["filter_by_date"] = cfg.filter_by_date
-                
+
                 _save_results(
-                    results, cfg.save_path, experiment.nct_id, cfg.experiment_name, "apo"
+                    results,
+                    cfg.save_path,
+                    experiment.nct_id,
+                    cfg.experiment_name,
+                    "apo",
                 )
 
                 if not cfg.apo:
@@ -421,7 +433,11 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                         result["conditions"] = cfg.conditions
                         result["filter_by_date"] = cfg.filter_by_date
                     _save_results(
-                        ate_results, cfg.save_path, experiment.nct_id, cfg.experiment_name, "ate"
+                        ate_results,
+                        cfg.save_path,
+                        experiment.nct_id,
+                        cfg.experiment_name,
+                        "ate",
                     )
 
             except Exception as e:
@@ -445,7 +461,9 @@ async def _process_all_trials(cfg: DictConfig) -> None:
 
     else:
         # Load study object from YAML file
-        study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0], apo=cfg.apo)["study"]
+        study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0], apo=cfg.apo)[
+            "study"
+        ]
         study = Study.from_yaml(study_file)
 
         if cfg.split not in ["train", "val", "test"]:

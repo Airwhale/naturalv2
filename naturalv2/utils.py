@@ -317,7 +317,7 @@ def check_trial(trial: ClinicalTrial, apo: bool) -> tuple[dict[str, int], bool]:
     trial : ClinicalTrial
         The clinical trial object to check.
     apo: bool
-        If True, check for ONE active or comparator arm. 
+        If True, check for ONE active or comparator arm.
 
     Returns
     -------

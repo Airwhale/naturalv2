@@ -764,7 +764,9 @@ class Experiment:
 
         knowns = extractions[covariate_name].copy().astype(str)
         unknowns = knowns.str.lower().isin(["unknown", ""]) | knowns.isna()
-        covariate_data = knowns.mask(unknowns, extractions[imputation_col_name].copy().astype(str))
+        covariate_data = knowns.mask(
+            unknowns, extractions[imputation_col_name].copy().astype(str)
+        )
         all_answers = covariate_data.unique()
 
         if len(all_answers) > 2:
@@ -862,7 +864,9 @@ class Experiment:
         covariate_name: str,
     ) -> None:
         """Discretize a covariate with few unique values in the extractions DataFrame."""
-        assert len(set(all_answers)) == len(all_answers), "all_answers must contain unique elements"
+        assert len(set(all_answers)) == len(all_answers), (
+            "all_answers must contain unique elements"
+        )
         cov_map = {name: i for (i, name) in enumerate(all_answers)}
         extractions[discrete_covariate_name] = covariate_data.replace(cov_map).astype(
             int
@@ -1014,12 +1018,9 @@ class Experiment:
             ]
             for i, cohort1 in enumerate(measure_groups):
                 measure1: Measurement | None = outcome.get_group_stats(cohort1)
-                denom1 = literal_eval(
-                    cohort1.extract_denom_value_by_id(outcome.denoms)
-                )
-                if (
-                    (measure1 is not None and measure1.value != "None")
-                    and (denom1 is not None and denom1 > 0)
+                denom1 = literal_eval(cohort1.extract_denom_value_by_id(outcome.denoms))
+                if (measure1 is not None and measure1.value != "None") and (
+                    denom1 is not None and denom1 > 0
                 ):
                     effect1: float = literal_eval(measure1.value)
                 else:
@@ -1037,15 +1038,9 @@ class Experiment:
                     if outcome.unitOfMeasure is not None
                     else ""
                 )
-                effect1 = (
-                    effect1 / 100 if "percent" in unit else effect1 / denom1
-                )
-                self._apo_outcome_treatment.append(
-                    [outcome.title, cohort1.title]
-                )
-                self._apo_stats.append(
-                    [outcome.dispersionType, dispersion1, denom1]
-                )
+                effect1 = effect1 / 100 if "percent" in unit else effect1 / denom1
+                self._apo_outcome_treatment.append([outcome.title, cohort1.title])
+                self._apo_stats.append([outcome.dispersionType, dispersion1, denom1])
                 self._avg_potential_outcomes.append(effect1)
 
                 for j, cohort2 in enumerate(measure_groups):

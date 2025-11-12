@@ -48,7 +48,9 @@ def find_valid_ncts(data_path: str, apo: bool = False, test: bool = False) -> li
         "binary_endpoint": 0,
     }
     trial_path = os.path.join(data_path, "nct_reports" + ("_test" if test else ""))
-    nct_file = "valid_parallel_binary_apo_nct_ids" if apo else "valid_parallel_binary_nct_ids"
+    nct_file = (
+        "valid_parallel_binary_apo_nct_ids" if apo else "valid_parallel_binary_nct_ids"
+    )
     valid_nct_path = os.path.join(trial_path, f"{nct_file}.txt")
 
     if not os.path.exists(trial_path):
@@ -79,7 +81,11 @@ def find_valid_ncts(data_path: str, apo: bool = False, test: bool = False) -> li
 
 
 def find_condition_ncts(
-    nct_ids: list[str], data_path: str, conditions: list[str], apo: bool = False, test: bool = False
+    nct_ids: list[str],
+    data_path: str,
+    conditions: list[str],
+    apo: bool = False,
+    test: bool = False,
 ) -> list[tuple[str, str | None]]:
     """Find NCT IDs of trials related to specific conditions.
 
@@ -108,10 +114,12 @@ def find_condition_ncts(
         include only trials that match the specified conditions.
     """
     trial_path = os.path.join(data_path, "nct_reports" + ("_test" if test else ""))
-    nct_file = f"valid_parallel_binary_apo_{conditions[0]}_nct_ids" if apo else f"valid_parallel_binary_{conditions[0]}_nct_ids"
-    condition_nct_path = os.path.join(
-        trial_path, f"{nct_file}.txt"
+    nct_file = (
+        f"valid_parallel_binary_apo_{conditions[0]}_nct_ids"
+        if apo
+        else f"valid_parallel_binary_{conditions[0]}_nct_ids"
     )
+    condition_nct_path = os.path.join(trial_path, f"{nct_file}.txt")
     condition_trials: list[tuple[str, str | None]] = []
     conditions_set = {cond.replace("_", " ").lower() for cond in conditions}
 
@@ -141,7 +149,9 @@ def find_condition_ncts(
     return condition_trials
 
 
-def _process_trial_file(args: tuple[str, str, bool]) -> tuple[str, dict[str, int], bool]:
+def _process_trial_file(
+    args: tuple[str, str, bool],
+) -> tuple[str, dict[str, int], bool]:
     """Process a single clinical trial JSON file to extract its NCT ID and statistics."""
     filename, trial_path, apo = args
     if filename.endswith(".json"):
@@ -204,13 +214,17 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
         len(test_nct_list),
     )
 
-    retro_trials = find_condition_ncts(nct_list, cfg.data_path, cfg.conditions, apo=cfg.apo)
+    retro_trials = find_condition_ncts(
+        nct_list, cfg.data_path, cfg.conditions, apo=cfg.apo
+    )
     test_trials = find_condition_ncts(
         test_nct_list, cfg.data_path, cfg.conditions, apo=cfg.apo, test=True
     )
 
     study = Study(retro_trials, test_trials, cfg)
-    study_filepath = get_study_filepaths(cfg.data_path, cfg.conditions[0], apo=cfg.apo)["study"]
+    study_filepath = get_study_filepaths(cfg.data_path, cfg.conditions[0], apo=cfg.apo)[
+        "study"
+    ]
     study.to_yaml(study_filepath)
 
     return {

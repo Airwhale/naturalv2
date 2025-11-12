@@ -14,11 +14,11 @@ from naturalv2.study import StudyDataset, get_study_filepaths
 
 def plot_effects(data_sizes, avg_effect_sizes, is_filtered, save_path, use_apo=False):
     plt.figure(figsize=(10, 6))
-    
+
     # Only plot filtered data (ignore no_data_filter trials)
     filtered_sizes = [ds for ds, filt in zip(data_sizes, is_filtered) if filt]
     filtered_effects = [es for es, filt in zip(avg_effect_sizes, is_filtered) if filt]
-    
+
     if filtered_sizes:
         plt.scatter(
             filtered_effects,
@@ -26,7 +26,7 @@ def plot_effects(data_sizes, avg_effect_sizes, is_filtered, save_path, use_apo=F
             marker="s",
             color="green",
         )
-    
+
     if use_apo:
         plt.xlabel("Average Potential Outcomes")
         plt.title("Average potential outcomes vs Reddit data size")
@@ -40,23 +40,37 @@ def plot_effects(data_sizes, avg_effect_sizes, is_filtered, save_path, use_apo=F
     plt.savefig(save_path)
 
 
-def plot_dates(data_sizes, utc_dates, date_labels, is_filtered, save_path, include_unfiltered=False):
+def plot_dates(
+    data_sizes, utc_dates, date_labels, is_filtered, save_path, include_unfiltered=False
+):
     plt.figure(figsize=(10, 6))
-    
+
     # Separate filtered and unfiltered data
     filtered_dates = [dt for dt, filt in zip(utc_dates, is_filtered) if filt]
     filtered_sizes = [ds for ds, filt in zip(data_sizes, is_filtered) if filt]
     unfiltered_dates = [dt for dt, filt in zip(utc_dates, is_filtered) if not filt]
     unfiltered_sizes = [ds for ds, filt in zip(data_sizes, is_filtered) if not filt]
-    
+
     if filtered_dates:
         if include_unfiltered and unfiltered_dates:
-            plt.scatter(filtered_dates, filtered_sizes, label="Date filtered", color="green", marker="o")
+            plt.scatter(
+                filtered_dates,
+                filtered_sizes,
+                label="Date filtered",
+                color="green",
+                marker="o",
+            )
         else:
             plt.scatter(filtered_dates, filtered_sizes, color="green", marker="o")
     if unfiltered_dates and include_unfiltered:
-        plt.scatter(unfiltered_dates, unfiltered_sizes, label="No date filter", color="orange", marker="o")
-    
+        plt.scatter(
+            unfiltered_dates,
+            unfiltered_sizes,
+            label="No date filter",
+            color="orange",
+            marker="o",
+        )
+
     plt.xlabel("Trial End Date")
     plt.ylabel("Data Size")
     plt.yscale("log")
@@ -83,30 +97,41 @@ def plot_dates(data_sizes, utc_dates, date_labels, is_filtered, save_path, inclu
     thresholds = [0, 10, 100, 1000, 10000, 50000]
     total_filtered = len(filtered_sizes)
     total_unfiltered = len(unfiltered_sizes)
-    filtered_counts = [
-        len([ds for ds in filtered_sizes if ds > t]) for t in thresholds
-    ]
+    filtered_counts = [len([ds for ds in filtered_sizes if ds > t]) for t in thresholds]
     unfiltered_counts = [
         len([ds for ds in unfiltered_sizes if ds > t]) for t in thresholds
     ]
     max_data_size = max(data_sizes) if data_sizes else 1
-    
-    for t, filt_count, unfilt_count in zip(thresholds, filtered_counts, unfiltered_counts):
+
+    for t, filt_count, unfilt_count in zip(
+        thresholds, filtered_counts, unfiltered_counts
+    ):
         if t == 0:
             # Display total counts
             y_pos = max_data_size * 2
-            plt.text(xtick_positions[0], y_pos, f"Total:", color="k")
+            plt.text(xtick_positions[0], y_pos, "Total:", color="k")
             if include_unfiltered:
-                plt.text(xtick_positions[0], y_pos / 1.5, f"{total_filtered},", color="green")
-                plt.text(xtick_positions[0], y_pos / 1.5, f"    {total_unfiltered}", color="orange")
+                plt.text(
+                    xtick_positions[0], y_pos / 1.5, f"{total_filtered},", color="green"
+                )
+                plt.text(
+                    xtick_positions[0],
+                    y_pos / 1.5,
+                    f"    {total_unfiltered}",
+                    color="orange",
+                )
             else:
-                plt.text(xtick_positions[0], y_pos / 1.5, f"{total_filtered}", color="green")
+                plt.text(
+                    xtick_positions[0], y_pos / 1.5, f"{total_filtered}", color="green"
+                )
         else:
             # Display threshold counts on one line below threshold
             plt.text(xtick_positions[0], t, f">{t}:", color="k")
             if include_unfiltered:
                 plt.text(xtick_positions[0], t / 1.8, f"{filt_count},", color="green")
-                plt.text(xtick_positions[0], t / 1.8, f"    {unfilt_count}", color="orange")
+                plt.text(
+                    xtick_positions[0], t / 1.8, f"    {unfilt_count}", color="orange"
+                )
             else:
                 plt.text(xtick_positions[0], t / 1.8, f"{filt_count}", color="green")
     plt.tight_layout()
@@ -119,8 +144,12 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default=".")
     parser.add_argument("--study", type=str)
     parser.add_argument("--apo", action="store_true", default=False)
-    parser.add_argument("--include_unfiltered", action="store_true", default=False,
-                        help="Include 'no date filter' data points in plots")
+    parser.add_argument(
+        "--include_unfiltered",
+        action="store_true",
+        default=False,
+        help="Include 'no date filter' data points in plots",
+    )
     args = parser.parse_args()
 
     experiment_dir = os.path.join(args.data_path, "experiments")
@@ -180,7 +209,18 @@ if __name__ == "__main__":
     )
 
     apo_suffix = "_apo" if args.apo else ""
-    save_path = os.path.join(args.output_dir, f"{args.study}{apo_suffix}_reddit_effect_sizes.png")
+    save_path = os.path.join(
+        args.output_dir, f"{args.study}{apo_suffix}_reddit_effect_sizes.png"
+    )
     plot_effects(data_sizes, avg_effect_sizes, is_filtered, save_path, use_apo=args.apo)
-    save_path = os.path.join(args.output_dir, f"{args.study}{apo_suffix}_reddit_dates.png")
-    plot_dates(data_sizes, utc_dates, date_labels, is_filtered, save_path, include_unfiltered=args.include_unfiltered)
+    save_path = os.path.join(
+        args.output_dir, f"{args.study}{apo_suffix}_reddit_dates.png"
+    )
+    plot_dates(
+        data_sizes,
+        utc_dates,
+        date_labels,
+        is_filtered,
+        save_path,
+        include_unfiltered=args.include_unfiltered,
+    )
