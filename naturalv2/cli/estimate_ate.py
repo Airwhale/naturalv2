@@ -427,11 +427,11 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                         experiment, outcome, estimator, weighted_responses
                     )
                     for ate_result in ate_results:
-                        result.update(pipeline._data_flow)
-                        result["source_name"] = source_name
-                        result["initial_curated"] = len(curated_df)
-                        result["conditions"] = cfg.conditions
-                        result["filter_by_date"] = cfg.filter_by_date
+                        ate_result.update(pipeline._data_flow)
+                        ate_result["source_name"] = source_name
+                        ate_result["initial_curated"] = len(curated_df)
+                        ate_result["conditions"] = cfg.conditions
+                        ate_result["filter_by_date"] = cfg.filter_by_date
                     _save_results(
                         ate_results,
                         cfg.save_path,
