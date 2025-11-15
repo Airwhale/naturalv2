@@ -122,8 +122,7 @@ def _calculate_treatment_responses(
     if isinstance(estimator, NaturalMC):
         raise NotImplementedError("NaturalMC not implemented for treatment responses.")
         # all_responses = estimator.get_individual_treatment_effects(extractions, outcome)
-    else:
-        all_responses = estimator.get_individual_treatment_effects(extractions)
+    all_responses = estimator.get_individual_treatment_effects(extractions)
 
     weighted_responses = _weight_by_inclusion(
         all_responses, extractions, use_inclusion_weights
