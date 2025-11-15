@@ -42,7 +42,7 @@ class Study:
 
         self.conditions: list[str] = list(cfg.conditions)
         self.train_ratio: float = cfg.train_ratio
-        self.apo: bool = cfg.apo
+        self.ate: bool = cfg.ate
 
         train_exp = [
             Experiment(cfg.data_path, nct_id, status="completed")
@@ -250,7 +250,7 @@ class StudyDataset:
 
 
 def get_study_filepaths(
-    base_dir: str, condition: str, apo: bool = False
+    base_dir: str, condition: str, ate: bool = True
 ) -> dict[str, str]:
     """Get file paths for the study and study dataset YAML files.
 
@@ -276,7 +276,7 @@ def get_study_filepaths(
     os.makedirs(studies_dir, exist_ok=True)
 
     condition_safe = sanitize_filename(condition.lower())
-    if apo:
+    if not ate:
         condition_safe = condition_safe + "_apo"
     return {
         "study": os.path.join(studies_dir, f"{condition_safe}_study.yaml"),

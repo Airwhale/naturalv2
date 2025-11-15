@@ -120,7 +120,8 @@ def _calculate_treatment_responses(
     result_dicts = []
 
     if isinstance(estimator, NaturalMC):
-        all_responses = estimator.get_individual_treatment_effects(extractions, outcome)
+        raise NotImplementedError("NaturalMC not implemented for treatment responses.")
+        # all_responses = estimator.get_individual_treatment_effects(extractions, outcome)
     else:
         all_responses = estimator.get_individual_treatment_effects(extractions)
 
@@ -422,7 +423,7 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:
                     "apo",
                 )
 
-                if not cfg.apo:
+                if cfg.ate:
                     ate_results = _calculate_treatment_effects(
                         experiment, outcome, estimator, weighted_responses
                     )
@@ -461,7 +462,7 @@ async def _process_all_trials(cfg: DictConfig) -> None:
 
     else:
         # Load study object from YAML file
-        study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0], apo=cfg.apo)[
+        study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0], ate=cfg.ate)[
             "study"
         ]
         study = Study.from_yaml(study_file)

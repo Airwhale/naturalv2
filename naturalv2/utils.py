@@ -309,15 +309,15 @@ def check_binary_endpoint(text: str) -> bool:
     )
 
 
-def check_trial(trial: ClinicalTrial, apo: bool) -> tuple[dict[str, int], bool]:
+def check_trial(trial: ClinicalTrial, ate: bool) -> tuple[dict[str, int], bool]:
     """Check if the trial meets specific criteria.
 
     Parameters
     ----------
     trial : ClinicalTrial
         The clinical trial object to check.
-    apo: bool
-        If True, check for ONE active or comparator arm.
+    ate: bool
+        If True, check for TWO active or comparator arms.
 
     Returns
     -------
@@ -333,7 +333,7 @@ def check_trial(trial: ClinicalTrial, apo: bool) -> tuple[dict[str, int], bool]:
         "nonhealthy": 0,
         "binary_endpoint": 0,
     }
-    required_num_active = 1 if apo else 2
+    required_num_active = 2 if ate else 1
 
     if (
         get_nested_value(trial, "protocolSection.designModule.designInfo.allocation")
