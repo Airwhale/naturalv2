@@ -641,7 +641,14 @@ class RedditCurateStage(SourceStage):
             save_path, path_key = self._experiment_save_path(
                 context, experiment, study_dir
             )
+            curated_exp_key = (
+                experiment.nct_id
+                if context.filter_by_date
+                else f"{experiment.nct_id}_no_date_filter"
+            )
             if self._already_curated(save_path, experiment.nct_id):
+                curated_paths[curated_exp_key] = save_path
+                curated_data_sizes[curated_exp_key] = len(pd.read_csv(save_path))
                 continue
 
             clean_data_paths = self._collect_clean_paths_for_experiment(
@@ -652,7 +659,7 @@ class RedditCurateStage(SourceStage):
                     "No clean data paths found for experiment with NCT ID: %s",
                     experiment.nct_id,
                 )
-                curated_data_sizes[experiment.nct_id] = 0
+                curated_data_sizes[curated_exp_key] = 0
                 continue
 
             treatment_names = experiment.get_all_treatment_names_for_source(
@@ -671,11 +678,11 @@ class RedditCurateStage(SourceStage):
             )
             if rows_written == 0:
                 self._handle_empty_result(save_path, experiment.nct_id, header_written)
-                curated_data_sizes[experiment.nct_id] = 0
+                curated_data_sizes[curated_exp_key] = 0
                 continue
 
-            curated_paths[experiment.nct_id] = save_path
-            curated_data_sizes[experiment.nct_id] = rows_written
+            curated_paths[curated_exp_key] = save_path
+            curated_data_sizes[curated_exp_key] = rows_written
             self._persist_experiment_metadata(
                 context=context,
                 experiment=experiment,
