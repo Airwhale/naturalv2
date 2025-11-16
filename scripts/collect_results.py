@@ -81,9 +81,7 @@ def process_and_combine_results(all_results, experiment_name):
     return final_df
 
 
-def create_forest_plots(
-    final_df, data_path, output_path, experiment_name, estimator
-):
+def create_forest_plots(final_df, data_path, output_path, experiment_name, estimator):
     # Filter for specified estimator rows
     estimator_df = final_df[final_df["estimator"] == estimator].copy()
     estimator_df = estimator_df.sort_values("true_response", ascending=True)
@@ -283,7 +281,9 @@ def main():
     print(f"Total valid results: {len(final_df)}")
     final_df.to_csv(csv_path, index=False)
     print(f"Combined results saved to {csv_path}")
-    create_forest_plots(final_df, args.data_path, plot_path, args.experiment_name, args.estimator)
+    create_forest_plots(
+        final_df, args.data_path, plot_path, args.experiment_name, args.estimator
+    )
 
 
 if __name__ == "__main__":
