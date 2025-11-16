@@ -82,14 +82,14 @@ def process_and_combine_results(all_results, experiment_name):
 
 
 def create_forest_plots(
-    final_df, data_path, output_path, experiment_name="_gpt_gemini"
+    final_df, data_path, output_path, experiment_name, estimator
 ):
-    # Filter for NaturalIPW rows
-    naturalipw_df = final_df[final_df["estimator"] == "NaturalIPW"].copy()
-    naturalipw_df = naturalipw_df.sort_values("true_response", ascending=True)
+    # Filter for specified estimator rows
+    estimator_df = final_df[final_df["estimator"] == estimator].copy()
+    estimator_df = estimator_df.sort_values("true_response", ascending=True)
 
     # Group by nct_id and outcome
-    grouped = naturalipw_df.groupby(["nct_id", "outcome"])
+    grouped = estimator_df.groupby(["nct_id", "outcome"])
     num_plots = 0
     with PdfPages(output_path) as pdf:
         for (nct_id, outcome), group_df in grouped:
@@ -260,6 +260,12 @@ def main():
         default="_gpt_gemini",
         help="Experiment name pattern to match subdirectories",
     )
+    parser.add_argument(
+        "--estimator",
+        type=str,
+        default="NaturalIPW",
+        help="Estimator name to for which to get results",
+    )
 
     args = parser.parse_args()
 
@@ -277,7 +283,7 @@ def main():
     print(f"Total valid results: {len(final_df)}")
     final_df.to_csv(csv_path, index=False)
     print(f"Combined results saved to {csv_path}")
-    create_forest_plots(final_df, args.data_path, plot_path, args.experiment_name)
+    create_forest_plots(final_df, args.data_path, plot_path, args.experiment_name, args.estimator)
 
 
 if __name__ == "__main__":
