@@ -1,6 +1,6 @@
 defaults:
   - source@sources.reddit: reddit
-  - source@sources.pubmed: pubmed
+  # - source@sources.pubmed: pubmed
   - _self_
 
 ate: True
