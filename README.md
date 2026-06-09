@@ -1,6 +1,25 @@
 # NATURAL-v2
 
-This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) to larger data and evaluation scales. Given a medical condition, it uses LLMs to extract treatment effects from real-world text (Reddit posts, PubMed articles) and benchmarks them against ground-truth outcomes from completed clinical trials on [clinicaltrials.gov](https://clinicaltrials.gov). It can also be applied to active trials with complete recruitment to predict and pre-register results before they are published.
+This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) ([code](https://github.com/nikitadhawan/natural)) to larger data and evaluation scales. Given a medical condition, it uses LLMs to extract treatment effects from real-world text (Reddit posts, PubMed articles) and benchmarks them against ground-truth outcomes from completed clinical trials on [clinicaltrials.gov](https://clinicaltrials.gov). It can also be applied to active trials with complete recruitment to predict and pre-register results before they are published.
+
+The pipeline supports two evaluation modes, controlled by the `ate` flag throughout:
+- **APO mode** (`ate=False`, default) — estimates per-arm average potential outcomes for each treatment 
+- **ATE mode** (`ate=True`) — estimates head-to-head treatment comparisons, i.e. average treatment effects
+
+---
+
+## Contents
+
+- [Setup](#setup)
+- [Step 1 — Create a Study](#step-1--create-a-study)
+- [Step 2 — Filter and Curate Data](#step-2--filter-and-curate-data)
+- [Step 3 — Estimate Potential Outcomes](#step-3--estimate-potential-outcomes)
+- [Extending the Pipeline](#extending-the-pipeline)
+  - [Adding a New Source](#adding-a-new-source)
+  - [Adding a New Estimator](#adding-a-new-estimator)
+- [Troubleshooting](#troubleshooting)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
 
 ---
 
@@ -25,7 +44,7 @@ cp .env.example .env
 
 ---
 
-## Step 1 — Create Retrospective and Prospective Study
+## Step 1 — Create a Study
 
 Creates a study for a given condition using clinical trials from [clinicaltrials.gov](https://clinicaltrials.gov), matched against MeSH terms. Training and validation sets are constructed with a temporal split of completed trials, while the test set contains active trials for which recruitment is complete, enabling retrospective and prospective evaluation respectively.
 
@@ -77,9 +96,6 @@ uv run --active --env-file=.env filter_curate \
     experiment_name=test
 ```
 
-> [!NOTE]
-> `filter_by_date=True` restricts curated data to posts and articles published before the trial results were made public, preventing data leakage. Set to `False` to include all available data.
-
 **Output:**
 - `{save_path}/experiments/{nct_id}.yaml` — per-trial metadata (treatments, outcomes, covariates)
 - `{save_path}/{source}_data/` — downloaded source data
@@ -87,13 +103,16 @@ uv run --active --env-file=.env filter_curate \
 - `{save_path}/studies/{condition}_study_dataset.yaml` — bookkeeping for curated data paths and sizes
 
 > [!NOTE]
+> `filter_by_date=True` restricts curated data to posts and articles published before the trial results were made public, preventing data leakage. Set to `False` to include all available data.
+
+> [!NOTE]
 > Model choices and rate limits can be adjusted based on your API tier.
 
 ---
 
-## Step 3 — Estimate ATEs
+## Step 3 — Estimate Potential Outcomes
 
-Runs the extraction pipeline on curated data and estimates average potential outcomes.
+Runs the extraction pipeline on curated data and estimates average potential outcomes or average treatment effects.
 
 **Available estimators:**
 
@@ -126,7 +145,6 @@ uv run --active --env-file=.env estimate_ate \
     probs_model.model_kwargs.tensor_parallel_size=2 \
     estimator=natural_ipw \
     conditions=["Migraine","Migraine Disorders"] \
-    ate=False \
     experiment_name=test \
     split=val
 ```
@@ -134,15 +152,7 @@ uv run --active --env-file=.env estimate_ate \
 **Output:** `{save_path}/results/{nct_id}_{experiment_name}/` — CSV files with predicted and ground-truth treatment effects per trial.
 
 > [!NOTE]
-> By default, results are reported as per-arm average potential outcomes (APOs). Set `ate=True` to instead compute head-to-head treatment comparisons (ATEs).
-
-> [!NOTE]
 > Model choices and parameters can be adjusted based on your budget and hardware.
-
-### Troubleshooting
-
-> [!WARNING]
-> If a run fails partway through, it may leave behind an empty CSV. Subsequent runs will then fail with `No columns to parse from file`. Delete the empty CSV and re-run.
 
 ---
 
@@ -245,3 +255,21 @@ estimator=my_estimator
 ```
 
 ---
+
+## Troubleshooting
+
+> [!WARNING]
+> If a run fails partway through, it may leave behind an empty CSV. Subsequent runs will then fail with `No columns to parse from file`. Delete the empty CSV and re-run.
+
+---
+
+## Acknowledgements
+
+Franklin Ogidi scaled up the data collection and curation, including improvements to overall pipeline efficiency and LLM orchestration.
+We would like to thank Kieran Quinn for providing medical expertise and advice on clinical trial emulation, Elizabeth Uleryk for pointers on PubMed curation, as well as Amrit Krishnan, Rahul Krishnan, Chris Maddison, and the Vector Institute for resources and support throughout.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
