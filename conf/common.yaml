@@ -1,8 +1,6 @@
 defaults:
   - source@sources.reddit: reddit_20k
-  # Uncomment below to use PubMed or add 
-  # +source@sources.pubmed=pubmed to command line
-  # - source@sources.pubmed: pubmed  
+  - source@sources.pubmed: pubmed  
   - _self_
 
 ate: False

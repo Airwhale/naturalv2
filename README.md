@@ -1,6 +1,6 @@
 # NATURAL-v2
 
-This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) to larger data and evaluation scales.
+This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) to larger data and evaluation scales. Given a medical condition, it uses LLMs to extract treatment effects from real-world text (Reddit posts, PubMed articles) and benchmarks them against ground-truth outcomes from completed clinical trials on [clinicaltrials.gov](https://clinicaltrials.gov). It can also be applied to active trials with complete recruitment to predict and pre-register results before they are published.
 
 ---
 
@@ -14,9 +14,10 @@ cd naturalv2
 uv sync --no-cache --dev
 ```
 
-> **Tip:** Add `--active` to `uv sync` to use your current virtual environment. Otherwise, `.venv` will be created in the project root.
+> [!NOTE]
+> Add `--active` to `uv sync` to use your current virtual environment. Otherwise, `.venv` will be created in the project root.
 
-Copy the example environment file and edit as needed:
+Copy the example environment file and edit as needed, e.g. to add API keys:
 
 ```bash
 cp .env.example .env
@@ -24,71 +25,223 @@ cp .env.example .env
 
 ---
 
-## Retrospective Study
+## Step 1 — Create Retrospective and Prospective Study
 
-Create a retrospective study for a condition (e.g. "diabetes") with temporally split training and validation clinical trials:
+Creates a study for a given condition using clinical trials from [clinicaltrials.gov](https://clinicaltrials.gov), matched against MeSH terms. Training and validation sets are constructed with a temporal split of completed trials, while the test set contains active trials for which recruitment is complete, enabling retrospective and prospective evaluation respectively.
+
+**Prerequisites:** ~4 GB disk space. The first run downloads and caches all trials from [clinicaltrials.gov](https://clinicaltrials.gov); subsequent runs use the local cache.
 
 ```bash
-uv run --active --env-file=.env create_study conditions=[<condition>] experiment_name=test
+uv run --active --env-file=.env create_study conditions=["Migraine","Migraine Disorders"]
 ```
+
+**Output:** `{save_path}/studies/{condition}_study.yaml` — trial metadata and train/val/test splits.
+
+> [!NOTE]
+> Set `save_path` to control the output directory.
+
+> [!NOTE]
+> Use the same `conditions` and `save_path` in all three steps so each step can find the outputs of the previous one.
 
 ---
 
-## Data Filtering and Curation
+## Step 2 — Filter and Curate Data
 
-Filter and curate data for a source (e.g. Reddit):
+Filters and curates per-trial datasets from one or more sources, for trials in the `train`, `val`, or `test` set, according to the `split` parameter.
+
+**Available sources:**
+
+| Source | Config | Description |
+|---|---|---|
+| Reddit (top 20k) | `reddit_20k` | Filters the top 20k subreddits via the Reddit API, then downloads and curates relevant posts |
+| Reddit (full archive) | `reddit_archive` | Downloads and processes the full Pushshift Reddit archive |
+| PubMed | `pubmed` | Fetches and curates PubMed abstracts and PMC full texts |
+
+Sources are enabled in `conf/common.yaml` defaults. Use `~source@sources.<name>=<config>` to disable a source at runtime (e.g. `~source@sources.pubmed=pubmed`).
+
+**Prerequisites:** Reddit API credentials (`PRAW_CLIENT_ID`, `PRAW_CLIENT_SECRET`, `PRAW_USERNAME`, `PRAW_PWD`, `PRAW_AGENT`) set in `.env`. Obtain them by registering an app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps). LLM API key(s) for the model(s) specified below.
 
 ```bash
 uv run --active --env-file=.env filter_curate \
+    '~source@sources.pubmed=pubmed' \
     sample_model.model_id="gemini/gemini-2.5-pro" \
-    sample_model.rpm=5 \
-    sample_model.tpm=250000 \
-    sample_model.rpd=100 \
+    sample_model.rpm=145 \
+    sample_model.tpm=1950000 \
+    sample_model.rpd=10000 \
     +sample_model.thinking.type=enabled \
-    +sample_model.thinking.budget_tokens=-1 \
-    sources.reddit.stages.download_and_clean.max_download_workers=8 \
+    +sample_model.thinking.budget_tokens=2048 \
+    sample_model.max_tokens=4096 \
+    conditions=["Migraine","Migraine Disorders"] \
+    filter_by_date=True \
+    split=val \
     experiment_name=test
 ```
 
-> This will filter subreddits, download and clean relevant Reddit data, and curate experiment datasets.
+> [!NOTE]
+> `filter_by_date=True` restricts curated data to posts and articles published before the trial results were made public, preventing data leakage. Set to `False` to include all available data.
+
+**Output:**
+- `{save_path}/experiments/{nct_id}.yaml` — per-trial metadata (treatments, outcomes, covariates)
+- `{save_path}/{source}_data/` — downloaded source data
+- `{save_path}/curation_results/` — curated per-trial datasets
+- `{save_path}/studies/{condition}_study_dataset.yaml` — bookkeeping for curated data paths and sizes
+
+> [!NOTE]
+> Model choices and rate limits can be adjusted based on your API tier.
 
 ---
 
-## Estimating NATURAL ATEs
+## Step 3 — Estimate ATEs
 
-Convert curated Reddit data to NATURAL-IPW ATE:
+Runs the extraction pipeline on curated data and estimates average potential outcomes.
+
+**Available estimators:**
+
+| Estimator | Config | Description |
+|---|---|---|
+| NATURAL-IPW | `natural_ipw` | Inverse Propensity score Weighting — uses P(T, Y \| X) from vLLM logits to reweight observations |
+| NATURAL-OI | `natural_oi` | Outcome Imputation — uses P(Y \| T, X) from vLLM logits to for outcomes per treatment arm |
+| NATURAL-MC | `natural_mc` | Monte Carlo variant using off-the-shelf IPW and OI estimators |
+
+**Prerequisites:** CUDA GPU. Install vLLM with:
+
+```bash
+uv sync --no-cache --dev --extra vllm
+```
 
 ```bash
 uv run --active --env-file=.env estimate_ate \
-    ~pipeline.stages.relevance_filter \
-    cheap_model.model_id="gemini/gemini-2.5-flash" \
-    cheap_model.rpm=10 \
-    cheap_model.tpm=250000 \
-    cheap_model.rpd=250 \
-    cheap_model.max_parallel_requests=10 \
-    +cheap_model.reasoning_effort=medium \
-    sample_model.model_id="gemini/gemini-2.5-pro" \
-    sample_model.rpm=5 \
-    sample_model.tpm=250000 \
-    sample_model.rpd=100 \
-    sample_model.max_parallel_requests=10 \
+    '~source@sources.pubmed=pubmed' \
+    '~pipeline.stages.relevance_filter' \
+    model@cheap_model=openai \
+    cheap_model.model_id=gpt-4.1-mini \
+    sample_model.model_id=gemini/gemini-2.5-pro \
     +sample_model.thinking.type=enabled \
-    +sample_model.thinking.budget_tokens=-1 \
-    imputations_model.model_id="gemini/gemini-2.5-pro" \
-    imputations_model.rpm=10 \
-    imputations_model.tpm=250000 \
-    imputations_model.rpd=250 \
-    imputations_model.max_parallel_requests=10 \
-    +imputations_model.thinking.type=enabled \
-    +imputations_model.thinking.budget_tokens=-1 \
-    probs_model.model_id="meta-llama/Llama-3.3-70B-Instruct" \
-    probs_model.model_kwargs.tensor_parallel_size=4 \
-    +probs_model.model_kwargs.max_model_len=16384 \
+    +sample_model.thinking.budget_tokens=512 \
+    sample_model.max_tokens=1024 \
+    model@imputations_model=openai \
+    imputations_model.model_id=gpt-4.1 \
+    probs_model.model_id="google/gemma-3-4b-it" \
+    probs_model.model_kwargs.gpu_memory_utilization=0.4 \
+    probs_model.model_kwargs.tensor_parallel_size=2 \
     estimator=natural_ipw \
-    split=train \
-    experiment_name=test
+    conditions=["Migraine","Migraine Disorders"] \
+    ate=False \
+    experiment_name=test \
+    split=val
 ```
 
+**Output:** `{save_path}/results/{nct_id}_{experiment_name}/` — CSV files with predicted and ground-truth treatment effects per trial.
+
+> [!NOTE]
+> By default, results are reported as per-arm average potential outcomes (APOs). Set `ate=True` to instead compute head-to-head treatment comparisons (ATEs).
+
+> [!NOTE]
 > Model choices and parameters can be adjusted based on your budget and hardware.
+
+### Troubleshooting
+
+> [!WARNING]
+> If a run fails partway through, it may leave behind an empty CSV. Subsequent runs will then fail with `No columns to parse from file`. Delete the empty CSV and re-run.
+
+---
+
+## Extending the Pipeline
+
+### Adding a New Source
+
+Implement your stages in `naturalv2/sources/`, add a config YAML to `conf/source/`, and register it in `conf/common.yaml`.
+
+Each stage subclasses `CurationStage` (or `SourceStage` for filesystem helpers) and implements `async run`:
+
+```python
+from naturalv2.sources.core import CurationContext, SourceStage, StageState
+from naturalv2.utils import get_experiment_filepath
+
+class MyFetchStage(SourceStage):
+    async def run(self, context: CurationContext, state: StageState) -> StageState:
+        # fetch data, build a DataFrame with a "report" text column
+        df = ...
+        state.payload = df
+        return state
+
+class MyCurateStage(SourceStage):
+    async def run(self, context: CurationContext, state: StageState) -> StageState:
+        df = state.payload
+        curated_paths = {}
+        for experiment in context.experiments:
+            # filter df to rows mentioning experiment treatments, save to disk
+            path = ...
+            curated_paths[experiment.nct_id] = path
+
+            # Register the curated path on the experiment so estimate_ate can find it.
+            # Use the _no_date_filter suffix when filter_by_date=False.
+            source_key = context.source_name if context.filter_by_date else f"{context.source_name}_no_date_filter"
+            experiment.source_paths[source_key] = path
+
+            # Persist the updated experiment YAML (treatments, outcomes, source paths).
+            experiment.to_yaml(get_experiment_filepath(context.save_dir, experiment.nct_id))
+
+        # Record curated paths and sizes in the study dataset YAML.
+        self.persist_dataset(context, per_experiment_paths=curated_paths)
+        return state
+```
+
+Then add `conf/source/my_source.yaml`:
+
+```yaml
+# @package _global_
+stages:
+  fetch:
+    _target_: naturalv2.sources.my_source.MyFetchStage
+  curate:
+    _target_: naturalv2.sources.my_source.MyCurateStage
+```
+
+To enable it, either register it in `conf/common.yaml`:
+
+```yaml
+defaults:
+  - source@sources.my_source: my_source
+```
+
+Or add it on the command line:
+
+```bash
++source@sources.my_source=my_source
+```
+
+### Adding a New Estimator
+
+Implement your estimator class in `naturalv2/estimators/`. The only required method is `get_individual_treatment_effects`, which takes the extraction DataFrame produced by the pipeline and returns a `(num_treatments, num_samples)` array of individual treatment responses:
+
+```python
+import numpy as np
+import pandas as pd
+from naturalv2.experiment import Experiment
+
+class MyEstimator:
+    def __init__(self, experiment: Experiment) -> None:
+        self.experiment = experiment
+
+    def get_individual_treatment_effects(self, conditionals: pd.DataFrame) -> np.ndarray:
+        # conditionals contains P(T, Y | X) or P(Y | X, T) columns per treatment arm,
+        # plus discretized covariate columns ({covariate}_discretized).
+        # Return shape: (num_treatments, num_samples)
+        ...
+```
+
+Then add `conf/estimator/my_estimator.yaml`:
+
+```yaml
+_target_: naturalv2.estimators.my_estimator.MyEstimator
+experiment:
+```
+
+Select it at runtime with:
+
+```bash
+estimator=my_estimator
+```
 
 ---
