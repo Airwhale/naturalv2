@@ -1,6 +1,6 @@
 defaults:
   - source@sources.reddit: reddit_20k
-  - source@sources.pubmed: pubmed  
+  - source@sources.pubmed: pubmed
   - _self_
 
 ate: False
