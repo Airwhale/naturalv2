@@ -45,7 +45,7 @@ class Study:
         self.ate: bool = cfg.ate
 
         train_exp = [
-            Experiment(cfg.data_path, nct_id, status="completed")
+            Experiment(cfg.save_path, nct_id, status="completed")
             for (nct_id, _) in train_trials
         ]
         self.train_trials = [
@@ -58,7 +58,7 @@ class Study:
         )
 
         val_exp = [
-            Experiment(cfg.data_path, nct_id, status="completed")
+            Experiment(cfg.save_path, nct_id, status="completed")
             for (nct_id, _) in val_trials
         ]
         self.val_trials = [
@@ -71,7 +71,7 @@ class Study:
         )
 
         test_exp = [
-            Experiment(cfg.data_path, nct_id, status="active")
+            Experiment(cfg.save_path, nct_id, status="active")
             for (nct_id, _) in test_trials
         ]
         self.test_trials = [

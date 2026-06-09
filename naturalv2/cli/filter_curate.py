@@ -121,7 +121,7 @@ async def _async_main(cfg: DictConfig) -> None:
             status: Literal["completed", "active"] = (
                 "active" if split == "test" else "completed"
             )
-            experiment = Experiment(cfg.data_path, nct_id, status=status)
+            experiment = Experiment(cfg.save_path, nct_id, status=status)
         experiment_list.append(experiment)
 
     for source_name, source_cfg in cfg.sources.items():

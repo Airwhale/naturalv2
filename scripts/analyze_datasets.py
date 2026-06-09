@@ -140,7 +140,7 @@ def plot_dates(  # noqa: PLR0912, PLR0915
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_path", type=str, default=".")
+    parser.add_argument("--save_path", type=str, default=".")
     parser.add_argument("--output_dir", type=str, default=".")
     parser.add_argument("--study", type=str)
     parser.add_argument("--apo", action="store_true", default=False)
@@ -152,8 +152,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    experiment_dir = os.path.join(args.data_path, "experiments")
-    study_dataset_path = get_study_filepaths(args.data_path, args.study, apo=args.apo)[
+    experiment_dir = os.path.join(args.save_path, "experiments")
+    study_dataset_path = get_study_filepaths(args.save_path, args.study, apo=args.apo)[
         "study_dataset"
     ]
     study_dataset = StudyDataset.from_yaml(study_dataset_path)
@@ -179,7 +179,7 @@ if __name__ == "__main__":
             exp._set_outcome_treatment_effects(trial)
         except:
             print(f"No data curated for {nct_id}.")
-            exp = Experiment(args.data_path, nct_id, status="completed")
+            exp = Experiment(args.save_path, nct_id, status="completed")
         try:
             date_obj = datetime.datetime.strptime(exp.date, "%Y-%m-%d")
         except ValueError:

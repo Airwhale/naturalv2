@@ -216,10 +216,10 @@ def _process_condition_trial(
 
 def run_study_and_get_stats(cfg: DictConfig) -> dict:
     logger.info("Step 1/5: Finding valid completed trials...")
-    nct_list = find_valid_ncts(cfg.data_path, ate=cfg.ate)
+    nct_list = find_valid_ncts(cfg.save_path, ate=cfg.ate)
 
     logger.info("Step 2/5: Finding valid active test trials...")
-    test_nct_list = find_valid_ncts(cfg.data_path, ate=cfg.ate, test=True)
+    test_nct_list = find_valid_ncts(cfg.save_path, ate=cfg.ate, test=True)
     logger.info(
         "Total valid trials: %s Completed and %s Test",
         len(nct_list),
@@ -228,12 +228,12 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
 
     logger.info("Step 3/5: Filtering completed trials for %s...", cfg.conditions)
     retro_trials = find_condition_ncts(
-        nct_list, cfg.data_path, cfg.conditions, ate=cfg.ate
+        nct_list, cfg.save_path, cfg.conditions, ate=cfg.ate
     )
 
     logger.info("Step 4/5: Filtering test trials for %s...", cfg.conditions)
     test_trials = find_condition_ncts(
-        test_nct_list, cfg.data_path, cfg.conditions, ate=cfg.ate, test=True
+        test_nct_list, cfg.save_path, cfg.conditions, ate=cfg.ate, test=True
     )
 
     logger.info(
@@ -242,7 +242,7 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
         len(test_trials),
     )
     study = Study(retro_trials, test_trials, cfg)
-    study_filepath = get_study_filepaths(cfg.data_path, cfg.conditions[0], ate=cfg.ate)[
+    study_filepath = get_study_filepaths(cfg.save_path, cfg.conditions[0], ate=cfg.ate)[
         "study"
     ]
     study.to_yaml(study_filepath)

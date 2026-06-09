@@ -239,10 +239,10 @@ def main():
         description="Collect and process APO results from multiple experiment directories"
     )
     parser.add_argument(
-        "--data-path",
+        "--save-path",
         type=str,
         default="/mfs1/u/nikita/naturalv2",
-        help="Path to data directory for loading experiments",
+        help="Path to save directory for loading experiments",
     )
     parser.add_argument(
         "--output-path",
@@ -265,7 +265,7 @@ def main():
 
     args = parser.parse_args()
 
-    results_dir = os.path.join(args.data_path, "results")
+    results_dir = os.path.join(args.save_path, "results")
     os.makedirs(args.output_path, exist_ok=True)
     exp_name_clean = args.experiment_name.lstrip("_")
     csv_path = os.path.join(args.output_path, f"{exp_name_clean}_results.csv")
@@ -280,7 +280,7 @@ def main():
     final_df.to_csv(csv_path, index=False)
     print(f"Combined results saved to {csv_path}")
     create_forest_plots(
-        final_df, args.data_path, plot_path, args.experiment_name, args.estimator
+        final_df, args.save_path, plot_path, args.experiment_name, args.estimator
     )
 
 
