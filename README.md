@@ -1,6 +1,6 @@
 # NATURAL-v2
 
-This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) ([code](https://github.com/nikitadhawan/natural)) to larger data and evaluation scales. Given a medical condition, it uses LLMs to extract treatment effects from real-world text (Reddit posts, PubMed articles) and benchmarks them against ground-truth outcomes from completed clinical trials on [clinicaltrials.gov](https://clinicaltrials.gov). It can also be applied to active trials with complete recruitment to predict and pre-register results before they are published.
+This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) ([code](https://github.com/nikitadhawan/natural)) to larger data and evaluation scales. Given a medical condition, it uses LLMs to extract treatment effects from real-world text (Reddit posts, PubMed articles) and benchmarks them against ground-truth outcomes from completed clinical trials on [ClinicalTrials.gov](https://clinicaltrials.gov). It can also be applied to active trials with complete recruitment to predict and pre-register results before they are published.
 
 The pipeline supports two evaluation modes, controlled by the `ate` flag throughout:
 - **APO mode** (`ate=False`, default) — estimates per-arm average potential outcomes for each treatment 
@@ -46,9 +46,9 @@ cp .env.example .env
 
 ## Step 1 — Create a Study
 
-Creates a study for a given condition using clinical trials from [clinicaltrials.gov](https://clinicaltrials.gov), matched against MeSH terms. Training and validation sets are constructed with a temporal split of completed trials, while the test set contains active trials for which recruitment is complete, enabling retrospective and prospective evaluation respectively.
+Creates a study for a given condition using clinical trials from [ClinicalTrials.gov](https://clinicaltrials.gov), matched against MeSH terms. Training and validation sets are constructed with a temporal split of completed trials, while the test set contains active trials for which recruitment is complete, enabling retrospective and prospective evaluation respectively.
 
-**Prerequisites:** ~4 GB disk space. The first run downloads and caches all trials from [clinicaltrials.gov](https://clinicaltrials.gov); subsequent runs use the local cache.
+**Prerequisites:** ~4 GB disk space. The first run downloads and caches all trials; subsequent runs use the local cache.
 
 ```bash
 uv run --active --env-file=.env create_study conditions=["Migraine","Migraine Disorders"]
