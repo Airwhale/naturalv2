@@ -43,8 +43,12 @@ class Study:
         self.conditions: list[str] = list(cfg.conditions)
         self.train_ratio: float = cfg.train_ratio
         self.ate: bool = cfg.ate
-        ot = lambda exp: exp.apo_outcome_treatment if not self.ate else exp.outcome_treatment
-        es = lambda exp: exp.avg_potential_outcomes if not self.ate else exp.effect_sizes
+        ot = lambda exp: (
+            exp.apo_outcome_treatment if not self.ate else exp.outcome_treatment
+        )
+        es = lambda exp: (
+            exp.avg_potential_outcomes if not self.ate else exp.effect_sizes
+        )
 
         train_exp = [
             Experiment(cfg.save_path, nct_id, status="completed")
@@ -55,9 +59,7 @@ class Study:
             for exp in train_exp
             if es(exp) and ot(exp)
         ]
-        self.num_train_labels = sum(
-            [len(es(exp)) for exp in train_exp if es(exp)]
-        )
+        self.num_train_labels = sum([len(es(exp)) for exp in train_exp if es(exp)])
 
         val_exp = [
             Experiment(cfg.save_path, nct_id, status="completed")
@@ -68,9 +70,7 @@ class Study:
             for exp in val_exp
             if es(exp) and ot(exp)
         ]
-        self.num_val_labels = sum(
-            [len(es(exp)) for exp in val_exp if es(exp)]
-        )
+        self.num_val_labels = sum([len(es(exp)) for exp in val_exp if es(exp)])
 
         test_exp = [
             Experiment(cfg.save_path, nct_id, status="active")
@@ -81,9 +81,7 @@ class Study:
             for exp in test_exp
             if ot(exp)
         ]
-        self.num_test_to_predict = sum(
-            [len(ot(exp)) for exp in test_exp if ot(exp)]
-        )
+        self.num_test_to_predict = sum([len(ot(exp)) for exp in test_exp if ot(exp)])
 
         # Collect all baseline measures and their frequency
         covariates_dict: dict[str, int] = {}
