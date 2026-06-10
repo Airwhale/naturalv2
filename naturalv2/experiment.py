@@ -972,6 +972,7 @@ class Experiment:
         """Build the outcome-treatment pairs for active trials."""
         for outcome in outcomes:
             for i, arm1 in enumerate(treatments):
+                self._apo_outcome_treatment.append([outcome.measure, arm1.label])
                 for j, arm2 in enumerate(treatments):
                     if i < j:
                         normalized = [
