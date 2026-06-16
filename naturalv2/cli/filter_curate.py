@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-from typing import Literal
 
 import hydra
 from dotenv import load_dotenv
@@ -87,7 +86,10 @@ async def _async_main(cfg: DictConfig) -> None:
         weave.init(project_name="naturalv2")
 
     study_filepaths: dict[str, str] = get_study_filepaths(
-        base_dir=cfg.save_path, condition=cfg.conditions[0], ate=cfg.ate
+        base_dir=cfg.save_path,
+        condition=cfg.conditions[0],
+        experiment_name=cfg.experiment_name,
+        ate=cfg.ate,
     )
 
     # Load study from yaml
@@ -112,16 +114,17 @@ async def _async_main(cfg: DictConfig) -> None:
     # Collect experiments for curation
     experiment_list: list[Experiment] = []
     for nct_id, split in zip(all_ncts, splits):
-        experiment_filepath = get_experiment_filepath(cfg.save_path, nct_id)
+        experiment_filepath = get_experiment_filepath(
+            cfg.save_path, nct_id, cfg.experiment_name
+        )
         try:
             # Load existing experiment if available
             experiment: Experiment = Experiment.from_yaml(filename=experiment_filepath)
-        except (FileNotFoundError, ValueError):
-            # Otherwise create a new experiment instance
-            status: Literal["completed", "active"] = (
-                "active" if split == "test" else "completed"
-            )
-            experiment = Experiment(cfg.save_path, nct_id, status=status)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"No experiment YAML at {experiment_filepath}. Run create_study with "
+                f"experiment_name={cfg.experiment_name!r} first."
+            ) from e
         experiment_list.append(experiment)
 
     for source_name, source_cfg in cfg.sources.items():

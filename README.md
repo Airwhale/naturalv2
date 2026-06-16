@@ -1,6 +1,6 @@
 # NATURAL-v2
 
-This repository extends [NATURAL](https://arxiv.org/abs/2407.07018) ([code](https://github.com/nikitadhawan/natural)) to larger data and evaluation scales. Given a medical condition, it uses LLMs to extract treatment effects from real-world text (Reddit posts, PubMed articles) and benchmarks them against ground-truth outcomes from completed clinical trials on [ClinicalTrials.gov](https://clinicaltrials.gov). It can also be applied to active trials with complete recruitment to predict and pre-register results before they are published.
+This is an evolving repository to extend [NATURAL](https://arxiv.org/abs/2407.07018) ([code](https://github.com/nikitadhawan/natural)) to larger data and evaluation scales. Given a medical condition, it uses LLMs to extract treatment effects from real-world text (Reddit posts, PubMed articles) and benchmarks them against ground-truth outcomes from completed clinical trials on [ClinicalTrials.gov](https://clinicaltrials.gov). It can also be applied to active trials with complete recruitment to predict and pre-register results before they are published.
 
 The pipeline supports two evaluation modes, controlled by the `ate` flag throughout:
 - **APO mode** (`ate=False`, default) — estimates per-arm average potential outcomes for each treatment
@@ -46,21 +46,39 @@ cp .env.example .env
 
 ## Step 1 — Create a Study
 
-Creates a study for a given condition using clinical trials from [ClinicalTrials.gov](https://clinicaltrials.gov), matched against MeSH terms. Training and validation sets are constructed with a temporal split of completed trials, while the test set contains active trials for which recruitment is complete, enabling retrospective and prospective evaluation respectively.
+Creates a study for a given condition using clinical trials from [ClinicalTrials.gov](https://clinicaltrials.gov), matched against the trial's MeSH terms and listed conditions. Training and validation sets are constructed with a temporal split of completed trials, while the test set contains active trials for which recruitment is complete, enabling retrospective and prospective evaluation respectively.
+
+**Trial filtering criteria:** Only trials meeting the criteria below are included. They are configured under `trial_filters` in `conf/create_study.yaml` and can be overridden on the command line. The set of matching trials is cached per filter configuration, so changing any criterion produces a fresh cache rather than reusing a previous run's.
+
+| Criterion | Config | Default | Description |
+|---|---|---|---|
+| Randomized | `trial_filters.randomized` | `True` | Require randomized allocation |
+| Parallel | `trial_filters.parallel` | `True` | Require a parallel intervention model |
+| Active arms | `trial_filters.num_noncontrol` | `null` | Minimum number of active/comparator arms. When `null`, defaults to the value implied by `ate` (`2` if `ate=True`, else `1`) |
+| Non-healthy | `trial_filters.nonhealthy` | `True` | Exclude trials that allow healthy volunteers |
+| Binary endpoint | `trial_filters.binary_endpoint` | `True` | Require at least one binary primary endpoint |
 
 **Prerequisites:** ~4 GB disk space. The first run downloads and caches all trials; subsequent runs use the local cache.
 
 ```bash
-uv run --active --env-file=.env create_study conditions=["Migraine","Migraine Disorders"]
+uv run --active --env-file=.env create_study \
+    conditions=["Migraine","Migraine Disorders"] \
+    experiment_name=test \
+    trial_filters.binary_endpoint=False
 ```
 
-**Output:** `{save_path}/studies/{condition}_study.yaml` — trial metadata and train/val/test splits.
+**Output:**
+- `{save_path}/studies/{condition}_{experiment_name}[_apo]_study.yaml` — trial metadata and train/val/test splits. The `_apo` suffix is added in APO mode (`ate=False`).
+- `{save_path}/experiments/{experiment_name}/{nct_id}.yaml` — per-trial metadata (treatments, outcomes, covariates), with the trial-filter settings baked in. Later steps load these, so keep `experiment_name` consistent across the pipeline.
 
 > [!NOTE]
 > Set `save_path` to control the output directory.
 
 > [!NOTE]
-> Use the same `conditions` and `save_path` in all three steps so each step can find the outputs of the previous one.
+> The `experiment_name` is part of the study filename, so multiple studies for the same condition (e.g. with different `trial_filters`) can coexist without overwriting each other.
+
+> [!NOTE]
+> Use the same `conditions`, `experiment_name`, and `save_path` in all three steps so each step can find the outputs of the previous one.
 
 ---
 
@@ -97,10 +115,10 @@ uv run --active --env-file=.env filter_curate \
 ```
 
 **Output:**
-- `{save_path}/experiments/{nct_id}.yaml` — per-trial metadata (treatments, outcomes, covariates)
+- `{save_path}/experiments/{experiment_name}/{nct_id}.yaml` — per-trial metadata (treatments, outcomes, covariates)
 - `{save_path}/{source}_data/` — downloaded source data
 - `{save_path}/curation_results/` — curated per-trial datasets
-- `{save_path}/studies/{condition}_study_dataset.yaml` — bookkeeping for curated data paths and sizes
+- `{save_path}/studies/{condition}_{experiment_name}[_apo]_study_dataset.yaml` — bookkeeping for curated data paths and sizes
 
 > [!NOTE]
 > `filter_by_date=True` restricts curated data to posts and articles published before the trial results were made public, preventing data leakage. Set to `False` to include all available data.
@@ -150,6 +168,9 @@ uv run --active --env-file=.env estimate_ate \
 ```
 
 **Output:** `{save_path}/results/{nct_id}_{experiment_name}/` — CSV files with predicted and ground-truth treatment effects per trial.
+
+> [!NOTE]
+> Currently, NATURAL-IPW and NATURAL-OI are implemented for binary endpoints only.
 
 > [!NOTE]
 > Model choices and parameters can be adjusted based on your budget and hardware.

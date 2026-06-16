@@ -653,7 +653,9 @@ class PubMedCurateStage(SourceStage):
                     save_path
                 )
             experiment.to_yaml(
-                filename=get_experiment_filepath(context.save_dir, experiment.nct_id)
+                filename=get_experiment_filepath(
+                    context.save_dir, experiment.nct_id, context.experiment_name
+                )
             )
 
         state.payload = curated_paths

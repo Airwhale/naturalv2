@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import string
+from collections.abc import Mapping
 from itertools import product
 from typing import Any, Coroutine, Literal, get_args, get_origin
 
@@ -123,8 +124,13 @@ async def concurrency_limited(coro: Coroutine, semaphore: asyncio.Semaphore) -> 
         return await coro
 
 
-def get_experiment_filepath(root_dir: str, nct_id: str) -> str:
+def get_experiment_filepath(root_dir: str, nct_id: str, experiment_name: str) -> str:
     """Get the file path for an experiment YAML file.
+
+    Experiment files are namespaced by ``experiment_name`` so that multiple
+    studies for the same trial (e.g. with different trial filters) do not
+    overwrite each other. The experiment name must be kept consistent across
+    pipeline steps so each step finds the experiment written by the previous one.
 
     Parameters
     ----------
@@ -132,13 +138,17 @@ def get_experiment_filepath(root_dir: str, nct_id: str) -> str:
         The root directory where experiments are stored.
     nct_id : str
         The National Clinical Trial ID (NCT ID) of the clinical trial.
+    experiment_name : str
+        The experiment name, used as a subdirectory under ``experiments``.
 
     Returns
     -------
     str
         The full file path for the experiment YAML file.
     """
-    return os.path.join(root_dir, "experiments", f"{nct_id}.yaml")
+    return os.path.join(
+        root_dir, "experiments", sanitize_filename(experiment_name), f"{nct_id}.yaml"
+    )
 
 
 def sanitize_filename(filename: str) -> str:
@@ -309,15 +319,17 @@ def check_binary_endpoint(text: str) -> bool:
     )
 
 
-def check_trial(trial: ClinicalTrial, ate: bool) -> tuple[dict[str, int], bool]:
-    """Check if the trial meets specific criteria.
+def check_trial(
+    trial: ClinicalTrial, filters: Mapping[str, Any]
+) -> tuple[dict[str, int], bool]:
+    """Check if the trial meets the configured filtering criteria.
 
     Parameters
     ----------
     trial : ClinicalTrial
         The clinical trial object to check.
-    ate: bool
-        If True, check for TWO active or comparator arms.
+    filters : Mapping[str, Any]
+        Filtering criteria.
 
     Returns
     -------
@@ -333,50 +345,53 @@ def check_trial(trial: ClinicalTrial, ate: bool) -> tuple[dict[str, int], bool]:
         "nonhealthy": 0,
         "binary_endpoint": 0,
     }
-    required_num_active = 2 if ate else 1
 
-    if (
+    valid = True
+
+    randomized = (
         get_nested_value(trial, "protocolSection.designModule.designInfo.allocation")
         == DesignAllocation.RANDOMIZED
-    ):
-        stats["randomized"] = 1
-        if (
-            get_nested_value(
-                trial, "protocolSection.designModule.designInfo.interventionModel"
-            )
-            == InterventionalAssignment.PARALLEL
-        ):
-            stats["parallel"] = 1
+    )
+    if filters["randomized"] and not randomized:
+        valid = False
+    stats["randomized"] = int(valid)
 
-            arm_groups: list[ArmGroup] | None = get_nested_value(
-                trial, "protocolSection.armsInterventionsModule.armGroups"
-            )
-            # noncontrol_arms = [
-            #     arm for arm in (arm_groups or []) if check_noncontrol(arm.type)
-            # ]
-            # nonplacebo_arms = [
-            #     arm for arm in noncontrol_arms if check_nonplacebo(arm.interventionNames)
-            # ]
-            active_exp_arms = [arm for arm in (arm_groups or []) if check_arm(arm.type)]
-            if len(active_exp_arms) >= required_num_active:
-                stats["multiple_noncontrol"] = 1
+    parallel = (
+        get_nested_value(
+            trial, "protocolSection.designModule.designInfo.interventionModel"
+        )
+        == InterventionalAssignment.PARALLEL
+    )
+    if filters["parallel"] and not parallel:
+        valid = False
+    stats["parallel"] = int(valid)
 
-                inclusion_criteria = trial.protocolSection.eligibilityModule
-                if inclusion_criteria and not inclusion_criteria.healthyVolunteers:
-                    stats["nonhealthy"] = 1
-                    binary = False
+    arm_groups: list[ArmGroup] | None = get_nested_value(
+        trial, "protocolSection.armsInterventionsModule.armGroups"
+    )
+    active_exp_arms = [arm for arm in (arm_groups or []) if check_arm(arm.type)]
+    enough_arms = len(active_exp_arms) >= filters["num_noncontrol"]
+    if not enough_arms:
+        valid = False
+    stats["multiple_noncontrol"] = int(valid)
 
-                    endpoints: list[Outcome] | None = get_nested_value(
-                        trial, "protocolSection.outcomesModule.primaryOutcomes"
-                    )
-                    for endpoint in endpoints or []:
-                        if check_binary_endpoint(endpoint.measure):
-                            stats["binary_endpoint"] = 1
-                            binary = True
-                            break
-                    if binary:
-                        return stats, True
-    return stats, False
+    inclusion_criteria = trial.protocolSection.eligibilityModule
+    nonhealthy = bool(inclusion_criteria) and not inclusion_criteria.healthyVolunteers
+    if filters["nonhealthy"] and not nonhealthy:
+        valid = False
+    stats["nonhealthy"] = int(valid)
+
+    endpoints: list[Outcome] | None = get_nested_value(
+        trial, "protocolSection.outcomesModule.primaryOutcomes"
+    )
+    binary = any(
+        check_binary_endpoint(endpoint.measure) for endpoint in (endpoints or [])
+    )
+    if filters["binary_endpoint"] and not binary:
+        valid = False
+    stats["binary_endpoint"] = int(valid)
+
+    return stats, valid
 
 
 def get_nested_value(data: Any, path: str) -> Any | None:

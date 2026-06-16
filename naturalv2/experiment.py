@@ -155,9 +155,13 @@ class Experiment:
         self,
         data_path: str,
         nct_id: str,
+        experiment_name: str,
         status: Literal["completed", "active"] = "completed",
+        require_binary_endpoint: bool = True,
     ) -> None:
         self.data_path = data_path
+        self.experiment_name = experiment_name
+        self._require_binary_endpoint = require_binary_endpoint
         if status == "active":
             self.trial_path = os.path.join(data_path, f"nct_reports_test/{nct_id}.json")
         else:
@@ -957,7 +961,8 @@ class Experiment:
         outcomes: list[Outcome] = [
             outcome
             for outcome in primary_outcomes or []
-            if check_binary_endpoint(outcome.measure)
+            if not self._require_binary_endpoint
+            or check_binary_endpoint(outcome.measure)
         ]
         treatments: list[ArmGroup] = [
             arm
@@ -996,7 +1001,10 @@ class Experiment:
             outcome
             for outcome in trial_outcome_measures or []
             if outcome.type == OutcomeMeasureType.PRIMARY
-            and check_binary_endpoint(outcome.title)
+            and (
+                not self._require_binary_endpoint
+                or check_binary_endpoint(outcome.title)
+            )
         ]
         treatments: list[MeasureGroup] = []
         for outcome in outcomes:
@@ -1141,7 +1149,7 @@ class Experiment:
         # NOTE: This helps in the case where the experiment is run multiple times
         # so that transforms are available after the first run.
         exp_dir: Path = Path(
-            get_experiment_filepath(self.data_path, self.nct_id)
+            get_experiment_filepath(self.data_path, self.nct_id, self.experiment_name)
         ).parent
         exp_dir.mkdir(mode=755, parents=True, exist_ok=True)
         self.to_yaml(filename=str(exp_dir / f"{self.nct_id}.yaml"))

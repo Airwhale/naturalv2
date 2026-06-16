@@ -156,7 +156,9 @@ class SynonymStage(SourceStage):
                 context.source_name
             ].update(synonyms_dict)
 
-            exp_file: str = get_experiment_filepath(context.save_dir, experiment.nct_id)
+            exp_file: str = get_experiment_filepath(
+                context.save_dir, experiment.nct_id, context.experiment_name
+            )
             experiment.to_yaml(filename=exp_file)
 
         state.update(num_keywords=num_keywords, num_synonyms=num_synonyms)
