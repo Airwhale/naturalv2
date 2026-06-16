@@ -345,7 +345,7 @@ def check_trial(
         "nonhealthy": 0,
         "binary_endpoint": 0,
     }
-  
+
     valid = True
 
     randomized = (

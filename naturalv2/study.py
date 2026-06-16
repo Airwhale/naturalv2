@@ -4,7 +4,7 @@ import logging
 import os
 
 import yaml
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from naturalv2.experiment import Experiment
 from naturalv2.utils import get_experiment_filepath, sanitize_filename
@@ -288,7 +288,9 @@ def get_study_filepaths(
     studies_dir = os.path.join(base_dir, "studies")
     os.makedirs(studies_dir, exist_ok=True)
 
-    name = f"{sanitize_filename(condition.lower())}_{sanitize_filename(experiment_name)}"
+    name = (
+        f"{sanitize_filename(condition.lower())}_{sanitize_filename(experiment_name)}"
+    )
     if not ate:
         name = name + "_apo"
     return {

@@ -60,9 +60,7 @@ def filters_cache_slug(filters: dict) -> str:
     return "_".join(parts)
 
 
-def find_valid_ncts(
-    data_path: str, filters: dict, test: bool = False
-) -> list[str]:
+def find_valid_ncts(data_path: str, filters: dict, test: bool = False) -> list[str]:
     """Find valid NCT IDs from clinical trial reports.
 
     This function processes clinical trial JSON files to identify valid trials
@@ -275,9 +273,7 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
     )
 
     logger.info("Step 3/5: Filtering completed trials for %s...", cfg.conditions)
-    retro_trials = find_condition_ncts(
-        nct_list, cfg.save_path, cfg.conditions, filters
-    )
+    retro_trials = find_condition_ncts(nct_list, cfg.save_path, cfg.conditions, filters)
 
     logger.info("Step 4/5: Filtering test trials for %s...", cfg.conditions)
     test_trials = find_condition_ncts(

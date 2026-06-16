@@ -1001,7 +1001,10 @@ class Experiment:
             outcome
             for outcome in trial_outcome_measures or []
             if outcome.type == OutcomeMeasureType.PRIMARY
-            and (not self._require_binary_endpoint or check_binary_endpoint(outcome.title))
+            and (
+                not self._require_binary_endpoint
+                or check_binary_endpoint(outcome.title)
+            )
         ]
         treatments: list[MeasureGroup] = []
         for outcome in outcomes:
@@ -1146,9 +1149,7 @@ class Experiment:
         # NOTE: This helps in the case where the experiment is run multiple times
         # so that transforms are available after the first run.
         exp_dir: Path = Path(
-            get_experiment_filepath(
-                self.data_path, self.nct_id, self.experiment_name
-            )
+            get_experiment_filepath(self.data_path, self.nct_id, self.experiment_name)
         ).parent
         exp_dir.mkdir(mode=755, parents=True, exist_ok=True)
         self.to_yaml(filename=str(exp_dir / f"{self.nct_id}.yaml"))
