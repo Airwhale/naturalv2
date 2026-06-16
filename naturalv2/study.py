@@ -4,10 +4,10 @@ import logging
 import os
 
 import yaml
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from naturalv2.experiment import Experiment
-from naturalv2.utils import sanitize_filename
+from naturalv2.utils import get_experiment_filepath, sanitize_filename
 
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,9 @@ class Study:
         self.conditions: list[str] = list(cfg.conditions)
         self.train_ratio: float = cfg.train_ratio
         self.ate: bool = cfg.ate
+        self.experiment_name: str = cfg.experiment_name
+
+        require_binary_endpoint: bool = cfg.trial_filters.binary_endpoint
         ot = lambda exp: (
             exp.apo_outcome_treatment if not self.ate else exp.outcome_treatment
         )
@@ -50,10 +53,15 @@ class Study:
             exp.avg_potential_outcomes if not self.ate else exp.effect_sizes
         )
 
-        train_exp = [
-            Experiment(cfg.save_path, nct_id, status="completed")
-            for (nct_id, _) in train_trials
-        ]
+        build_exp = lambda nct_id, status: Experiment(
+            cfg.save_path,
+            nct_id,
+            self.experiment_name,
+            status=status,
+            require_binary_endpoint=require_binary_endpoint,
+        )
+
+        train_exp = [build_exp(nct_id, "completed") for (nct_id, _) in train_trials]
         self.train_trials = [
             {exp.nct_id: [exp.title, exp.date] + list(exp.references)}
             for exp in train_exp
@@ -61,10 +69,7 @@ class Study:
         ]
         self.num_train_labels = sum([len(es(exp)) for exp in train_exp if es(exp)])
 
-        val_exp = [
-            Experiment(cfg.save_path, nct_id, status="completed")
-            for (nct_id, _) in val_trials
-        ]
+        val_exp = [build_exp(nct_id, "completed") for (nct_id, _) in val_trials]
         self.val_trials = [
             {exp.nct_id: [exp.title, exp.date] + list(exp.references)}
             for exp in val_exp
@@ -72,16 +77,19 @@ class Study:
         ]
         self.num_val_labels = sum([len(es(exp)) for exp in val_exp if es(exp)])
 
-        test_exp = [
-            Experiment(cfg.save_path, nct_id, status="active")
-            for (nct_id, _) in test_trials
-        ]
+        test_exp = [build_exp(nct_id, "active") for (nct_id, _) in test_trials]
         self.test_trials = [
             {exp.nct_id: [exp.title, exp.date] + list(exp.references)}
             for exp in test_exp
             if ot(exp)
         ]
         self.num_test_to_predict = sum([len(ot(exp)) for exp in test_exp if ot(exp)])
+
+        # Persist each experiment so later pipeline steps load it.
+        for exp in train_exp + val_exp + test_exp:
+            exp.to_yaml(
+                get_experiment_filepath(cfg.save_path, exp.nct_id, self.experiment_name)
+            )
 
         # Collect all baseline measures and their frequency
         covariates_dict: dict[str, int] = {}
@@ -250,7 +258,7 @@ class StudyDataset:
 
 
 def get_study_filepaths(
-    base_dir: str, condition: str, ate: bool = True
+    base_dir: str, condition: str, experiment_name: str, ate: bool = True
 ) -> dict[str, str]:
     """Get file paths for the study and study dataset YAML files.
 
@@ -260,6 +268,11 @@ def get_study_filepaths(
         The base directory where the study files will be stored.
     condition : str
         The condition for which the study files are being created.
+    experiment_name : str
+        The experiment name, included in the filename so that multiple studies
+        for the same condition (e.g. different trial filters) do not collide.
+    ate : bool, default=True
+        If False, the ``_apo`` estimand suffix is appended to the filename.
 
     Returns
     -------
@@ -275,12 +288,10 @@ def get_study_filepaths(
     studies_dir = os.path.join(base_dir, "studies")
     os.makedirs(studies_dir, exist_ok=True)
 
-    condition_safe = sanitize_filename(condition.lower())
+    name = f"{sanitize_filename(condition.lower())}_{sanitize_filename(experiment_name)}"
     if not ate:
-        condition_safe = condition_safe + "_apo"
+        name = name + "_apo"
     return {
-        "study": os.path.join(studies_dir, f"{condition_safe}_study.yaml"),
-        "study_dataset": os.path.join(
-            studies_dir, f"{condition_safe}_study_dataset.yaml"
-        ),
+        "study": os.path.join(studies_dir, f"{name}_study.yaml"),
+        "study_dataset": os.path.join(studies_dir, f"{name}_study_dataset.yaml"),
     }

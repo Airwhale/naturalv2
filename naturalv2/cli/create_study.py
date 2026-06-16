@@ -5,7 +5,7 @@ import os
 
 import hydra
 import yaml
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from tqdm.contrib.concurrent import thread_map
 from tqdm.contrib.logging import logging_redirect_tqdm
 
@@ -18,7 +18,51 @@ from naturalv2.utils import check_trial, get_nested_value
 logger = logging.getLogger(__name__)
 
 
-def find_valid_ncts(data_path: str, ate: bool = True, test: bool = False) -> list[str]:
+def resolve_trial_filters(cfg: DictConfig) -> dict:
+    """Resolve and validate the trial filtering criteria from the config.
+
+    ``num_noncontrol`` defaults to the value implied by ``ate`` (2 if ``ate``
+    else 1) when left null. If it is set to a value incompatible with ``ate``,
+    a warning is emitted but the configured value is respected.
+    """
+    filters = OmegaConf.to_container(cfg.trial_filters, resolve=True)
+    expected_num_noncontrol = 2 if cfg.ate else 1
+    if filters.get("num_noncontrol") is None:
+        filters["num_noncontrol"] = expected_num_noncontrol
+    elif filters["num_noncontrol"] != expected_num_noncontrol:
+        logger.warning(
+            "trial_filters.num_noncontrol=%s is incompatible with ate=%s "
+            "(expected %s); using the configured value.",
+            filters["num_noncontrol"],
+            cfg.ate,
+            expected_num_noncontrol,
+        )
+    return filters
+
+
+def filters_cache_slug(filters: dict) -> str:
+    """Build a deterministic cache-file slug from the trial filters.
+
+    Encodes exactly the criteria that determine trial validity, so distinct
+    filter settings never share a cache file. Boolean flags appear by name only
+    when enabled; ``num_noncontrol`` always appears with its value.
+    """
+    parts = []
+    if filters["randomized"]:
+        parts.append("randomized")
+    if filters["parallel"]:
+        parts.append("parallel")
+    parts.append(f"num_noncontrol{filters['num_noncontrol']}")
+    if filters["nonhealthy"]:
+        parts.append("nonhealthy")
+    if filters["binary_endpoint"]:
+        parts.append("binary")
+    return "_".join(parts)
+
+
+def find_valid_ncts(
+    data_path: str, filters: dict, test: bool = False
+) -> list[str]:
     """Find valid NCT IDs from clinical trial reports.
 
     This function processes clinical trial JSON files to identify valid trials
@@ -29,8 +73,9 @@ def find_valid_ncts(data_path: str, ate: bool = True, test: bool = False) -> lis
     ----------
     data_path : str
         The path to the directory containing clinical trial JSON files.
-    ate: bool, default=True
-        If True, include trials with at least TWO active or comparator arm.
+    filters : dict
+        Resolved trial filtering criteria. Also keys the cache filename so that
+        distinct filter settings do not reuse each other's results.
     test : bool, default=False
         If True, processes test data; otherwise, processes training data.
         Defaults to False.
@@ -49,9 +94,7 @@ def find_valid_ncts(data_path: str, ate: bool = True, test: bool = False) -> lis
         "binary_endpoint": 0,
     }
     trial_path = os.path.join(data_path, "nct_reports" + ("_test" if test else ""))
-    nct_file = (
-        "valid_parallel_binary_nct_ids" if ate else "valid_parallel_binary_apo_nct_ids"
-    )
+    nct_file = f"valid_{filters_cache_slug(filters)}_nct_ids"
     valid_nct_path = os.path.join(trial_path, f"{nct_file}.txt")
 
     if not os.path.exists(trial_path):
@@ -59,7 +102,7 @@ def find_valid_ncts(data_path: str, ate: bool = True, test: bool = False) -> lis
 
     if not os.path.exists(valid_nct_path):
         file_list = [
-            (filename, trial_path, ate)
+            (filename, trial_path, filters)
             for filename in os.listdir(trial_path)
             if filename.endswith(".json")
         ]
@@ -94,7 +137,7 @@ def find_condition_ncts(
     nct_ids: list[str],
     data_path: str,
     conditions: list[str],
-    ate: bool = True,
+    filters: dict,
     test: bool = False,
 ) -> list[tuple[str, str | None]]:
     """Find NCT IDs of trials related to specific conditions.
@@ -111,8 +154,9 @@ def find_condition_ncts(
         The path to the directory containing clinical trial JSON files.
     conditions : list[str]
         A list of medical conditions to filter trials by.
-    ate: bool, default=True
-        If True, trials with at least TWO active or comparator arms are included.
+    filters : dict
+        Resolved trial filtering criteria. Keys the cache filename so distinct
+        filter settings do not reuse each other's results.
     test : bool, default=False
         If True, processes test data; otherwise, processes training data.
 
@@ -124,11 +168,7 @@ def find_condition_ncts(
         include only trials that match the specified conditions.
     """
     trial_path = os.path.join(data_path, "nct_reports" + ("_test" if test else ""))
-    nct_file = (
-        f"valid_parallel_binary_{conditions[0]}_nct_ids"
-        if ate
-        else f"valid_parallel_binary_apo_{conditions[0]}_nct_ids"
-    )
+    nct_file = f"valid_{filters_cache_slug(filters)}_{conditions[0]}_nct_ids"
     condition_nct_path = os.path.join(trial_path, f"{nct_file}.txt")
     condition_trials: list[tuple[str, str | None]] = []
     conditions_set = {cond.replace("_", " ").lower() for cond in conditions}
@@ -159,13 +199,13 @@ def find_condition_ncts(
 
 
 def _process_trial_file(
-    args: tuple[str, str, bool],
+    args: tuple[str, str, dict],
 ) -> tuple[str, dict[str, int], bool]:
     """Process a single clinical trial JSON file to extract its NCT ID and statistics."""
-    filename, trial_path, ate = args
+    filename, trial_path, filters = args
     if filename.endswith(".json"):
         trial = ClinicalTrial.from_json_file(os.path.join(trial_path, filename))
-        trial_stats, check = check_trial(trial, ate)
+        trial_stats, check = check_trial(trial, filters)
         return trial.protocolSection.identificationModule.nctId, trial_stats, check
     return "", {}, False
 
@@ -185,19 +225,24 @@ def _process_condition_trial(
         trial, "derivedSection.conditionBrowseModule.meshes"
     )
     trial_disease_mesh = [mesh.term for mesh in meshes] if meshes else []
-    trial_mesh_set = {mesh.lower() for mesh in trial_disease_mesh}
+    trial_conditions: list[str] | None = get_nested_value(
+        trial, "protocolSection.conditionsModule.conditions"
+    )
+    trial_condition_set = {
+        term.lower() for term in trial_disease_mesh + (trial_conditions or [])
+    }
 
     # Remove "disease" or "diseases" from the set
-    # trial_mesh_set = {
-    #     term for term in trial_mesh_set if term not in {"disease", "diseases"}
+    # trial_condition_set = {
+    #     term for term in trial_condition_set if term not in {"disease", "diseases"}
     # }
 
-    # Check if any of the conditions match the trial's disease mesh
+    # Check if any of the conditions match the trial's disease mesh or conditions
     matching_conditions = [
-        trial_mesh
-        for trial_mesh in trial_mesh_set
-        if any(condition in trial_mesh for condition in conditions_set)
-        or any(trial_mesh in condition for condition in conditions_set)
+        trial_condition
+        for trial_condition in trial_condition_set
+        if any(condition in trial_condition for condition in conditions_set)
+        or any(trial_condition in condition for condition in conditions_set)
     ]
 
     if matching_conditions:
@@ -215,11 +260,14 @@ def _process_condition_trial(
 
 
 def run_study_and_get_stats(cfg: DictConfig) -> dict:
+    filters = resolve_trial_filters(cfg)
+    logger.info("Trial filters: %s", filters)
+
     logger.info("Step 1/5: Finding valid completed trials...")
-    nct_list = find_valid_ncts(cfg.save_path, ate=cfg.ate)
+    nct_list = find_valid_ncts(cfg.save_path, filters)
 
     logger.info("Step 2/5: Finding valid active test trials...")
-    test_nct_list = find_valid_ncts(cfg.save_path, ate=cfg.ate, test=True)
+    test_nct_list = find_valid_ncts(cfg.save_path, filters, test=True)
     logger.info(
         "Total valid trials: %s Completed and %s Test",
         len(nct_list),
@@ -228,12 +276,12 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
 
     logger.info("Step 3/5: Filtering completed trials for %s...", cfg.conditions)
     retro_trials = find_condition_ncts(
-        nct_list, cfg.save_path, cfg.conditions, ate=cfg.ate
+        nct_list, cfg.save_path, cfg.conditions, filters
     )
 
     logger.info("Step 4/5: Filtering test trials for %s...", cfg.conditions)
     test_trials = find_condition_ncts(
-        test_nct_list, cfg.save_path, cfg.conditions, ate=cfg.ate, test=True
+        test_nct_list, cfg.save_path, cfg.conditions, filters, test=True
     )
 
     logger.info(
@@ -242,9 +290,9 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
         len(test_trials),
     )
     study = Study(retro_trials, test_trials, cfg)
-    study_filepath = get_study_filepaths(cfg.save_path, cfg.conditions[0], ate=cfg.ate)[
-        "study"
-    ]
+    study_filepath = get_study_filepaths(
+        cfg.save_path, cfg.conditions[0], cfg.experiment_name, ate=cfg.ate
+    )["study"]
     study.to_yaml(study_filepath)
 
     return {
@@ -262,7 +310,9 @@ def run_study_and_get_stats(cfg: DictConfig) -> dict:
 
 
 # TODO: improve on relative path for config
-@hydra.main(config_path="../../conf/", config_name="common.yaml", version_base="1.2")
+@hydra.main(
+    config_path="../../conf/", config_name="create_study.yaml", version_base="1.2"
+)
 def main(cfg: DictConfig) -> None:
     with logging_redirect_tqdm():
         stats = run_study_and_get_stats(cfg)

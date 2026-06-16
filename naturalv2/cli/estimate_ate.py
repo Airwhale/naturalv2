@@ -279,7 +279,7 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:  # noqa: PLR0912
 
     # Load the experiment configuration
     try:
-        exp_file = get_experiment_filepath(cfg.save_path, nct_id)
+        exp_file = get_experiment_filepath(cfg.save_path, nct_id, cfg.experiment_name)
         experiment = Experiment.from_yaml(exp_file)
     except (FileNotFoundError, ValueError) as e:
         logger.error(
@@ -469,9 +469,9 @@ async def _process_all_trials(cfg: DictConfig) -> None:
 
     else:
         # Load study object from YAML file
-        study_file = get_study_filepaths(cfg.save_path, cfg.conditions[0], ate=cfg.ate)[
-            "study"
-        ]
+        study_file = get_study_filepaths(
+            cfg.save_path, cfg.conditions[0], cfg.experiment_name, ate=cfg.ate
+        )["study"]
         study = Study.from_yaml(study_file)
 
         if cfg.split not in ["train", "val", "test"]:
