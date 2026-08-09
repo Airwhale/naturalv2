@@ -217,7 +217,8 @@ def get_save_path(
 
 
 def check_nonplacebo(intervention_names: list[str] | None) -> bool:
-    """Check if there are any non-placebo interventions.
+    """No longer used.
+    Check if there are any non-placebo interventions.
 
     Parameters
     ----------

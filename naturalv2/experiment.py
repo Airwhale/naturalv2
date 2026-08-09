@@ -14,11 +14,13 @@ import yaml
 
 from naturalv2.clinical_trial import (
     ArmGroup,
+    ArmGroupType,
     BaselineMeasure,
     ClinicalTrial,
     Location,
     MeasureGroup,
     Measurement,
+    MeasureParam,
     Mesh,
     Outcome,
     OutcomeMeasure,
@@ -35,7 +37,6 @@ from naturalv2.sources.drugbank_cache import get_drugbank_aliases
 from naturalv2.utils import (
     check_arm,
     check_binary_endpoint,
-    check_nonplacebo,
     get_experiment_filepath,
     get_nested_value,
     normalize_treatment,
@@ -50,6 +51,25 @@ DRUG_NAME_SANITIZER = re.compile(
     r"\s+\d+([./]\d+)*\s*(mg|g|mcg|ug|ml|iu|units|tablets?|capsules?)?\b.*$",
     flags=re.IGNORECASE,
 )
+
+_COUNT_PARAM_TYPES = frozenset(
+    {
+        MeasureParam.NUMBER,
+        MeasureParam.COUNT_OF_PARTICIPANTS,
+        MeasureParam.COUNT_OF_UNITS,
+    }
+)
+
+
+def _normalize_outcome_value(
+    raw_value: float, denom: float, unit: str, param_type: MeasureParam | None
+) -> float:
+    """Convert a raw count to a proportion for count outcomes; leave continuous outcomes as-is."""
+    if "percent" in unit:
+        return raw_value / 100
+    if param_type in _COUNT_PARAM_TYPES:
+        return raw_value / denom
+    return raw_value
 
 
 class Experiment:
@@ -271,9 +291,14 @@ class Experiment:
         # Set expected choices for each feature
         # NOTE: options for covariates can only be set when we get some data
         # (see `discretize` method)
-        self.options: dict[str, list[str]] = {}
-        for feat in [INCLUSION_COL_NAME] + self.outcome_names:
-            self.options.update({feat: ["No", "Yes"]})
+        self.options: dict[str, list[str]] = {INCLUSION_COL_NAME: ["No", "Yes"]}
+        for outcome_name in self.outcome_names:
+            # Binary/count outcomes are extracted as Yes/No; continuous outcomes
+            # (e.g. MEAN, LEAST_SQUARES_MEAN) have no fixed option set since they're
+            # extracted directly as numbers (see `is_binary_outcome`).
+            self.options[outcome_name] = (
+                ["No", "Yes"] if self.is_binary_outcome(outcome_name) else []
+            )
         self.options.update({TREATMENT_COL_NAME: self.treatment_names})
 
         # Store different representations of the features
@@ -601,8 +626,23 @@ class Experiment:
         self._set_transforms()
         return extractions
 
-    def discretize_ty(self, extractions: pd.DataFrame) -> pd.DataFrame:
-        self._discretize_outcome_column(extractions)
+    def is_binary_outcome(self, outcome_name: str) -> bool:
+        """Whether ``outcome_name`` should be extracted/discretized as Yes/No.
+
+        Uses the trial's reported ``paramType`` when it's known (completed
+        trials): count-style params (``NUMBER``, ``COUNT_OF_PARTICIPANTS``,
+        ``COUNT_OF_UNITS``) are binary outcomes, continuous params (``MEAN``,
+        ``MEDIAN``, ``LEAST_SQUARES_MEAN``, etc.) are not. Active trials have no
+        ``paramType`` yet (results aren't posted), so this falls back to the
+        same title-based heuristic used to filter binary-endpoint trials.
+        """
+        param_type = getattr(self, "_outcome_param_types", {}).get(outcome_name)
+        if param_type is not None:
+            return param_type in _COUNT_PARAM_TYPES
+        return check_binary_endpoint(outcome_name)
+
+    def discretize_ty(self, extractions: pd.DataFrame, outcome: str) -> pd.DataFrame:
+        self._discretize_outcome_column(extractions, outcome)
         self._discretize_treatment_column(extractions)
         return extractions
 
@@ -698,6 +738,7 @@ class Experiment:
             "inclusion_criteria": self.inclusion_criteria,
             "covariate_answers": covariate_answers,
             "treatment_options": self.options[TREATMENT_COL_NAME],
+            "outcome_is_binary": self.is_binary_outcome(outcome),
             "outcome_options": ["No", "Yes"],
             "report": report,
         }
@@ -877,16 +918,23 @@ class Experiment:
         )
         self.options.update({covariate_name: [str(name) for name in all_answers]})
 
-    def _discretize_outcome_column(self, extractions: pd.DataFrame) -> None:
-        """ "Discretize binary columns in the extractions DataFrame."""
+    def _discretize_outcome_column(
+        self, extractions: pd.DataFrame, outcome: str
+    ) -> None:
+        """Discretize the outcome column in the extractions DataFrame."""
         if OUTCOME_COL_NAME not in extractions.columns:
             raise ValueError(
                 f"`{OUTCOME_COL_NAME}` column is missing from extractions."
             )
-        binary_map_num = {"No": 0, "Yes": 1}
-        extractions[OUTCOME_COL_NAME + "_discretized"] = extractions[
-            OUTCOME_COL_NAME
-        ].replace(binary_map_num)
+        if self.is_binary_outcome(outcome):
+            binary_map_num = {"No": 0, "Yes": 1}
+            extractions[OUTCOME_COL_NAME + "_discretized"] = extractions[
+                OUTCOME_COL_NAME
+            ].replace(binary_map_num)
+        else:
+            extractions[OUTCOME_COL_NAME + "_discretized"] = pd.to_numeric(
+                extractions[OUTCOME_COL_NAME], errors="coerce"
+            )
 
     def _discretize_treatment_column(self, extractions: pd.DataFrame) -> None:
         """ "Discretize the treatment column in the extractions DataFrame."""
@@ -919,8 +967,11 @@ class Experiment:
             outcomes, treatments = self._get_active_outcomes_treatments(trial)
             self._build_active_outcome_treatment(outcomes, treatments)
         else:
-            outcomes, treatments = self._get_completed_outcomes_treatments(trial)
-            self._build_completed_outcome_treatment(outcomes)
+            arm_types = self._get_arm_group_types(trial)
+            outcomes, treatments = self._get_completed_outcomes_treatments(
+                trial, arm_types
+            )
+            self._build_completed_outcome_treatment(outcomes, arm_types)
 
         self._treatment_names: list[str] = [
             treatment.title if hasattr(treatment, "title") else treatment.label
@@ -930,6 +981,14 @@ class Experiment:
             outcome.title if hasattr(outcome, "title") else outcome.measure
             for outcome in outcomes
         ]
+        self._outcome_param_types: dict[str, str | None] = {
+            (outcome.title if hasattr(outcome, "title") else outcome.measure): (
+                getattr(outcome, "paramType", None).value
+                if getattr(outcome, "paramType", None) is not None
+                else None
+            )
+            for outcome in outcomes
+        }
 
         self._outcome_timeframes: list[str | None] = [
             getattr(outcome, "timeFrame", None) for outcome in outcomes
@@ -965,11 +1024,22 @@ class Experiment:
             or check_binary_endpoint(outcome.measure)
         ]
         treatments: list[ArmGroup] = [
-            arm
-            for arm in arm_groups or []
-            if check_arm(arm.type) and check_nonplacebo([arm.label])
+            arm for arm in arm_groups or [] if check_arm(arm.type)
         ]
         return outcomes, treatments
+
+    def _get_arm_group_types(self, trial: ClinicalTrial) -> dict[str, ArmGroupType]:
+        """Map each registered arm's label to its ``ArmGroupType``.
+
+        Results-section cohorts (``MeasureGroup``) don't carry a type
+        themselves, so completed-trial arm selection cross-references cohort
+        titles against the protocol section's arm groups by label to classify
+        them.
+        """
+        arm_groups: list[ArmGroup] | None = get_nested_value(
+            trial, "protocolSection.armsInterventionsModule.armGroups"
+        )
+        return {arm.label: arm.type for arm in arm_groups or [] if arm.type is not None}
 
     def _build_active_outcome_treatment(
         self, outcomes: list[Outcome], treatments: list[ArmGroup]
@@ -991,7 +1061,7 @@ class Experiment:
                             )
 
     def _get_completed_outcomes_treatments(
-        self, trial: ClinicalTrial
+        self, trial: ClinicalTrial, arm_types: dict[str, ArmGroupType]
     ) -> tuple[list[OutcomeMeasure], list[MeasureGroup]]:
         trial_outcome_measures: list[OutcomeMeasure] | None = get_nested_value(
             trial,
@@ -1006,24 +1076,28 @@ class Experiment:
                 or check_binary_endpoint(outcome.title)
             )
         ]
+        # Cohorts are shared across primary outcomes, so dedupe by title to
+        # avoid listing the same arm once per outcome it appears in.
         treatments: list[MeasureGroup] = []
+        seen_titles: set[str] = set()
         for outcome in outcomes:
-            measure_groups: list[MeasureGroup] = [
-                cohort
-                for cohort in outcome.groups or []
-                if check_nonplacebo([cohort.title])
-            ]
-            treatments.extend(measure_groups)
+            for cohort in outcome.groups or []:
+                if not check_arm(arm_types.get(cohort.title)):
+                    continue
+                if cohort.title in seen_titles:
+                    continue
+                seen_titles.add(cohort.title)
+                treatments.append(cohort)
         return outcomes, treatments
 
     def _build_completed_outcome_treatment(  # noqa: PLR0912
-        self, outcomes: list[OutcomeMeasure]
+        self, outcomes: list[OutcomeMeasure], arm_types: dict[str, ArmGroupType]
     ) -> None:
         for outcome in outcomes:
             measure_groups: list[MeasureGroup] = [
                 cohort
                 for cohort in getattr(outcome, "groups", []) or []
-                if check_nonplacebo([cohort.title])
+                if check_arm(arm_types.get(cohort.title))
             ]
             for i, cohort1 in enumerate(measure_groups):
                 measure1: Measurement | None = outcome.get_group_stats(cohort1)
@@ -1047,7 +1121,9 @@ class Experiment:
                     if outcome.unitOfMeasure is not None
                     else ""
                 )
-                effect1 = effect1 / 100 if "percent" in unit else effect1 / denom1
+                effect1 = _normalize_outcome_value(
+                    effect1, denom1, unit, outcome.paramType
+                )
                 self._apo_outcome_treatment.append([outcome.title, cohort1.title])
                 self._apo_stats.append([outcome.dispersionType, dispersion1, denom1])
                 self._avg_potential_outcomes.append(effect1)
@@ -1093,11 +1169,11 @@ class Experiment:
                             if outcome.unitOfMeasure is not None
                             else ""
                         )
-                        effect1 = (
-                            effect1 / 100 if "percent" in unit else effect1 / denom1
+                        effect1 = _normalize_outcome_value(
+                            effect1, denom1, unit, outcome.paramType
                         )
-                        effect2 = (
-                            effect2 / 100 if "percent" in unit else effect2 / denom2
+                        effect2 = _normalize_outcome_value(
+                            effect2, denom2, unit, outcome.paramType
                         )
                         effect_size = effect2 - effect1
                         self._outcome_treatment.append(
@@ -1129,7 +1205,14 @@ class Experiment:
                 name: i for (i, name) in enumerate(self.options[TREATMENT_COL_NAME])
             }
         }
-        self._numerical_repr.update(dict.fromkeys(self.outcome_names, binary_map_num))
+        self._numerical_repr.update(
+            {
+                outcome_name: binary_map_num
+                if self.is_binary_outcome(outcome_name)
+                else {}
+                for outcome_name in self.outcome_names
+            }
+        )
         self._numerical_repr.update(
             {
                 cov: {name: i for (i, name) in enumerate(self.options[cov])}
@@ -1140,7 +1223,14 @@ class Experiment:
         self._language_repr = {
             TREATMENT_COL_NAME: dict(enumerate(self.options[TREATMENT_COL_NAME]))
         }
-        self._language_repr.update(dict.fromkeys(self.outcome_names, binary_map_lang))
+        self._language_repr.update(
+            {
+                outcome_name: binary_map_lang
+                if self.is_binary_outcome(outcome_name)
+                else {}
+                for outcome_name in self.outcome_names
+            }
+        )
         self._language_repr.update(
             {cov: dict(enumerate(self.options[cov])) for cov in self.covariate_names}
         )

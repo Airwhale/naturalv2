@@ -1061,7 +1061,7 @@ def download_clinical_trials(
         "format": "json",
         "aggFilters": "studyType:int,results:with,status:com"
         if not test
-        else "studyType:int,results:without,status:act",
+        else "studyType:int,results:without,status:act rec",
         "countTotal": "true",
         "pageSize": "1000",  # max page size according to API docs
     }

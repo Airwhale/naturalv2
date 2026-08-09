@@ -471,12 +471,17 @@ class SampleTYStage(SampleExtractionStage):
         self, data: pd.DataFrame, context: PipelineContext
     ) -> pd.DataFrame:
         treatment_options = context.experiment.options[TREATMENT_COL_NAME]
+        outcome_type = (
+            Literal["No", "Yes"]
+            if context.experiment.is_binary_outcome(context.outcome)
+            else float
+        )
         response_format = create_response_format(
             "SampleTYResponse",
             [TREATMENT_COL_NAME, OUTCOME_COL_NAME],
             types={
                 TREATMENT_COL_NAME: Literal[*treatment_options],
-                OUTCOME_COL_NAME: Literal["No", "Yes"],
+                OUTCOME_COL_NAME: outcome_type,
             },
         )
         self.data = await extract_covariates(
@@ -490,7 +495,7 @@ class SampleTYStage(SampleExtractionStage):
             max_concurrent_requests=self.max_concurrent_workers,
         )
 
-        self.data = context.experiment.discretize_ty(self.data)
+        self.data = context.experiment.discretize_ty(self.data, context.outcome)
         logger.info(f"Final: {len(self.data)} reports after sampling TY.")
         return self.data
 
