@@ -6,6 +6,7 @@ concurrency, and writing results to disk while tracking token usage.
 """
 
 import asyncio
+import importlib.resources
 import logging
 import os
 from enum import Enum
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+PROMPTS_DIR = str(importlib.resources.files("naturalv2.prompts.templates"))
 
 
 class ExtractType(str, Enum):
@@ -220,7 +223,7 @@ async def _llm_task_producer(
         try:
             llm_inputs = row.to_dict()
             messages = load_prompt(
-                base_dir="naturalv2/prompts/templates",
+                base_dir=PROMPTS_DIR,
                 prompt_type=f"{extract_type}_{source_name}",
                 return_format="responses" if "synonym" in extract_type else "messages",
                 **llm_inputs,

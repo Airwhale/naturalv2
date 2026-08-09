@@ -15,6 +15,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from naturalv2.prompts.utils import load_prompt
 from naturalv2.sources.components.llm_extraction import (
+    PROMPTS_DIR,
     ExtractType,
     extract_curation_info,
 )
@@ -118,7 +119,7 @@ class RedditConditionFilter(SourceStage):
         # Add prompt template to metadata for logging
         prompt_id = f"{ExtractType.CONDITION.value}_{context.source_name}"
         template = load_prompt(
-            base_dir="naturalv2/prompts/templates",
+            base_dir=PROMPTS_DIR,
             prompt_type=prompt_id,
             return_format="prompt",
         )

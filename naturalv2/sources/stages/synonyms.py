@@ -14,6 +14,7 @@ import pandas as pd
 
 from naturalv2.prompts.utils import load_prompt
 from naturalv2.sources.components import extract_curation_info
+from naturalv2.sources.components.llm_extraction import PROMPTS_DIR
 from naturalv2.sources.core import CurationContext, SourceStage, StageState
 from naturalv2.utils import get_experiment_filepath
 
@@ -173,7 +174,7 @@ class SynonymStage(SourceStage):
         # Add prompt template to metadata for logging
         prompt_id = f"{self.extract_type}_{context.source_name}"
         template = load_prompt(
-            base_dir="naturalv2/prompts/templates",
+            base_dir=PROMPTS_DIR,
             prompt_type=prompt_id,
             return_format="prompt",
         )
