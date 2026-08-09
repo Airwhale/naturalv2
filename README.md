@@ -1,6 +1,6 @@
 # NATURAL-v2
 
-This is an evolving repository to extend [NATURAL](https://arxiv.org/abs/2407.07018) ([code](https://github.com/nikitadhawan/natural)) to larger data and evaluation scales. Given a medical condition, it uses LLMs to extract treatment effects from real-world text (Reddit posts, PubMed articles) and benchmarks them against ground-truth outcomes from completed clinical trials on [ClinicalTrials.gov](https://clinicaltrials.gov). It can also be applied to active trials with complete recruitment to predict and pre-register results before they are published.
+This is an evolving repository to extend [NATURAL](https://arxiv.org/abs/2407.07018) ([code](https://github.com/nikitadhawan/natural), [website](https://www.cs.toronto.edu/~nikita/natural/)) to larger data and evaluation scales. Given a medical condition, it uses LLMs to extract treatment effects from real-world text (Reddit posts, PubMed articles) and benchmarks them against ground-truth outcomes from completed clinical trials on [ClinicalTrials.gov](https://clinicaltrials.gov). It can also be applied to active trials with complete recruitment to predict and pre-register results before they are published.
 
 The pipeline supports two evaluation modes, controlled by the `ate` flag throughout:
 - **APO mode** (`ate=False`, default) — estimates per-arm average potential outcomes for each treatment
