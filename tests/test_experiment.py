@@ -94,10 +94,14 @@ def test_count_outcome_is_binary_and_normalized_by_denom(tmp_path):
 def test_percent_unit_normalizes_by_100_regardless_of_param_type(tmp_path):
     arms = [make_arm("Drug A", "EXPERIMENTAL")]
     outcomes = [
-        make_outcome_measure("Mean Percent Change", "MEAN", "percentage", [("Drug A", 40, 50)])
+        make_outcome_measure(
+            "Mean Percent Change", "MEAN", "percentage", [("Drug A", 40, 50)]
+        )
     ]
     exp = build_experiment(
-        tmp_path, make_completed_trial("NCT006", arms, outcomes), require_binary_endpoint=False
+        tmp_path,
+        make_completed_trial("NCT006", arms, outcomes),
+        require_binary_endpoint=False,
     )
     assert exp.avg_potential_outcomes == [0.4]
 
@@ -105,7 +109,9 @@ def test_percent_unit_normalizes_by_100_regardless_of_param_type(tmp_path):
 def test_continuous_outcome_needs_require_binary_endpoint_false(tmp_path):
     arms = [make_arm("Drug A", "EXPERIMENTAL")]
     outcomes = [
-        make_outcome_measure("Mean Change in Pain Score", "MEAN", "points", [("Drug A", 3.5, 50)])
+        make_outcome_measure(
+            "Mean Change in Pain Score", "MEAN", "points", [("Drug A", 3.5, 50)]
+        )
     ]
     trial = make_completed_trial("NCT007", arms, outcomes)
 
@@ -114,7 +120,9 @@ def test_continuous_outcome_needs_require_binary_endpoint_false(tmp_path):
     assert exp_default.outcome_names == []
 
     exp = build_experiment(
-        tmp_path, make_completed_trial("NCT008", arms, outcomes), require_binary_endpoint=False
+        tmp_path,
+        make_completed_trial("NCT008", arms, outcomes),
+        require_binary_endpoint=False,
     )
     assert exp.outcome_names == ["Mean Change in Pain Score"]
     assert not exp.is_binary_outcome(exp.outcome_names[0])
@@ -124,7 +132,9 @@ def test_continuous_outcome_needs_require_binary_endpoint_false(tmp_path):
 
 def test_active_trial_outcome_falls_back_to_title_heuristic(tmp_path):
     arms = [make_arm("Drug A", "EXPERIMENTAL")]
-    trial = make_active_trial("NCT009", arms, ["Number of Participants with Adverse Events"])
+    trial = make_active_trial(
+        "NCT009", arms, ["Number of Participants with Adverse Events"]
+    )
     exp = build_experiment(tmp_path, trial, status="active")
     assert exp.is_binary_outcome(exp.outcome_names[0])
 

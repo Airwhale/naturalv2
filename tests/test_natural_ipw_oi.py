@@ -61,6 +61,8 @@ def test_ipw_unseen_covariate_value_raises():
     class RestrictedOptions(FakeExperiment):
         options = {"cov": ["X"]}  # 'Y' unseen
 
-    df = pd.DataFrame({"cov_discretized": [0, 1], "ty_given_x_probs": ["[0,1,0,0]", "[0,0,0,1]"]})
+    df = pd.DataFrame(
+        {"cov_discretized": [0, 1], "ty_given_x_probs": ["[0,1,0,0]", "[0,0,0,1]"]}
+    )
     with pytest.raises(ValueError, match="not in list"):
         NaturalIPW(RestrictedOptions()).get_individual_treatment_effects(df)

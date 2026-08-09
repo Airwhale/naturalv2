@@ -19,10 +19,10 @@ from naturalv2.estimators import NaturalIPW, NaturalMC, NaturalOI
 from naturalv2.experiment import Experiment
 from naturalv2.logging_utils import build_kv_table, emit_table
 from naturalv2.pipeline import (
+    TREATMENT_COL_NAME,
     NATURALPipeline,
     PipelineContext,
     PipelineStage,
-    TREATMENT_COL_NAME,
 )
 from naturalv2.study import Study, get_study_filepaths
 from naturalv2.utils import get_experiment_filepath
@@ -150,9 +150,9 @@ def _calculate_treatment_responses(
 
     result_dicts = []
 
-    if isinstance(estimator, (NaturalIPW, NaturalOI)) and not experiment.is_binary_outcome(
-        outcome
-    ):
+    if isinstance(
+        estimator, (NaturalIPW, NaturalOI)
+    ) and not experiment.is_binary_outcome(outcome):
         # These estimators only model a binary Yes/No conditional distribution.
         raise ValueError(
             f"{estimator.__class__.__name__} doesn't support non-binary outcome "

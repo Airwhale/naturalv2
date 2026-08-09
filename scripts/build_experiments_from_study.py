@@ -26,7 +26,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def build_experiments(study: Study, save_path: str, require_binary_endpoint: bool) -> None:
+def build_experiments(
+    study: Study, save_path: str, require_binary_endpoint: bool
+) -> None:
     for trials, status in [
         (study.train_trials, "completed"),
         (study.val_trials, "completed"),
@@ -42,7 +44,9 @@ def build_experiments(study: Study, save_path: str, require_binary_endpoint: boo
                 status=status,
                 require_binary_endpoint=require_binary_endpoint,
             )
-            exp.to_yaml(get_experiment_filepath(save_path, nct_id, study.experiment_name))
+            exp.to_yaml(
+                get_experiment_filepath(save_path, nct_id, study.experiment_name)
+            )
 
 
 if __name__ == "__main__":

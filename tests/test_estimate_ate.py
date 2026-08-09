@@ -36,8 +36,12 @@ def test_stratified_bootstrap_preserves_group_sizes():
     df = make_extractions(40, [0, 0, 1] * 13 + [0])
     counts = df[f"{TREATMENT_COL_NAME}_discretized"].value_counts()
     for seed in range(10):
-        boot = _stratified_bootstrap_sample(df, f"{TREATMENT_COL_NAME}_discretized", seed)
-        assert (boot[f"{TREATMENT_COL_NAME}_discretized"].value_counts() == counts).all()
+        boot = _stratified_bootstrap_sample(
+            df, f"{TREATMENT_COL_NAME}_discretized", seed
+        )
+        assert (
+            boot[f"{TREATMENT_COL_NAME}_discretized"].value_counts() == counts
+        ).all()
 
 
 @pytest.mark.parametrize("estimator_type", ["ipw", "oi"])
@@ -45,8 +49,13 @@ def test_unsupported_treatment_reported_as_nan(estimator_type):
     df = make_extractions(20, [0, 1] * 10)  # treatment 'C' never appears
     estimator = NaturalMC(FakeExperiment(), estimator_type=estimator_type)
     results, _ = _calculate_treatment_responses(
-        FakeExperiment(), "dummy_outcome", estimator, df,
-        bootstrap_size=10, seed=0, use_inclusion_weights=False,
+        FakeExperiment(),
+        "dummy_outcome",
+        estimator,
+        df,
+        bootstrap_size=10,
+        seed=0,
+        use_inclusion_weights=False,
     )
     by_treatment = {r["treatment"]: r for r in results}
     assert np.isnan(by_treatment["C"]["pred_response"])
@@ -61,7 +70,12 @@ def test_ipw_oi_reject_non_binary_outcome(estimator_cls):
     df = make_extractions(10, [0, 1] * 5)
     with pytest.raises(ValueError, match="non-binary"):
         _calculate_treatment_responses(
-            FakeExperiment(), "continuous_outcome", estimator, df, bootstrap_size=5, seed=0
+            FakeExperiment(),
+            "continuous_outcome",
+            estimator,
+            df,
+            bootstrap_size=5,
+            seed=0,
         )
 
 
@@ -105,12 +119,19 @@ class RowCountingEstimator:
 
 
 @pytest.mark.parametrize("use_imputed_nones, expected_len", [(True, 4), (False, 3)])
-def test_use_imputed_nones_drops_rows_with_missing_covariates(use_imputed_nones, expected_len):
+def test_use_imputed_nones_drops_rows_with_missing_covariates(
+    use_imputed_nones, expected_len
+):
     df = pd.DataFrame({"cov": [1.0, 2.0, np.nan, 4.0]})
     estimator = RowCountingEstimator(num_treat=3)
     _calculate_treatment_responses(
-        FakeExperiment(), "binary_outcome", estimator, df,
-        bootstrap_size=2, seed=0, use_inclusion_weights=False,
+        FakeExperiment(),
+        "binary_outcome",
+        estimator,
+        df,
+        bootstrap_size=2,
+        seed=0,
+        use_inclusion_weights=False,
         use_imputed_nones=use_imputed_nones,
     )
     assert estimator.seen_lengths[0] == expected_len

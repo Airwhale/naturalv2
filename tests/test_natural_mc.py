@@ -74,7 +74,9 @@ def test_oi_single_treatment_value_still_returns_finite_values():
 
 
 def test_missing_required_column_raises():
-    data = make_data(5, [0, 1, 0, 1, 0]).drop(columns=[f"{TREATMENT_COL_NAME}_discretized"])
+    data = make_data(5, [0, 1, 0, 1, 0]).drop(
+        columns=[f"{TREATMENT_COL_NAME}_discretized"]
+    )
     mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
     with pytest.raises(ValueError, match="discretized"):
         mc.get_individual_treatment_effects(data, outcome="dummy")

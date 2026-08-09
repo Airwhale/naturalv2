@@ -43,7 +43,12 @@ def simulate_xty(n, seed):
     x = rng.integers(0, 2, size=n)
     t = (rng.random(n) < np.where(x == 0, 0.2, 0.8)).astype(int)
     p_y = np.select(
-        [(x == 0) & (t == 0), (x == 0) & (t == 1), (x == 1) & (t == 0), (x == 1) & (t == 1)],
+        [
+            (x == 0) & (t == 0),
+            (x == 0) & (t == 1),
+            (x == 1) & (t == 0),
+            (x == 1) & (t == 1),
+        ],
         [0.6, 0.8, 0.2, 0.4],
     )
     y = (rng.random(n) < p_y).astype(int)
@@ -123,7 +128,12 @@ def test_oi_corrects_confounding_bias_from_estimated_conditionals():
         p_yes = float(group["y"].mean())
         rows += [(int(x_val), int(t_val), str([1 - p_yes, p_yes]))] * len(group)
     df = pd.DataFrame(
-        rows, columns=["risk_discretized", f"{TREATMENT_COL_NAME}_discretized", "y_given_tx_probs"]
+        rows,
+        columns=[
+            "risk_discretized",
+            f"{TREATMENT_COL_NAME}_discretized",
+            "y_given_tx_probs",
+        ],
     )
 
     apo = NaturalOI(FakeExperiment()).get_individual_treatment_effects(df).mean(axis=1)
@@ -143,8 +153,13 @@ def test_natural_mc_corrects_confounding_bias(estimator_type):
 
     estimator = NaturalMC(FakeExperiment(), estimator_type=estimator_type)
     _, weighted_responses = _calculate_treatment_responses(
-        FakeExperiment(), "dummy_outcome", estimator, df,
-        bootstrap_size=10, seed=0, use_inclusion_weights=False,
+        FakeExperiment(),
+        "dummy_outcome",
+        estimator,
+        df,
+        bootstrap_size=10,
+        seed=0,
+        use_inclusion_weights=False,
     )
     corrected_ate = weighted_responses[1] - weighted_responses[0]
     assert abs(corrected_ate - TRUE_ATE) < 0.15

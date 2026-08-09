@@ -97,7 +97,9 @@ class IPSW(DifferenceInMeans):
     def __init__(self) -> None:
         """Initialize the IPSW estimator with a logistic regression model."""
         super().__init__(fit_y=False, outcome_y=True)
-        learner = LogisticRegression(solver="lbfgs")  # supports multi-class classification
+        learner = LogisticRegression(
+            solver="lbfgs"
+        )  # supports multi-class classification
         self._model = IPW(learner=learner)
 
     def get_individual_treatment_effects(self, data: "CausalData") -> pd.Series:

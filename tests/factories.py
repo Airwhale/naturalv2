@@ -19,7 +19,11 @@ def make_outcome_measure(title, param_type, unit, groups):
         "unitOfMeasure": unit,
         "groups": [{"id": gid, "title": g[0]} for gid, g in zip(ids, groups)],
         "denoms": [
-            {"counts": [{"groupId": gid, "value": str(g[2])} for gid, g in zip(ids, groups)]}
+            {
+                "counts": [
+                    {"groupId": gid, "value": str(g[2])} for gid, g in zip(ids, groups)
+                ]
+            }
         ],
         "classes": [
             {
@@ -44,7 +48,10 @@ def make_completed_trial(nct_id, arms, outcome_measures):
                 "briefTitle": "t",
                 "organization": {"fullName": "org"},
             },
-            "statusModule": {"statusVerifiedDate": "2024-01", "overallStatus": "COMPLETED"},
+            "statusModule": {
+                "statusVerifiedDate": "2024-01",
+                "overallStatus": "COMPLETED",
+            },
             "armsInterventionsModule": {"armGroups": arms},
             "outcomesModule": {
                 "primaryOutcomes": [{"measure": o["title"]} for o in outcome_measures]
@@ -68,9 +75,14 @@ def make_active_trial(nct_id, arms, outcome_titles):
                 "briefTitle": "t",
                 "organization": {"fullName": "org"},
             },
-            "statusModule": {"statusVerifiedDate": "2024-01", "overallStatus": "RECRUITING"},
+            "statusModule": {
+                "statusVerifiedDate": "2024-01",
+                "overallStatus": "RECRUITING",
+            },
             "armsInterventionsModule": {"armGroups": arms},
-            "outcomesModule": {"primaryOutcomes": [{"measure": t} for t in outcome_titles]},
+            "outcomesModule": {
+                "primaryOutcomes": [{"measure": t} for t in outcome_titles]
+            },
         },
         "derivedSection": {},
         "hasResults": False,
