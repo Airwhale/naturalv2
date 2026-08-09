@@ -116,7 +116,7 @@ class NaturalOI:
             for dct in idx_to_feat
         ]
 
-        outcome_conditionals = np.zeros((len(feat_dicts), self._num_treat))
+        outcome_conditionals = np.full((len(feat_dicts), self._num_treat), np.nan)
 
         for i in range(len(feat_dicts)):
             features = feat_dicts[i]
