@@ -98,19 +98,23 @@ class NaturalMC:
 
         try:
             model.fit(data)
-            individual_outcomes = model.get_individual_treatment_effects(data)
-
             all_ites = np.zeros((self._num_treat, len(observational_data)))
-            for t in range(self._num_treat):
-                if self.estimator_type == "ipw":
+
+            if self.estimator_type == "ipw":
+                individual_outcomes = model.get_individual_treatment_effects(data)
+                for t in range(self._num_treat):
                     t_mask = [1 if treat == t else 0 for treat in data.T]
                     all_ites[t, :] = (individual_outcomes * t_mask).to_numpy()
-                elif self.estimator_type == "oi":
+            elif self.estimator_type == "oi":
+                individual_outcomes = model.get_individual_treatment_effects(
+                    data, treatment_values=list(range(self._num_treat))
+                )
+                for t in range(self._num_treat):
                     all_ites[t, :] = individual_outcomes[t].to_numpy()
-                else:
-                    raise NotImplementedError(
-                        f"Estimator type '{self.estimator_type}' not implemented."
-                    )
+            else:
+                raise NotImplementedError(
+                    f"Estimator type '{self.estimator_type}' not implemented."
+                )
         except:
             all_ites = np.full((self._num_treat, len(observational_data)), np.nan)
         return all_ites

@@ -97,7 +97,7 @@ class IPSW(DifferenceInMeans):
     def __init__(self) -> None:
         """Initialize the IPSW estimator with a logistic regression model."""
         super().__init__(fit_y=False, outcome_y=True)
-        learner = LogisticRegression(solver="liblinear")
+        learner = LogisticRegression(solver="lbfgs")  # supports multi-class classification
         self._model = IPW(learner=learner)
 
     def get_individual_treatment_effects(self, data: "CausalData") -> pd.Series:
@@ -148,7 +148,9 @@ class OutcomeImputation(DifferenceInMeans):
         learner = LinearRegression()
         self._model = Standardization(learner=learner)
 
-    def get_individual_treatment_effects(self, data: "CausalData") -> pd.DataFrame:
+    def get_individual_treatment_effects(
+        self, data: "CausalData", treatment_values: list[int] | None = None
+    ) -> pd.DataFrame:
         """Calculate individual treatment effects using the Outcome Imputation method.
 
         Parameters
@@ -156,6 +158,11 @@ class OutcomeImputation(DifferenceInMeans):
         data : CausalData
             The causal data containing covariates, treatment assignments, and
             outcomes.
+        treatment_values : list[int] | None, optional, default=None
+            Treatment values to predict counterfactual outcomes for. If ``None``,
+            defaults to the treatment values observed in ``data.T``, which may
+            omit values entirely absent from ``data`` (e.g. a rare treatment
+            missing from a bootstrap resample).
 
         Returns
         -------
@@ -169,5 +176,5 @@ class OutcomeImputation(DifferenceInMeans):
         data.validate()
 
         return self._model.estimate_individual_outcome(
-            data.X, data.T, treatment_values=None
+            data.X, data.T, treatment_values=treatment_values
         )

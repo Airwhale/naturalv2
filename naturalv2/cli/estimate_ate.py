@@ -18,7 +18,12 @@ import naturalv2.hydra_setup  # noqa: F401 # Ensure custom resolvers are registe
 from naturalv2.estimators import NaturalIPW, NaturalMC, NaturalOI
 from naturalv2.experiment import Experiment
 from naturalv2.logging_utils import build_kv_table, emit_table
-from naturalv2.pipeline import NATURALPipeline, PipelineContext, PipelineStage
+from naturalv2.pipeline import (
+    NATURALPipeline,
+    PipelineContext,
+    PipelineStage,
+    TREATMENT_COL_NAME,
+)
 from naturalv2.study import Study, get_study_filepaths
 from naturalv2.utils import get_experiment_filepath
 
@@ -74,6 +79,14 @@ def _weight_by_inclusion(
         ``[num_treatments]``.
     """
     # responses has shape [num_treatments, num_datapoints]
+    if use_weights and "inclusion_probs" not in inclusion_probs.columns:
+        # e.g. the `inclusion_prob` stage was explicitly skipped in the pipeline.
+        logger.warning(
+            "use_inclusion_weights=True but no 'inclusion_probs' column is present; "
+            "falling back to uniform weights."
+        )
+        use_weights = False
+
     if not use_weights:
         probs = np.ones(responses.shape[1])
     else:
@@ -81,6 +94,24 @@ def _weight_by_inclusion(
             lambda row: literal_eval(row["inclusion_probs"])[1], axis=1
         ).to_numpy()
     return np.average(responses, axis=1, weights=probs)
+
+
+def _stratified_bootstrap_sample(
+    extractions: pd.DataFrame, stratify_col: str, random_state: int
+) -> pd.DataFrame:
+    """Resample with replacement within each ``stratify_col`` group.
+
+    Unlike a flat resample of the whole DataFrame, this guarantees every group
+    that has at least one row keeps exactly its original row count in the
+    resample, so a treatment already present in ``extractions`` can never
+    vanish from a bootstrap replicate by chance. A treatment with zero rows to
+    begin with is unaffected either way -- there's nothing to resample from.
+    """
+    resampled_groups = [
+        group.sample(n=len(group), replace=True, random_state=random_state)
+        for _, group in extractions.groupby(stratify_col)
+    ]
+    return pd.concat(resampled_groups)
 
 
 def _calculate_treatment_responses(
@@ -119,10 +150,36 @@ def _calculate_treatment_responses(
 
     result_dicts = []
 
+    if isinstance(estimator, (NaturalIPW, NaturalOI)) and not experiment.is_binary_outcome(
+        outcome
+    ):
+        # These estimators only model a binary Yes/No conditional distribution.
+        raise ValueError(
+            f"{estimator.__class__.__name__} doesn't support non-binary outcome "
+            f"'{outcome}'; use NaturalMC instead."
+        )
+
+    sampled_treatment_col = f"{TREATMENT_COL_NAME}_discretized"
+    unsupported_treatments: set[str] = set()
     if isinstance(estimator, NaturalMC):
-        raise NotImplementedError("NaturalMC not implemented for treatment responses.")
-        # all_responses = estimator.get_individual_treatment_effects(extractions, outcome)
-    all_responses = estimator.get_individual_treatment_effects(extractions)
+        observed_treatment_idxs = set(extractions[sampled_treatment_col].unique())
+        unsupported_treatments = {
+            treatment
+            for i, treatment in enumerate(experiment.treatment_names)
+            if i not in observed_treatment_idxs
+        }
+        if unsupported_treatments:
+            logger.warning(
+                "No reports mention treatment(s) %s for outcome '%s'; their "
+                "responses will be reported as NaN.",
+                sorted(unsupported_treatments),
+                outcome,
+            )
+
+    if isinstance(estimator, NaturalMC):
+        all_responses = estimator.get_individual_treatment_effects(extractions, outcome)
+    else:
+        all_responses = estimator.get_individual_treatment_effects(extractions)
 
     weighted_responses = _weight_by_inclusion(
         all_responses, extractions, use_inclusion_weights
@@ -132,12 +189,17 @@ def _calculate_treatment_responses(
         (bootstrap_size, len(experiment.treatment_names))
     )
     for b in range(bootstrap_size):
-        bootstrap_data = extractions.copy().sample(
-            n=len(extractions),
-            replace=True,
-            random_state=seed + b,
-            axis="index",
-        )
+        if isinstance(estimator, NaturalMC):
+            bootstrap_data = _stratified_bootstrap_sample(
+                extractions, sampled_treatment_col, seed + b
+            )
+        else:
+            bootstrap_data = extractions.copy().sample(
+                n=len(extractions),
+                replace=True,
+                random_state=seed + b,
+                axis="index",
+            )
 
         if isinstance(estimator, NaturalMC):
             all_responses = estimator.get_individual_treatment_effects(
@@ -151,13 +213,17 @@ def _calculate_treatment_responses(
         )  # len: num_treatments
 
     for i, treatment in enumerate(experiment.treatment_names):
-        pred_response = weighted_responses[i]
-        bootstrap_response = bootstrap_weighted_responses[:, i]
-        avg_bootstrap_response = np.mean(bootstrap_response)
-        sample_variance = np.sum((bootstrap_response - avg_bootstrap_response) ** 2) / (
-            bootstrap_size - 1
-        )
-        conf_delta = norm.ppf(1 - alpha / 2) * np.sqrt(sample_variance)
+        if treatment in unsupported_treatments:
+            pred_response = np.nan
+            conf_delta = np.nan
+        else:
+            pred_response = weighted_responses[i]
+            bootstrap_response = bootstrap_weighted_responses[:, i]
+            avg_bootstrap_response = np.mean(bootstrap_response)
+            sample_variance = np.sum(
+                (bootstrap_response - avg_bootstrap_response) ** 2
+            ) / (bootstrap_size - 1)
+            conf_delta = norm.ppf(1 - alpha / 2) * np.sqrt(sample_variance)
         results = {
             "estimator": estimator.__class__.__name__,
             "outcome": outcome,
