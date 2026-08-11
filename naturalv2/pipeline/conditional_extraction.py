@@ -30,6 +30,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _detokenize_kwargs(llm: object) -> dict:
+    """Sampling kwargs that are only valid when vLLM runs in-process.
+
+    detokenize=False avoids an OverflowError decoding logprob token ids under the in-process
+    VLLMModel. A hosted vLLM server still builds a decoded token for every prompt logprob, so
+    sending the flag there aborts EngineCore and takes the server down with it.
+    """
+    return {"detokenize": False} if isinstance(llm, VLLMModel) else {}
+
+
 class ConditionalsExtractType(str, Enum):
     """Enumeration for types of conditional probabilities to extract."""
 
@@ -506,7 +516,7 @@ async def _offline_inference(  # noqa: PLR0912
         endpoint="text_completion",
         max_tokens=1,
         prompt_logprobs=0,
-        detokenize=False,
+        **_detokenize_kwargs(llm),
         use_tqdm=functools.partial(tqdm, leave=False),
     )
 
@@ -806,7 +816,7 @@ async def _prompt_processor(
                                 endpoint="text_completion",
                                 max_tokens=1,
                                 prompt_logprobs=0,
-                                detokenize=False,
+                                **_detokenize_kwargs(llm),
                             ),
                             name="LLM-Call",
                         )

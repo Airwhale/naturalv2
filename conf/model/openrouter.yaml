@@ -1,0 +1,9 @@
+defaults:
+  - litellm_model
+
+# Generative roles (cheap/sample/imputations) via OpenRouter. Gemini-family kept as the served model
+# so prompt behaviour stays close to what upstream validated against the gemini config.
+model_id: ???
+api_key: ${oc.env:OPENROUTER_API_KEY,null}
+max_tokens: 32768
+drop_params: true
