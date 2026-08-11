@@ -5,10 +5,13 @@ our own code (kept because C3 is the mirror image of A6), D is serving/ops. Path
 
 # Bugs & gotchas found while building trial_superset
 
-A single registry of every bug we hit. The important group is **Category A: real bugs in
-`naturalv2`** — they change Nikita's *own* published study, not just ours, so they are the
-priority items for the hand-off conversation. Category B is a CT.gov search gotcha; Category C is
-bugs in our own code (already fixed). Each entry: what · where · evidence · impact · fix/status.
+A single registry of every bug we hit running NATURAL end-to-end on a Long-COVID Reddit corpus.
+**Start with the fix-by-fix summary below** — it lists each change we made and what it is for. The
+numbered sections after it carry the evidence.
+
+Category A is real issues in `naturalv2` (they affect Nikita's *own* results, not just ours);
+B is a CT.gov search gotcha; C is bugs in our own code (kept because C3 is the mirror image of A6);
+D is serving/ops. Each entry: what · where · evidence · impact · fix/status.
 
 Full detail for A1/A4/A2 also lives in the per-topic docs (linked); this file is the index.
 
@@ -18,6 +21,34 @@ Full detail for A1/A4/A2 also lives in the per-topic docs (linked); this file is
 > study builds through her native `Experiment` with correct labels (e.g. lithium `[-11.3, -9.0]`,
 > fluvoxamine `-47.3`). **A1 and A4 are untouched by that push.** The index table reflects post-re-pin
 > status; each item's original evidence is kept below as the record of what was wrong.
+
+## Fix-by-fix summary
+
+Everything we changed, and what each change is for. Detail for each is in the numbered section below.
+
+### Fixes we wrote (ready to look at)
+
+| fix | what changed | file | addresses | status |
+|---|---|---|---|---|
+| **1. Prebuilt-corpus source** | new `SourceStage` that contextualises an already-built parquet corpus instead of downloading `.zst` archives | `naturalv2/sources/reddit/stages/prebuilt_parquet.py` + `conf/source/reddit_prebuilt.yaml` | no bug — additive; also a way around the-eye outage | **PR-ready**, purely additive |
+| **2. Hosted-vLLM guard** | send `detokenize=False` only when the model is an in-process `VLLMModel` | `naturalv2/pipeline/conditional_extraction.py` (+12 −2) | **A7** | **PR-ready**, her path untouched |
+| **3. NATURAL-MC config** | `sample_ty` in, `conditional_extraction` out, estimator `natural_mc_oi` | `conf/estimate_mc.yaml` | **A5** | **PR-ready**, but the default is a design call |
+| **4. OpenRouter provider** | provider config beside the existing gemini/anthropic/openai | `conf/model/openrouter.yaml` | none — convenience | optional |
+| **5. Serving config** | `gpu_memory_utilization 0.55`, no chunked prefill, 1 seq | *ours, not her code* | **D1** | docs note only |
+| **6. Change-scale rewrite** | restate a change-from-baseline outcome's description so the sampled quantity matches the label | *ours* (`fix_change_outcomes.py`) | **A6** | **issue, not a PR** — one option among several |
+| **7. Alias seeding** | hand-seed `treatment_common_names` when `treatment_synonyms` can't run | *ours* | **A9** stopgap | stopgap only |
+
+### Open — no fix proposed, needs your call
+
+| # | issue | why we stopped short |
+|---|---|---|
+| **A1** | condition matcher over/under-matches | ours is a keyword classifier; the right shape for your repo is your call |
+| **A4** | `status:act` excludes recruiting; pinned ≠ shared study | a tradeoff, not a defect — which status set is canonical? |
+| **A6** | change-from-baseline vs absolute predictions | fixing it in `Experiment`, rewriting descriptions, or excluding such trials are all defensible |
+| **A8** | bootstrap intervals implausibly tight (±1 on n=32) | you may already treat these as descriptive rather than calibrated |
+| **A9** | ≤3-char drug abbreviations dropped (79% of LDN evidence) | the durable fix is boundary-aware matching; raising the threshold alone would trade under- for over-matching |
+
+---
 
 ## Index
 
@@ -31,6 +62,7 @@ Full detail for A1/A4/A2 also lives in the per-topic docs (linked); this file is
 | **A6** | change-from-baseline label vs absolute prediction | `naturalv2` `Experiment` + our sidecar | **yes** | **high** | **open** — root cause of our first run's error |
 | **A7** | `detokenize=False` kills a hosted vLLM server | `naturalv2` `conditional_extraction` | only off-repo runs | medium | **fix written** (in-process guard) |
 | **A8** | bootstrap CIs implausibly tight (±1 on n=32) | `naturalv2` `bootstrap_size` | **yes** | medium | **open** — needs her view |
+| **A9** | ≤3-char drug aliases dropped (79% of LDN evidence) | `build_treatment_automaton` + curate | **yes** | **high** | **open** — needs boundary-aware matching |
 | **B1** | `query.cond="COVID"` misses SARS-CoV-2/PASC tags | CT.gov search (our scope layer) | indirect | medium | fixed in `seed_terms` scope |
 | **C1** | `inject_one` ambiguous `None` return | our `build_augmented.py` | no | medium | **fixed** |
 | **C2** | misc implementation slips | our code | no | low | **fixed** |
@@ -213,6 +245,31 @@ logprob and has nothing to detokenize with. Because it is hardcoded, a config ov
 in-process `VLLMModel`, so her path is unchanged and the hosted path stops crashing. (Our first patch
 simply flipped the hardcode to `True`; that would have broken her in-process runs, so it is *not* what
 we propose.) PR-able as-is.
+
+### A9 — Treatment matching drops 3-character drug abbreviations
+**Where:** two filters, same threshold. `build_treatment_automaton` skips any canonical form of
+`<= 3` chars ("Very short canonical forms … generate too many false positives (e.g. 'mg', 'ml')"),
+and `RedditCurateStage._prepare_registry_config` independently skips aliases with `len(alias) <= 3`.
+**Evidence (LDN, the most-discussed Long-COVID treatment, in our 2.45M-document corpus):**
+
+| | documents |
+|---|---|
+| spell out "naltrexone" | 6,368 |
+| use the bare abbreviation "LDN" | 25,619 |
+| **never spell it out — reachable only via "LDN"** | **23,950** |
+| **share of LDN evidence lost** | **79%** |
+
+**Root cause is not the threshold.** `extract_mentions` runs `automaton.iter()` over canonicalised
+text with **no word-boundary check**, so a 3-character pattern would match inside ordinary words —
+"ldn" hits "cou**ldn**'t", "wou**ldn**'t". (We hit exactly this in our own coverage tooling and fixed
+it with `\b` anchors.) The length filter is a *workaround for substring matching*, so **raising the
+threshold alone would trade silent under-matching for silent over-matching** — we deliberately did
+not do that.
+**Impact on her:** any treatment whose common name is a ≤3-char abbreviation is largely invisible to
+curation — LDN, VNS, and similar. The trial still runs and reports a number, so the loss is silent.
+**Fix/status:** open. The durable fix is boundary-aware matching (match on token boundaries in the
+canonicalised text), after which short abbreviations can be admitted safely. As a stopgap we seed
+`treatment_common_names` with spelled-out aliases only, and accept the reduced recall.
 
 ---
 
