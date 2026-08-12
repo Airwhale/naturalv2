@@ -529,15 +529,23 @@ already been made path-independent; the analysis tooling has not. Documented in
 Both cost real time on the first end-to-end run; neither is obvious from the failure message.
 
 ### D1 — `gpu_memory_utilization` starves `prompt_logprobs`
+**Why this stage needs a GPU at all:** `inclusion_prob` scores a prompt *we* supply — teacher-forced
+token probabilities — and no hosted chat API returns those; they give probabilities only for tokens
+the model generates. That one stage is what forces a self-hosted vLLM server. Everything else in the
+pipeline runs against an ordinary API, which is why the GPU is worth acquiring late (see D3).
 **Symptom:** vLLM returns `EngineCore encountered an issue` and the container dies; every later request
 then reports `Cannot connect to host`, which reads like the node was preempted. It is not.
 **Cause:** `prompt_logprobs` needs a **transient** `[prompt_tokens × vocab]` logits tensor (~3.5 GB for
-a 5.7k-token prompt at Qwen's ~152k vocab) allocated **outside** the pool vLLM preallocates. The usual
-`gpu_memory_utilization: 0.90` leaves ~10% free and the allocation fails.
-**The trap:** it is a *fraction*, so **moving to a bigger card does not help** — 24 GB → 32 GB simply
-bought a bigger KV cache and the same ~10% headroom. We burned five GPU cycles on hardware before
-lowering the fraction. Serving config that works: `GPU_MEM_UTIL=0.55`, `--max-num-seqs 1`,
-`--max-model-len 8192`.
+a 5.7k-token prompt at Qwen's ~152k vocab — `5,700 × 152,064 × 4 bytes`) allocated **outside** the
+pool vLLM preallocates. The usual `gpu_memory_utilization: 0.90` leaves ~10% free and the allocation
+fails.
+**The trap:** it is a *fraction*, not an amount, so **moving to a bigger card does not help**. `0.90`
+reserves 21.6 GB of a 24 GB card and 72 GB of an 80 GB one: the pool scales with the card, the
+leftover stays about a tenth, and the 3.5 GB tensor is a fixed cost that has to fit in that leftover.
+Going 24 GB → 32 GB simply bought a bigger KV cache and the same ~10% headroom. We burned five GPU
+cycles on hardware before lowering the fraction — the fix is to make the number *smaller*, which is
+the opposite of what an out-of-memory error usually suggests. Serving config that works:
+`GPU_MEM_UTIL=0.55`, `--max-num-seqs 1`, `--max-model-len 8192`.
 **Debugging lesson:** a single-request smoke test passed throughout, because a **7-token** prompt needs
 ~4 MB of logits and never exercises the failure. `patientpunk/serving/probe_long_logprobs.py`
 now sends one **realistic-length** report before the pipeline runs, so a bad serving config costs

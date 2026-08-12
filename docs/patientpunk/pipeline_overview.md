@@ -788,8 +788,6 @@ upstream text to context and lets the model return *neutral* when a reply expres
 its own. The one adaptation needed is that `sample_ty` returns a continuous value, so it needs a real
 null (`"Not stated"`) rather than another category.
 
-
-
 ### 10.3 Estimator and endpoint mismatch — [A5](#appendix-a--bug-index)
 
 Upstream's default estimator (`natural_ipw`) cannot run a `notbinary` study: `conditional_extraction`
@@ -797,13 +795,16 @@ enumerates multiple-choice options over the outcome, continuous endpoints have n
 a bare `ZeroDivisionError`. We use NATURAL-MC instead. I believe this is fixed, but it is probably
 worth talking about.
 
-### 10.4 Why this needs a GPU at all, and the trap in it — [D1](#appendix-a--bug-index)
+### 10.4 GPU memory problems — [D1](#appendix-a--bug-index)
 
-Exactly one stage, `inclusion_prob`, needs **teacher-forced token probabilities** — given a prompt
+**Fixed** — we run `gpu_memory_utilization` at **0.55**, well below vLLM's usual `0.90`. Kept here
+because the reason is not obvious and the same trap will catch anyone else serving this stage; the
+full account, including the debugging lesson, is D1 in [findings.md](findings.md).
+
+One stage, `inclusion_prob`, needs **teacher-forced token probabilities/logprobs** — given a prompt  
 *we* wrote, how likely was each token in it? That is vLLM's `prompt_logprobs`, and no hosted chat API
-exposes it: they return probabilities for tokens the model *generates*, never for tokens you supply.
-So that single stage is what forces a self-hosted server and a rented GPU. Every other stage runs
-against an ordinary API.
+exposes it: they return probabilities for tokens the model *generates*, never for tokens you supply.  
+This is why we need to run an open model on a machine we control.
 
 The trap is that scoring a prompt this way materialises a probability for **every token position
 across the whole vocabulary** at once:
@@ -814,15 +815,12 @@ across the whole vocabulary** at once:
 
 and that tensor is allocated *outside* the memory pool vLLM reserves when it starts.
 `gpu_memory_utilization` controls how much of the card that pool claims, so the usual `0.90` leaves
-roughly a tenth of the card for everything else — not enough for the 3.5 GB, and the engine is killed
-mid-run.
+roughly a tenth of the card for everything else. This causes crashes.
 
-**The counterintuitive part is that a bigger card does not help.** The setting is a *fraction*, not
-an amount: `0.90` reserves 21.6 GB of a 24 GB card and 72 GB of an 80 GB one. The pool grows with the
-card, so the leftover stays proportionally the same, while the 3.5 GB tensor is a fixed cost that has
-to fit inside it. Renting more VRAM just buys more KV cache. The fix is to *lower* the fraction — we
-run **0.55** — which is the opposite of what an out-of-memory error usually suggests, and is why this
-cost five debugging cycles.
+The fix is to *lower* the fraction — we run **0.55** — which is the opposite of what an out-of-memory
+error usually suggests, and is why this cost five debugging cycles. Because it is a fraction rather
+than an amount, **a bigger card does not help**: the pool grows with the card while the 3.5 GB tensor
+stays the same size.
 
 Separately: we are running a **7B** model where the method assumes ~70B. That is easy to solve, but
 we want to tighten and validate everything before paying for a bigger model.
@@ -1070,10 +1068,11 @@ wheels lag). Point `PP_PYTHON` at it; see [patientpunk/README.md](../../patientp
 ## Appendix A — Bug index
 
 Short forms used throughout this document. "Ours" means the defect is in our code or our data;
-everything else is in `naturalv2` and therefore affects Nikita's own results too. Full evidence for
-each is in [findings.md](findings.md); the same list, restructured as a fix-by-fix summary for her, is on the
-fork at
-[docs/patientpunk/findings.md](https://github.com/Airwhale/naturalv2/blob/shaun/patientpunk-integration/docs/patientpunk/findings.md).
+everything else is in `naturalv2` and therefore affects Nikita's own results too.
+
+This is a glossary, not the registry. **[findings.md](findings.md)** holds the full account of every
+bug — evidence, root cause, and what was done about it — structured fix-by-fix, and carries entries
+in the C and D series that this document does not use.
 
 
 | id      | what                                                                                                                                                                                             | where                                          | status                                                                 |
@@ -1091,6 +1090,7 @@ fork at
 | **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                               | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found                         |
 | **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                               | `sample_ty` parsing                            | open — mechanical, and the range is already known                      |
 | **B1**  | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                        | our CT.gov scope layer                         | fixed in `seed_terms`                                                  |
+| **D1**  | `gpu_memory_utilization` starves `prompt_logprobs`. The transient logits tensor sits outside vLLM's preallocated pool, so the usual `0.90` crashes the engine — and because it is a fraction, a bigger card does not help (§10.4). | serving config (ours)                          | **fixed** — `0.55`, plus a realistic-length probe before every run     |
 
 
 ---
