@@ -107,7 +107,7 @@ Two names to define first, since they recur throughout:
 
 - `**trial_filters`** — the block in naturalv2's config holding the four booleans below. It is the
 only place trial eligibility is decided upstream.
-- `**noparallel_notbinary*`* — the name we gave our filter settings, and the string that appears in
+- `**noparallel_notbinary`** — the name we gave our filter settings, and the string that appears in
 every output path and filename. It is purely descriptive: *no* `parallel` requirement, *not*
 `binary` endpoints. Upstream's default demands both; we demand neither.
 
@@ -647,6 +647,12 @@ fixed: correcting it flipped both predictions to **negative**, i.e. improvement,
 direction of the trial. It did not improve accuracy — mean absolute error moved from 21.9 to 21.0,
 which is noise. Sign and magnitude are separate problems, and only the first was addressed.
 
+> **These two numbers are now known to be artefacts.** Reading the extracted rows back (§10.2)
+> showed that 21 of the 32 Brain Fog values are identical, inherited from the recovery threads the
+> comments replied to rather than extracted from the commenters themselves
+> ([A11](#appendix-a--bug-index)). The table is kept because the *diagnosis* is the result; the
+> estimates are not.
+
 ### 9.2 What those numbers do not tell us
 
 An error of 21 points is uninterpretable on its own, because nothing here says what a *good* number
@@ -695,6 +701,12 @@ can no longer serve as a clean test. The other four core-5 trials — cyclobenza
 Niagen, fluvoxamine — are built and untouched, and are now cheap to run, since corpus
 contextualisation is cached and each needs only curation plus a short GPU pass.
 
+**Fix A11 before spending any of them.** There are four clean trials and one clean run each. Running
+them against an extractor that reads the wrong person's text would consume all four to re-measure a
+defect we have already characterised. The order is: fix A11 and A12, re-run *lithium* — already
+contaminated, so it costs nothing to reuse — confirm the extracted values stop being degenerate, and
+only then unfreeze the held-out four.
+
 **Four measurements, on those four trials, with the configuration frozen first:**
 
 1. **Against baselines** — versus predict-zero and predict-placebo-response. Without a baseline an
@@ -721,53 +733,79 @@ Defects we have found and diagnosed. The full registry, with evidence, is in
 **In one line: we were estimating how ill someone is, when the trial reported how much they
 improved.** Two different quantities, compared as though they were the same.
 
-In detail. The Fatigue Severity Scale is a questionnaire scored **1–49**, higher meaning worse
-fatigue. Lithium's trial did not report "patients ended up at 25 on the scale". It reported
+The Fatigue Severity Scale is a questionnaire scored **1–49**, higher meaning worse  
+fatigue. Lithium's trial did not report "patients ended up at 25 on the scale". It reported  
 **−11.3** — patients *improved by* 11.3 points. A change, not a level.
 
-But the outcome's *description* — the text the model is shown — describes the questionnaire:
-*"Score range 1-49 with higher values signifying worse outcome"*. So when `sample_ty` asks for a
-value "on the same scale as the outcome description above", the model correctly answers with an
-absolute severity, perhaps 30, meaning "this person's fatigue is about 30 out of 49". We then scored
-that 30 against −11.3.
+We are mesuring abolute values here,  when we should according to the study be mesuring changes I think.  This probably requires both prompt rejigering and actual changes to the algorithm. **The fix** rewrites the description so it asks for the movement rather than the level ("report the CHANGE, follow-up minus baseline"), which makes the model's answer and the trial's label the same quantity. 
 
-It is the same mistake as comparing *"the patient weighs 80 kg"* with *"the patient lost 5 kg"*.
-Both are in kilograms; comparing them is meaningless. The error is guaranteed and says nothing about
+It is the same mistake as comparing *"the patient weighs 80 kg"* with *"the patient lost 5 kg"*.  
+Both are in kilograms; comparing them is meaningless. The error is guaranteed and says nothing about  
 how good the estimate was.
 
-**The tell is that −11.3 is impossible on a 1–49 scale** — you cannot score negative. That is what
-the range check now looks for. It was easy to miss because the description describes the
-*questionnaire*, while only the `timeFrame` field ("Change from baseline to day 21") says what was
-actually reported.
+### 10.2 The estimate is wrong, and confident about it — [A11](#appendix-a--bug-index), [A8](#appendix-a--bug-index)
 
-**The fix** rewrites the description so it asks for the movement rather than the level ("report the
-CHANGE, follow-up minus baseline"), which makes the model's answer and the trial's label the same
-quantity. Notably **our own detector missed this** — it read the outcome *title*, which says nothing
-about change. All four LIFT outcomes are change endpoints too, so this is not a one-off.
+Two things failed independently, and it is worth separating them because they have different causes
+and different fixes.
 
-### 10.2 Estimate quality and interval calibration — the lithium variance — [A8](#appendix-a--bug-index)
+**1 — The answer is wrong, in a consistent direction.** Brain Fog predicts −33.9 against a true −9.0,
+on a scale whose maximum possible improvement is −48. The model is claiming near-total recovery.
 
-Two separate problems live here.
+**2 — The error bar around that wrong answer is tiny.** ±0.98 on a 49-point scale. The interval
+`(−34.87, −32.92)` misses −9.0 by about 25 half-widths. Neither outcome's interval contains the
+truth: **coverage is 0 of 2**.
 
-**Systematic overshoot.** Brain Fog predicts −33.9 against a true −9.0, on a scale whose maximum
-possible improvement is −48. The model is claiming near-total recovery. This is the signature of
-selection bias (§11.2), not random error.
+Fixing either one alone leaves the estimate useless. Honest intervals around a biased estimate would
+at least *say* it does not know; a correct estimate with uninterpretable intervals could not be used
+for a decision. What we have is the worst pairing — **confidently wrong**.
 
-**Implausibly tight intervals.** Quantitatively:
+#### What is actually causing it
+
+The obvious reading of (1) is selection bias — people post about dramatic outcomes, so the evidence
+skews toward dramatic recoveries. That is a real hazard (§11.2), and it was our first explanation.
+Going back to the extracted rows shows it is **not** what produced these numbers.
+
+The extracted values are not spread out like patient outcomes. **21 of the 32 Brain Fog rows carry
+the identical value −35.0**, and the 32 rows come from only **7 threads**. The three largest are
+recovery announcements — the biggest, supplying 11 rows on its own, is titled *"Long Covid Recovery
+to 90% — Antihistamine Treatment"*. The comments scored −35 read, in full:
+
+```
+"Yes! Those are horrible when they happen.. Thanks for sharing."
+"Hey! We're you able to eventually ween off the antihistamines?"
+"It's cheap. Will give it a try. I take generic zyrtec and Benadryl at night"
+```
+
+None of them reports an outcome. None is about lithium. Every comment's prompt embeds the **full
+initial post**, and the extraction question asks for the value *"the individual described in the
+report"* would give — which, in a comment, describes two people, with the original poster described
+far more fully. The model reads the thread's headline recovery and stamps it on each commenter.
+
+The separation is clean:
 
 
-| outcome   | n   | CI half-width |
-| --------- | --- | ------------- |
-| Fatigue   | 9   | ±10.1         |
-| Brain Fog | 32  | **±0.98**     |
+| lithium Brain Fog rows          | n   | mean extracted value |
+| ------------------------------- | --- | -------------------- |
+| own comment discusses lithium   | 4   | **−2.5**             |
+| only the thread mentions it     | 28  | **−33.2**            |
+| *trial's answer*                |     | *−9.0*               |
 
 
-The ratio is 10.3×, but √(32/9) predicts only 1.9× — so the Brain Fog interval is roughly **five
-times tighter than sample size alone explains**. Using the trial's own SD of 13.8, a naive standard
-error on n = 32 would give about ±4.8, not ±1.
+The rows genuinely about the drug are the ones closest to correct. The estimate is driven by the
+88% that are not. This is a **measurement** failure — `Y_i` is not the outcome of the person the row
+claims to represent — and it is registered as [A11](#appendix-a--bug-index). It is not confined to
+lithium: across LIFT's 3,127 rows, **76% never name the drug in their own text**.
 
-The mechanism is in §6.7: the bootstrap measures agreement among LLM samples rather than patient  
-heterogeneity or extraction error, and B = 10 is far too few for a stable 95% interval.
+This also explains (2) without appeal to sample size. With 21 of 32 values identical, every bootstrap
+resample returns roughly the same number, so the interval collapses regardless of `bootstrap_size`.
+It is why n = 9 gave the *wider* interval — Fatigue's values are simply more spread. `B = 10` is
+still too small (§6.7) and A10's prolific posters still break independence, but neither is the
+leading term.
+
+A third defect compounds both: extracted values are **never checked against the endpoint's range**
+([A12](#appendix-a--bug-index)). LIFT's FUNCAP55 is a 0–55 scale, and 14.8% of extracted values fall
+outside it — the largest is **4,444,000**. One such parse is enough to make a mean meaningless, and
+nothing warns.
 
 ### 10.3 Estimator and endpoint mismatch — [A5](#appendix-a--bug-index)
 
@@ -816,21 +854,34 @@ to nominal. That is measurable with what we already have, and nobody has measure
 
 The pseudo-population is self-selected in a way that correlates directly with the outcome. Dramatic
 recoveries and dramatic failures are both over-represented; "mild and unremarkable" is not.
+`inclusion_prob` corrects for *eligibility*, not for *propensity to post*.
 
-The overshoot in §10.2 is the signature. `inclusion_prob` corrects for *eligibility*, not for
-*propensity to post*.
+**This is a real hazard, but it is not what caused our overshoot.** We originally read §10.2's
+overshoot as the signature of selection bias. It is not: selection over *patient outcomes* predicts
+both tails inflating — a U-shape — and what the extracted values actually show is a spike at a single
+number, because comments inherited their thread's outcome ([A11](#appendix-a--bug-index)). The
+mechanical defect has to be fixed before there is anything left to attribute to selection.
 
-This is unobservable by construction — non-posters leave no data — so it needs either an external
-anchor (a survey with known prevalence) or an explicit model of the posting mechanism.
+So the honest position is that **we have not measured selection bias at all yet**. It remains the
+obvious next suspect once A11 is fixed, and it is the harder problem of the two: unobservable by
+construction, since non-posters leave no data. It needs either an external anchor (a survey with
+known prevalence) or an explicit model of the posting mechanism.
 
-**Progress looks like:** a correction that reduces overshoot on the labelled trials without simply  
-fitting to them. This may be a normalization problem?  Could also move to things being binary?
+**Progress looks like:** first, re-running the labelled trials after A11 to see how much overshoot
+survives — that number is the actual size of the problem, and we do not currently know it. Then a
+correction that reduces what is left without simply fitting to the labels.
 
 ### 11.3 Extraction validity — is `Y_i` what the patient actually reported?
 
 There is no gold standard, so extraction error is entangled with estimator error and selection bias.
 Validating means humans reading posts and assigning outcome values, which is expensive — and
 inter-rater agreement on *"what FSS score does this post imply?"* may itself be poor.
+
+**A11 is the first confirmed instance of this**, and it is worse than noisy extraction: `Y_i` is not
+a bad reading of the right person's text, it is a reading of *someone else's* text. That it went
+unnoticed until we read the extracted rows back is the argument for doing so routinely. A cheap
+standing check falls out of it — the share of rows whose own text never mentions the matched
+treatment, which was 76–88% for us and should be near zero.
 
 Underneath is a real question: **is there a ceiling?** If humans cannot agree on the outcome implied
 by a Reddit post, no model can extract it reliably, and the method has an intrinsic noise floor worth
@@ -917,12 +968,29 @@ counts fifty times. For lithium's evidence:
 
 One person supplies a tenth of it. Ten people supply nearly a third.
 
-**We cannot currently measure this downstream, because `author` is discarded.** It exists in the raw
-corpus but survives neither contextualisation nor curation, so nothing after stage 2 can
+**We cannot currently measure this by author downstream, because `author` is discarded.** It exists
+in the raw corpus but survives neither contextualisation nor curation, so nothing after stage 2 can
 deduplicate, cluster or weight by patient — and we cannot tell how concentrated the 61 surviving
 lithium reports are. The numbers above are pre-filter.
 
-This is obviously very bad,  biasing in clear ways, and needs to be fixed.
+**We can measure it by thread, because `initial_post` does survive** — and that turns out to be the
+sharper cut anyway:
+
+
+| final evidence rows          | rows      | distinct threads | largest thread's share |
+| ---------------------------- | --------- | ---------------- | ---------------------- |
+| lithium, Brain Fog           | 32        | **7**            | 11 rows (34%)          |
+| lithium, Fatigue             | 9         | **4**            | —                      |
+| LIFT, Functional Capacity    | 3,127     | **494**          | —                      |
+
+
+So the nominal n = 32 rests on seven conversations. Two units of clustering are in play — the person
+and the thread — and only the second is currently observable. Under A11 the thread is also the unit
+that *carries the outcome*, which makes a cluster bootstrap by thread the obvious first correction:
+it needs no schema change, unlike the author fix.
+
+Both are real, and both inflate confidence in the same direction. Retaining a salted author hash
+remains the right long-term fix; clustering by thread is available today.
 
 ### 11.8 What is this benchmark actually measuring?
 
@@ -947,16 +1015,22 @@ framed.
 - The coverage measurement — 3,417 validated on-target LDN reports, a quantitative read on what
 patients report about their own trial's interventions.
 - The method, and that it runs end to end.
-- The bug findings — A3 in particular, since it concerns *their* trial's factorial arms directly.
+- The bug findings — A3 in particular, since it concerns *their* trial's factorial arms directly,
+and **A11**, which is the most substantive thing we have: a reproducible demonstration that the
+extraction step reads the wrong person's outcome, measured on 3,127 of their own trial's evidence
+rows.
 
-**Not solid enough to present as a forecast:** the point estimate. On lithium, where we can check,
-the pipeline was off by roughly 2–3× with the sign initially inverted, its intervals are
-demonstrably uncalibrated, we are on a 7B smoke model, §10.1 and §10.2 are open, and only ~21%
-of LDN evidence is reachable.
+**Not solid enough to present as a forecast:** the point estimate — and as of A11 that is no longer
+a calibration caveat but a correctness one. The lithium estimates are artefacts of comments
+inheriting their thread's outcome, 76% of LIFT's rows never mention the drug in their own text, and
+14.8% of its extracted values fall outside the endpoint's own scale. Add the 7B smoke model, the
+open §10.1, and ~21% LDN evidence reach.
 
 **The position to take:** *"Here is what patients report, here is a pipeline that turns it into a
-testable prediction, and here are three estimator bugs that affect factorial trials like yours.
-Calibration is in progress."* That is both stronger and true.
+testable prediction, and here is what we found by auditing our own output — including a measurement
+bug that would have made any estimate from it meaningless, and two estimator bugs that affect
+factorial trials like yours."* Finding A11 before quoting a number is a better story than the number
+would have been, and it is true.
 
 ---
 
@@ -964,10 +1038,14 @@ Calibration is in progress."* That is both stronger and true.
 
 **Repositories**
 
-- `PatientPunk` — `trial_superset/` holds our study construction, coverage measurement, sidecar and
-docs; `dispersed/` holds the serving kit.
-- Fork `Airwhale/naturalv2`, branch `shaun/patientpunk-integration` — our changes to the estimator.
-`main` on that fork is byte-identical to Nikita's.
+- Fork `Airwhale/naturalv2`, branch `shaun/patientpunk-integration` — **everything**: the estimator
+changes, the study-construction and coverage-measurement tooling under `patientpunk/analysis/`, the
+serving kit under `patientpunk/serving/`, and these docs. `main` on that fork is byte-identical to
+Nikita's, so the branch diff is exactly our contribution.
+- `PatientPunk` — `trial_superset/` is **retired**; it was the original home of the analysis tooling
+and is kept read-only with a pointer. Nothing there is current.
+- **No data lives in either repository.** The corpus, study definition and trial records are on S3
+under `s3://patientpunk/trial_superset/`; `patientpunk/scripts/00_fetch_inputs.sh` pulls them.
 
 **Environment**
 
@@ -1010,8 +1088,10 @@ fork at
 | **A7** | `detokenize=False` is hardcoded on every `prompt_logprobs` call; harmless in-process, but it crashes a *hosted* vLLM server.                                                                     | `conditional_extraction`             | **fix written** — an in-process guard, on our branch              |
 | **A8** | Bootstrap intervals implausibly tight — ±1 on n=32 (§10.2).                                                                                                                                      | `bootstrap_size`                     | open — needs her view                                             |
 | **A9** | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence.                                                                                                                    | `build_treatment_automaton` + curate | **fixed** — boundary-aware matching added; strongest PR candidate |
+| **A10** | `author` is discarded after stage 2, so one prolific poster becomes many synthetic patients — 99 posts from one person became 99 "patients" (§11.7).                                            | contextualise + curate               | open — a salted author hash is small; the statistics are the hard part |
+| **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                              | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found |
+| **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                              | `sample_ty` parsing                  | open — mechanical, and the range is already known |
 | **B1** | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                        | our CT.gov scope layer               | fixed in `seed_terms`                                             |
-|        |                                                                                                                                                                                                  |                                      |                                                                   |
 
 
 ---

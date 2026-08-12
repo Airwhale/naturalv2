@@ -50,8 +50,10 @@ after we flagged it; "ours" means we wrote the fix.
 | **A4** | `status:act` excludes recruiting trials; pinned code ≠ her shared study | Nikita | a tradeoff, not a defect — which status selection is canonical? |
 | **A5** | default estimator cannot run a `notbinary` study (`ZeroDivisionError`) | Nikita | we supply `estimate_mc.yaml`, but changing the *default* is a design call |
 | **A6** | change-from-baseline labels compared against absolute predictions | Nikita | fixing it in `Experiment`, rewriting descriptions, or excluding such trials are all defensible |
-| **A8** | bootstrap intervals implausibly tight (±1 on n=32) | Nikita | she may already treat these as descriptive rather than calibrated |
+| **A8** | bootstrap intervals implausibly tight (±1 on n=32) | Nikita | mostly downstream of A11 — 21 of 32 values are identical, so any resample returns the same number |
 | **A10** | `author` is dropped, so one prolific poster counts as many patients | Nikita | schema change is small; the statistics of what to do about it are open |
+| **A11** | a comment inherits the **outcome of the thread it replies to** — 76–88% of our evidence rows never mention the treatment in their own text | Nikita | measurement error, and the likeliest cause of both our overshoot and A8 |
+| **A12** | extracted outcome values are never range-checked — LIFT produced 4,444,000 on a 0–55 scale | Nikita | mechanical; the endpoint range is already known where the description states it |
 | **C4** | our analysis scripts assume a working directory and a local data mirror | ours | works, but not portable — see `patientpunk/analysis/README.md` |
 | **D3** | the GPU is held for a whole run but used only by `inclusion_prob` | ours | ~85% of GPU spend is idle time; needs the runner to acquire it later |
 
@@ -83,12 +85,14 @@ after we flagged it; "ours" means we wrote the fix.
 | **A5** | default estimator can't run a `notbinary` study | `naturalv2` `conditional_extraction` | **yes** | **high** | flagged; we run NATURAL-MC instead |
 | **A6** | change-from-baseline label vs absolute prediction | `naturalv2` `Experiment` + our sidecar | **yes** | **high** | **open** — root cause of our first run's error |
 | **A7** | `detokenize=False` kills a hosted vLLM server | `naturalv2` `conditional_extraction` | only off-repo runs | medium | **FIXED** — in-process guard, PR-ready |
-| **A8** | bootstrap CIs implausibly tight (±1 on n=32) | `naturalv2` `bootstrap_size` | **yes** | medium | **open** — needs her view |
+| **A8** | bootstrap CIs implausibly tight (±1 on n=32) | `naturalv2` `bootstrap_size` | **yes** | medium | **open** — largely a symptom of A11 |
 | **A9** | ≤3-char drug aliases dropped (79% of LDN evidence) | `build_treatment_automaton` + curate | **yes** | **high** | **FIXED** — boundary-aware matching, PR-ready |
 | **B1** | `query.cond="COVID"` misses SARS-CoV-2/PASC tags | CT.gov search (our scope layer) | indirect | medium | fixed in `seed_terms` scope |
 | **C1** | `inject_one` ambiguous `None` return | our `build_augmented.py` | no | medium | **fixed** |
 | **C2** | misc implementation slips | our code | no | low | **fixed** |
 | **A10** | `author` dropped, so prolific posters count many times | `naturalv2` contextualise + curate | **yes** | **high** | **open** — schema change small, statistics open |
+| **A11** | a comment inherits the thread's outcome | `curate.py` `fmt_comment` + `sample_ty` prompt | **yes** | **highest** | **open** — measurement error; drives the overshoot and A8 |
+| **A12** | extracted outcomes never range-checked | `sample_ty` parsing | **yes** | **high** | **open** — 14.8% of LIFT rows out of range, max 4.4M on a 0–55 scale |
 | **C3** | `is_change` title regex missed untitled change endpoints | our `build_labels_sidecar.py` | no | **high** | **FIXED** — now reads timeFrame + range-checks the value |
 | **C4** | analysis scripts assume a cwd and a local data mirror | our `patientpunk/analysis/` | no | low | **open** — not portable |
 | **D1** | `gpu_memory_utilization` starves `prompt_logprobs` | serving config | no | high | fixed (0.55) |
@@ -256,8 +260,18 @@ in whether the extractions are right — which is the dominant error source when
 outcome from a Reddit post. **Overconfident intervals are worse than wrong point estimates on a
 benchmark**: they make a model look reliably wrong rather than uncertain, and any downstream
 calibration or coverage metric inherits the error.
+**Root cause — revised.** We first read this as `bootstrap_size: 10` being too small. Going back to
+the extracted rows shows something more direct: **21 of the 32 Brain Fog values are identical
+(−35.0)**, because they are comments on the same recovery threads and inherited that thread's
+outcome ([A11](#a11--a-comment-inherits-the-outcome-of-the-thread-it-replies-to)). Resampling rows
+that are nearly all the same number returns nearly the same number, whatever B is. That also explains
+why n = 9 gave the *wider* interval — Fatigue's values are more spread, not less clustered by luck.
+`bootstrap_size: 10` is still too small, and [A10](#a10--author-is-discarded-so-prolific-posters-count-as-many-patients)
+still breaks independence, but neither is the leading term.
 **Fix/status:** open, needs Nikita's view — she may already treat these as descriptive rather than
-calibrated. Worth checking coverage across the full benchmark before trusting any interval.
+calibrated. Raising B is worth doing but will not fix this on its own: an interval computed over
+degenerate values is precise about the wrong thing. Worth checking coverage across the full benchmark
+before trusting any interval.
 
 ### A7 — `detokenize=False` kills a hosted vLLM server
 **Where:** `conditional_extraction.py` hardcodes `detokenize=False` on every `prompt_logprobs` call
@@ -351,6 +365,96 @@ contextualisation and curation, which gives clustering without storing handles. 
 is a real choice: cluster-bootstrap by author (most defensible first move), weight by 1/nᵢ, or
 deduplicate. With a median of one document per author, the tail is doing the damage, so a cap may
 beat a global reweighting.
+
+### A11 — A comment inherits the outcome of the thread it replies to
+**Where:** `sources/reddit/stages/curate.py` (`fmt_comment`, ~line 834) embeds the **full text of the
+initial post** in every comment's report. The extraction prompt
+(`prompts/templates/sample_ty.yaml`) then asks for the value *"the individual described in the
+report"* would give. A comment's report describes **two** individuals — the original poster and the
+commenter — and the original poster is described far more fully. The model answers about the wrong
+one.
+
+**Evidence.** Reading back the extracted rows from both of our runs:
+
+| | Brain Fog (lithium) | Fatigue (lithium) | Functional Capacity (LIFT) |
+|---|---|---|---|
+| evidence rows | 32 | 9 | 3,127 |
+| distinct **threads** behind them | 7 | 4 | 494 |
+| rows whose **own comment** names the treatment | 4 | 1 | 735 |
+| rows where **only the thread** names it | **28 (88%)** | **8 (89%)** | **2,375 (76%)** |
+| median length of the comment itself | 99 chars | 54 chars | 142 chars |
+
+For lithium's Brain Fog, **21 of 32 rows carry the identical extracted value, −35.0**. The three
+largest source threads are recovery announcements; the biggest is titled *"Long Covid Recovery to
+90% — Antihistamine Treatment"*, and it alone supplies 11 rows. The comments scored −35 read, in
+full, *"Yes! Those are horrible when they happen.. Thanks for sharing."*, *"Hey! We're you able to
+eventually ween off the antihistamines?"* and *"It's cheap. Will give it a try. I take generic
+zyrtec and Benadryl at night"*. None reports an outcome; none is about lithium. Each is a comment on
+a thread whose **title** announces 90% recovery, and each is scored as near-total recovery.
+
+The separation is clean: the 4 rows whose own text discusses lithium average **−2.5**, while the 28
+that do not average **−33.2**. The trial's answer is **−9.0**. The rows that are actually about the
+drug are the closest to correct; the estimate is driven by the ones that are not.
+
+**Impact on her:** this is a measurement error, not a modelling one — `Y_i` is not the outcome of the
+individual the row claims to represent. It propagates three ways:
+
+1. **Point estimates inflate toward whatever the thread announced.** Long, popular threads are
+   disproportionately recovery stories, and their comment counts are exactly what makes them supply
+   many rows.
+2. **Intervals collapse.** With 21 of 32 values identical, every bootstrap resample returns the same
+   number. This is a **more likely cause of A8 than `bootstrap_size` alone** — the values have almost
+   no spread to resample.
+3. **The effective sample is the thread, not the comment.** 32 rows from 7 threads is not n = 32 for
+   any purpose. Compounds with [A10](#a10--author-is-discarded-so-prolific-posters-count-as-many-patients).
+
+It also means we have been attributing the wrong *treatment*: `treatment_taken` reads `Lithium` on
+comments discussing zyrtec and Benadryl.
+
+**Fix/status:** open, and we think this is the highest-value thing in this document. Directions, in
+rough order of cost:
+
+- **Require the report to discuss the treatment.** The cheapest filter — drop rows whose own
+  `report_text` never mentions the matched treatment. Would have removed 88% of lithium's evidence,
+  which is the point: that evidence was not evidence.
+- **Name the subject in the prompt.** Ask for the outcome of *the comment's author*, and mark the
+  initial post explicitly as background about a different person.
+- **Reconsider whether thread context belongs at all** for the outcome question. It helps the
+  relevance and treatment questions and actively harms this one; it need not be the same context for
+  every question.
+- **Aggregate to the thread, or cluster-bootstrap by it**, so 11 comments on one recovery post cannot
+  count as 11 patients.
+
+We have not implemented a fix — the choice among these is a research decision, not a mechanical one,
+and it is Nikita's call which belongs upstream.
+
+### A12 — Extracted outcome values are never range-checked
+**Where:** `sample_ty` asks for *"a single number … on the same scale as the outcome description"*,
+and whatever comes back is parsed and used. Nothing compares it against the range the description
+states.
+
+**Evidence (LIFT, FUNCAP55, a 0–55 scale, 3,127 rows):**
+
+| | |
+|---|---|
+| values outside 0–55 | **462 (14.8%)** |
+| literal `inf` | 2 |
+| maximum | **4,444,000** |
+| minimum | −55 |
+| mean of finite values | **+1,479.6** |
+
+A single value of 4.4 million on a 55-point scale moves the mean by more than a thousand points. The
+mean is not a summary of anything.
+
+**Impact on her:** silent and total. There is no error, no warning, and the resulting estimate is a
+well-formed number. Any trial whose extraction produces one bad parse gets a meaningless answer that
+looks exactly like a good one. Trials with wide or unusual scales are the most exposed.
+
+**Fix/status:** open, and unlike A11 this one is mechanical. The `Experiment` already knows the
+endpoint's range wherever the description states it — the same source our own `C3` range-check uses.
+Rejecting (not clamping — a clamp turns a parse failure into a confident extreme) out-of-range
+values, and logging the rate, would be a small patch. The rate itself is a useful extraction-quality
+signal.
 
 ---
 
