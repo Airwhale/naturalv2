@@ -378,11 +378,14 @@ step is the identity function for it, which is worth knowing because the name su
 
 ### 6.4 Two extraction modes
 
-The pipeline is a list of stages. Ours differs from upstream's default in exactly **one swap**:
+The pipeline is a list of stages, and which stages run is set by a config file. Nikita's default
+config is `conf/estimate_ate.yaml`; ours is `conf/estimate_mc.yaml`, and it differs in exactly **one
+swap**. (Her filename says `ate`, but that is only the default — whether a run estimates an ATE or an
+APO is the `ate:` flag inside, which we set to `False`.)
 
 
-| #   | stage                      | upstream `estimate_ate.yaml` | ours `estimate_mc.yaml` |
-| --- | -------------------------- | ---------------------------- | ----------------------- |
+| #   | stage                      | Nikita's default | ours                    |
+| --- | -------------------------- | ---------------- | ----------------------- |
 | 1   | `relevance_filter`         | yes                          | yes                     |
 | 2   | `treatment_outcome_filter` | yes                          | yes                     |
 | 3   | `knowns`                   | yes                          | yes                     |
@@ -409,73 +412,18 @@ P(a) = softmax over all candidates of score(a)
 
 In words: paste each candidate answer into the prompt, ask the model how unsurprising that whole
 prompt was, and turn those scores into a probability distribution over the candidates. The model is
-only ever asked to *score* text it was given, never to write any — which is what `prompt_logprobs`
-returns, and what no chat API exposes. A collapsed single answer from a chat model cannot substitute.
+only ever asked to *score* text it was given, never to write any — which is what `prompt_logprobs`  
+returns, and what no chat API exposes. A collapsed single answer can't return this. 
 
 **Mode 2 — Monte Carlo, i.e. sampling.** `SampleTYStage`, stage 5. NATURAL-MC. Rather  
-than scoring an enumerated grid for predicting results as in the standard pipeline,    
-the model is asked the question once and replies with `{treatment, outcome}` as JSON, `Y_i` a real
-number. This is necessary because the endpoints we are looking at are continuous, not binary.
+than scoring an enumerated grid for predicting results as in the standard pipeline,  
+the model is asked the question once and replies with `{treatment, outcome}` as JSON, `Y_i` a real number. This is nessasary because the endpoints we are looking at are continuous, not discreate. 
 
-**Conditional extraction is still needed for the inclusion probability —
-`P(meets the trial's inclusion criteria | report)` — when using a Monte Carlo method.** Sampling
-replaces grid-scoring for `T` and `Y` only. The eligibility weight (§6.5) is still obtained by
-scoring a grid, and that is why the pipeline still needs a GPU.
+This Monte Carlo prediction cannot express uncertainty. Scoring the grid in conditional extraction returns a probability across candidates, 
 
-This Monte Carlo prediction cannot express uncertainty. Scoring the grid returns a probability across
-candidates, so a report the model is unsure about contributes a spread. Sampling returns one number,
-and taking a single draw per report (§6.7) discards that uncertainty entirely. This is why
-[A11](#appendix-a--bug-index) and [A12](#appendix-a--bug-index) were invisible until we read the rows
-back — a confabulated value, an out-of-range value and a well-grounded one are all just numbers in
-the output table.
-
-**This does not replace conditional extraction.** The name does double duty, which is where the
-confusion comes from:
-
-- the **stage** `conditional_extraction` (row 7), which we removed;
-- the **file** `naturalv2/pipeline/conditional_extraction.py`, which still runs — because it defines
-  *two* stage classes, and we only dropped one of them:
-
-```python
-class ConditionalExtractionStage(PipelineStage):        # row 7 — removed
-class InclusionProbStage(ConditionalExtractionStage):   # row 6 — kept
-```
-
-Stage 6 inherits from stage 7's class. It **is** a conditional-extraction stage: same grid, same
-teacher-forced scoring, same `prompt_logprobs` call. It survives for one reason — **its grid has two
-options, `Yes` and `No`.** A two-item list enumerates fine. The stage we dropped was trying to
-enumerate a continuous 1–49 scale, which has no items at all.
-
-So the swap does not retire the technique, it retires one *question* asked with it: "what were `T`
-and `Y`?" The other question — "would this person have met the inclusion criteria?" — still uses it
-(§6.5), and that is why the GPU requirement survives. Stage 6 is the "exactly one stage needs a GPU"
-of §7.3.
-
-**What the swap does and does not change.** All four of these are upstream — the estimators and
-their configs are Nikita's, and what we contributed is the pipeline config that selects among them.
-"NATURAL-MC" names the *extraction* only; the estimator is an independent choice, and there are four
-combinations, not two:
+**Conditional extraction is still needed for trial inclusion determination even if using Monti Carlo:  We can't get away from the open model as things are currently written.** 
 
 
-|                             | conditional extraction           | Monte Carlo extraction        |
-| --------------------------- | -------------------------------- | ----------------------------- |
-| **IPW** (propensity)        | `natural_ipw` — upstream default | `natural_mc_ipw`              |
-| **OI** (outcome imputation) | `natural_oi`                     | `natural_mc_oi` — what we run |
-
-
-We moved from the top-left to the bottom-right, so we changed **both** axes at once. The extraction
-change was forced — continuous endpoints have no grid to enumerate (§10.3). The estimator change was
-not forced by that, but it is right anyway: the `ipw` branch multiplies each report by a mask of
-whether that person took arm `t`, and the downstream average runs over *all* reports, so with more
-than one arm it returns `E[Y · 1{T=t}]` rather than `E[Y(t)]` — shrunk toward zero by the arm's share
-of the sample. `oi` imputes the outcome under `t` for every report, which is the g-formula and the
-right quantity. Lithium has a single arm so the mask is all ones and the two would agree; anything
-multi-arm they would not.
-
-**One caution from upstream.** `NaturalMC`'s own docstring carries `TODO: Do not use for APOs; off-the-shelf estimators do not trivially extend to APOs` — and APO is exactly what we run
-(`ate: False`). The `oi` branch reads like a correct standardisation estimator for an APO, so we do
-not think this is wrong, but it is an explicit caution sitting above the class we depend on and it
-needs Nikita's read. Tracked as [A13](#appendix-a--bug-index).
 
 ### 6.5 Inclusion weighting
 
