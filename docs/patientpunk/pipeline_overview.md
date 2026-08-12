@@ -384,15 +384,15 @@ swap**. (Her filename says `ate`, but that is only the default — whether a run
 APO is the `ate:` flag inside, which we set to `False`.)
 
 
-| #   | stage                      | Nikita's default | ours                    |
-| --- | -------------------------- | ---------------- | ----------------------- |
-| 1   | `relevance_filter`         | yes                          | yes                     |
-| 2   | `treatment_outcome_filter` | yes                          | yes                     |
-| 3   | `knowns`                   | yes                          | yes                     |
-| 4   | `imputations`              | yes                          | yes                     |
-| 5   | `sample_ty`                | present but commented out    | **added**               |
-| 6   | `inclusion_prob`           | yes                          | yes — **unchanged**     |
-| 7   | `conditional_extraction`   | yes                          | **removed**             |
+| #   | stage                      | Nikita's default          | ours                |
+| --- | -------------------------- | ------------------------- | ------------------- |
+| 1   | `relevance_filter`         | yes                       | yes                 |
+| 2   | `treatment_outcome_filter` | yes                       | yes                 |
+| 3   | `knowns`                   | yes                       | yes                 |
+| 4   | `imputations`              | yes                       | yes                 |
+| 5   | `sample_ty`                | present but commented out | **added**           |
+| 6   | `inclusion_prob`           | yes                       | yes — **unchanged** |
+| 7   | `conditional_extraction`   | yes                       | **removed**         |
 
 
 Stages 5 and 7 are the two modes below. Stage 6 is unchanged, and that matters more than it looks.
@@ -423,13 +423,11 @@ This Monte Carlo prediction cannot express uncertainty. Scoring the grid in cond
 
 **Conditional extraction is still needed for trial inclusion determination even if using Monti Carlo:  We can't get away from the open model as things are currently written.** 
 
-
-
 ### 6.5 Inclusion weighting
 
 Reddit is not the trial's cohort, and this is the pipeline's one explicit correction for that.
-`inclusion_prob` scores `P(meets_inclusion_criteria = Yes | report)` by the teacher-forced method of
-§6.4(a), and each report then enters the average weighted by that probability — in
+`inclusion_prob` scores `P(meets_inclusion_criteria = Yes | report)` by the teacher-forced method of  
+§6.4(a), and each report then enters the average weighted by probability — in  
 `estimate_ate.py`, literally `np.average(responses, weights=probs)`. Someone who reads as clearly
 trial-eligible counts nearly fully; someone who reads as ineligible counts nearly zero. Controlled by
 `use_inclusion_weights: True`.
@@ -451,43 +449,27 @@ stated.
 
 
 *(Effective sample size is `(Σw)² / Σw²` — how many equally-weighted reports would carry the same
-information.)* No single report dominates, so this is **not** a contributor to the problems in §10.2.
-Worth stating explicitly, because concentrated weights are a standard place for instability to hide
-and it would be reasonable to suspect them here.
-
-**What it does not correct for is propensity to post** (§11.2). Being eligible for a trial and being
-the kind of person who writes about their illness online are different things, and only the first is
-modelled.
+information.)* 
 
 ### 6.6 The estimators
 
-The estimator turns the extracted table into the answer. It takes `(X, T, Y, w)` — one row per report
-— and returns `E[Y(t)]`, the average outcome under arm `t`.
-
-Three are available. Each is a **causallib** estimator (IBM Research's causal-inference library)
-wrapping an ordinary scikit-learn model, checked against `naturalv2/models/causal_models.py`:
+The estimators come from **causallib** — an open-source causal-inference library from IBM Research
+that wraps the standard estimators as scikit-learn-style objects — with ordinary scikit-learn models
+doing the actual fitting. Checked against `naturalv2/models/causal_models.py`:
 
 
 | name          | class                                  | the model it fits                |
 | ------------- | -------------------------------------- | -------------------------------- |
-| **OI — ours** | `causallib.estimation.Standardization` | `LinearRegression`               |
 | IPW           | `causallib.estimation.IPW`             | multinomial `LogisticRegression` |
+| **OI (ours)** | `causallib.estimation.Standardization` | `LinearRegression`               |
 | baseline      | `MarginalOutcomeEstimator`             | none — plain difference in means |
 
 
-**OI — outcome imputation, also called standardisation or the g-formula — is what we run.** It fits
-one model that predicts the outcome from the covariates and the treatment, then asks that model what
-**every** patient would have scored had they all been given arm `t`, and averages those predictions:
-
-```
-E[Y(t)]  =  mean over ALL patients i of  outcome_model( X_i , t )
-```
-
-**IPW — inverse propensity weighting — is the alternative**, and asks a different question: *"how
-surprising is it that this person took this treatment, given who they are?"* It fits a model of the
-probability of receiving each treatment given the covariates — the **propensity** — then weights each
-patient by the inverse of that probability, so someone who took an unlikely-for-them treatment counts
-for more. That pulls the sample back toward what randomisation would have produced:
+**IPW (inverse propensity weighting)** asks *"how surprising is it that this person took this
+treatment, given who they are?"* It fits a model of the probability of receiving each treatment
+given the covariates — the **propensity** — then weights each patient by the inverse of that
+probability. People who took an unlikely-for-them treatment count for more, which rebalances the
+sample toward what a randomised trial would have produced:
 
 ```
              sum over patients on arm t of  ( Y_i / propensity(t | X_i) )
@@ -495,21 +477,28 @@ E[Y(t)]  =   -----------------------------------------------------------
              sum over patients on arm t of  (   1 / propensity(t | X_i) )
 ```
 
-Two things about the OI path are worth flagging.
+**OI (outcome imputation, a.k.a. standardisation or the g-formula)** — the path we use — works the
+other way round. It fits a model predicting the outcome from covariates *and* treatment, then asks
+that model to predict what **every** patient would have scored had they all been given arm `t`, and
+averages:
+
+```
+E[Y(t)]  =  mean over ALL patients i of  outcome_model( X_i , t )
+```
+
+Two things about this are worth flagging.
 
 **The outcome model is a plain, unregularised linear regression** over the discretised covariates
-plus a treatment column. Eight covariates plus treatment is nine features, and with an intercept that
-is ten parameters to estimate.
-
-Lithium's Fatigue outcome had **nine reports**. Fewer rows than parameters: the regression is
-saturated, it fits those rows exactly, and the coefficients are essentially arbitrary because no
-residual variation is left to pin them down. OI then extrapolates that model to every patient, which
-is unstable in a way nothing in the pipeline warns about, and is a plausible contributor to the wild
-estimate in §9. There is no regularisation, no interaction terms, and no check that the row count
-exceeds the parameter count.
+plus a treatment indicator. With 8 covariates plus treatment, it is fitting roughly 9 or more
+parameters. For lithium's Fatigue outcome we had **n = 9 patients**. That is as many parameters as
+data points: the regression is saturated, it can fit the training rows exactly, and the coefficients
+are essentially arbitrary — there is no residual variation left to estimate them from. Extrapolating
+that model to every patient, as OI does, is then unstable in a way nothing in the pipeline warns
+about, and it is a plausible contributor to the wild point estimate in §9. No regularisation, no
+interaction terms, no check that n exceeds the number of parameters.
 
 **Identification rests on the usual assumptions:** consistency, positivity, and **no unmeasured
-confounding given those eight covariates**. That is a strong assumption anywhere and a particularly
+confounding given those 8 covariates**. That is a strong assumption anywhere, and a particularly
 demanding one on Reddit; §11.4 sets out why.
 
 ### 6.7 Uncertainty
@@ -745,44 +734,10 @@ patients in a trial improve by roughly nine points, does very well:
 | **NATURAL as we are running it** (§9.1) | 17.2          | 24.9            | **21.0** |
 
 
-That constant beats us roughly twelve-fold. On one trial, with a 7B model, this is not a verdict on
-the method — but it does expose a structural problem with *what we are measuring*. Because we
-estimate **APO, the mean outcome under one arm** (§6.2), and both arms move together, the target is
-dominated by placebo response and time trend. **Mean absolute error on APO barely tests whether the
-method detects a treatment effect at all.** The decision-relevant quantity is the contrast — −2.7
-and −0.9 — and we have never tested it.
+That constant beats us roughly twelve-fold. On one trial, with a 7B model, this is not a verdict on  
+the method — but there is very clearly bias and noise to the point of making us question everything here.
 
-### 9.3 What verification will mean
 
-**The verification set already exists.** Every trial that has posted results is one: we estimate,
-then compare against the known answer. The prediction targets in §4.4 — LIFT included — can never
-verify anything, because there is nothing to check against. So the 19 completed trials are the
-verification set and the 3 targets are the product.
-
-**We have used one of them.** Lithium, two outcomes, and it is spent: having been tuned against, it
-can no longer serve as a clean test. The other four core-5 trials — cyclobenzaprine, vortioxetine,
-Niagen, fluvoxamine — are built and untouched, and are now cheap to run, since corpus
-contextualisation is cached and each needs only curation plus a short GPU pass.
-
-**Fix A11 before spending any of them.** There are four clean trials and one clean run each. Running
-them against an extractor that reads the wrong person's text would consume all four to re-measure a
-defect we have already characterised. The order is: fix A11 and A12, re-run *lithium* — already
-contaminated, so it costs nothing to reuse — confirm the extracted values stop being degenerate, and
-only then unfreeze the held-out four.
-
-**Four measurements, on those four trials, with the configuration frozen first:**
-
-1. **Against baselines** — versus predict-zero and predict-placebo-response. Without a baseline an
-  error figure means nothing, as §9.2 demonstrates.
-2. **Sign agreement** — does it get the direction right? Currently 2 of 2, after the units fix.
-3. **Interval coverage** — does the confidence interval contain the truth? Currently 0 of 2, which
-  restates §10.2 as a metric rather than an observation.
-4. **Contrast, not just APO** — can it separate lithium from placebo when the real gap is 0.9 points
-  on a 49-point scale? This is the question that matters, and by far the hardest.
-
-Freezing the configuration beforehand is the step that is easy to skip and expensive to lose. Any
-further tuning against these four contaminates them exactly as lithium is contaminated, and there is
-only one clean shot per trial.
 
 ---
 
@@ -883,6 +838,20 @@ systematic extraction bias.
 **Progress looks like:** an interval whose empirical coverage across the 19 labelled trials is close
 to nominal. That is measurable with what we already have, and nobody has measured it.
 *Self-contained; needs no new data.*
+
+**The other interval — the trial's.** We score against the trial's reported value as though it were
+exact. It is not: lithium's −9.0 is an estimate from one finite arm, reported with an SD of 13.8, and
+it carries its own interval. Treating it as a point makes our error look sharper than it is on the
+target side, in the same way the bootstrap makes it look sharper on ours.
+
+This does not rescue the numbers in §9 — being 25 half-widths out is not a rounding question — but it
+changes what "correct" means once we are close, which is exactly the regime the four held-out trials
+will land in. A prediction sitting inside the trial's own interval is not distinguishable from right,
+and scoring it as a 3-point error would be measuring noise in the label.
+
+**Progress looks like:** carrying the trial's own standard error through the comparison, so accuracy
+is measured interval-against-interval rather than point-against-point. The spreads are already in the
+trial records we hold.
 
 ### 11.2 Selection bias — people post about dramatic outcomes
 
