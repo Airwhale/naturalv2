@@ -426,14 +426,24 @@ the output table.
 **This does not replace conditional extraction.** The name does double duty, which is where the
 confusion comes from:
 
-- the **stage** `conditional_extraction` (row 7) — removed;
-- the **module** `naturalv2/pipeline/conditional_extraction.py` — still very much in use.
+- the **stage** `conditional_extraction` (row 7), which we removed;
+- the **file** `naturalv2/pipeline/conditional_extraction.py`, which still runs — because it defines
+  *two* stage classes, and we only dropped one of them:
 
-`InclusionProbStage` lives in that module and *subclasses* `ConditionalExtractionStage`. So stage 6
-**is** a conditional-extraction stage: still running, still teacher-forcing, still calling
-`prompt_logprobs`. What the swap removes is one *use* of the technique — inferring `T` and `Y`. The
-technique itself survives for inclusion weighting (§6.5), and that is exactly why the GPU
-requirement survives with it: stage 6 is the "exactly one stage needs a GPU" of §7.3.
+```python
+class ConditionalExtractionStage(PipelineStage):        # row 7 — removed
+class InclusionProbStage(ConditionalExtractionStage):   # row 6 — kept
+```
+
+Stage 6 inherits from stage 7's class. It **is** a conditional-extraction stage: same grid, same
+teacher-forced scoring, same `prompt_logprobs` call. It survives for one reason — **its grid has two
+options, `Yes` and `No`.** A two-item list enumerates fine. The stage we dropped was trying to
+enumerate a continuous 1–49 scale, which has no items at all.
+
+So the swap does not retire the technique, it retires one *question* asked with it: "what were `T`
+and `Y`?" The other question — "would this person have met the inclusion criteria?" — still uses it
+(§6.5), and that is why the GPU requirement survives. Stage 6 is the "exactly one stage needs a GPU"
+of §7.3.
 
 **What the swap does and does not change.** All four of these are upstream — the estimators and
 their configs are Nikita's, and what we contributed is the pipeline config that selects among them.
