@@ -378,6 +378,21 @@ step is the identity function for it, which is worth knowing because the name su
 
 ### 6.4 Two extraction modes
 
+**Why there are two at all.** The estimator does not want an answer, it wants a *probability*.
+"This patient scored 30" is worth less than "60% chance it is 30, 30% chance 25, 10% chance 40" —
+that uncertainty is supposed to flow through into the estimate and its interval. Ask a chat model
+and you get the first kind: one sampled answer, probabilities discarded.
+
+Conditional extraction is how you get the second kind. **List every answer the patient could have
+given, and have the model score each one rather than write any.** That list is the grid. Scoring all
+of it gives you a distribution over what the patient reported, instead of a guess.
+
+**It only works when the list is finite.** Our endpoints are continuous scales, so the set of
+possible values is infinite and there is nothing to enumerate. That forces us into mode (b): ask
+once, keep the single number, lose the distribution. Not a preference — the price of continuous
+endpoints, and what §6.7, [A11](#appendix-a--bug-index) and [A12](#appendix-a--bug-index) are all
+downstream of.
+
 The pipeline is a list of stages. Ours differs from upstream's default in exactly **one swap**:
 
 
