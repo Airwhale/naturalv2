@@ -10,7 +10,7 @@ Start with the source and docs. Do not start with `.venv/`, `__pycache__/`, `.ca
 
 Use this order:
 
-1. Read `README.md`, then `docs/method_and_scope.md`, then `docs/bugs.md`.
+1. Read `README.md`, then [method_and_scope.md](method_and_scope.md), then [findings.md](findings.md).
 2. Read `seed_terms.py` and `config/create_study.yaml` to understand the condition universe and NATURAL toggles.
 3. Read `run_study.py` and `verify_m1.py` to understand the faithful reproduction path.
 4. Read `broaden.py`, `audit_conditions.py`, `build_improved.py`, and `consolidate.py` to understand the improved condition-filter path.
@@ -209,7 +209,7 @@ For condition matching, review `docs/condition_filter_audit.md`, `seed_terms.py`
 | File | Notes |
 |---|---|
 | `docs/method_and_scope.md` | Explains the core scientific framing: NATURAL estimates each trial independently and this folder builds a benchmark plus target list, not a pooled training set. Read this before interpreting counts. |
-| `docs/bugs.md` | Consolidated bug registry for issues found in pinned NATURAL and in this local effort. This is the best starting point when writing reports for Nikita. |
+| [findings.md](findings.md) | Consolidated bug registry for issues found in pinned NATURAL and in this local effort. This is the best starting point when writing reports for Nikita. |
 | `docs/condition_filter_audit.md` | Detailed evidence for condition-matcher overmatching and undermatching. It explains why Long COVID needed a local text filter rather than relying only on CT.gov query behavior. |
 | `docs/test_universe_status.md` | Describes the `status:act` issue and why recruiting trials such as LIFT can be absent from the pinned NATURAL test universe. Use it when reviewing prospective target coverage. |
 | `docs/label_normalization.md` | Explains the continuous-label problem in which NATURAL's notbinary path can divide means or scores by arm size. It also documents the sidecar export strategy. |

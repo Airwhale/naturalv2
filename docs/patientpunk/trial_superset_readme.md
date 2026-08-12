@@ -175,7 +175,7 @@ Key artifacts in `s3://patientpunk/trial_superset/`:
 
 ## For Nikita (differences & decisions)
 
-> **⚠️ [docs/bugs.md](docs/bugs.md) — start here.** A single registry of every bug found. Four are in
+> **⚠️ [findings.md](findings.md) — start here.** A single registry of every bug found. Four are in
 > `naturalv2` itself and change *your own* published study (condition matcher, `value/N` continuous
 > labels, factorial-arm dropping, `status:act` vs your shared test set). The per-topic docs below have
 > the full detail for each.
@@ -225,7 +225,7 @@ Key artifacts in `s3://patientpunk/trial_superset/`:
 **Documentation index (`docs/`)**
 - [source_review_guide.md](docs/source_review_guide.md) - source-code reading order, pipeline diagrams, and a per-file appendix.
 - [method_and_scope.md](docs/method_and_scope.md) — **READ FIRST: how NATURAL actually works (per-trial, zero-shot), why this is a benchmark not training data, why Long-COVID-only.**
-- [bugs.md](docs/bugs.md) — **consolidated bug registry (start here for Nikita).**
+- [findings.md](findings.md) — **consolidated bug registry (start here for Nikita).**
 - [condition_filter_audit.md](docs/condition_filter_audit.md) — her condition matcher's over/under-matching.
 - [test_universe_status.md](docs/test_universe_status.md) — `status:act` vs recruiting-inclusive test set.
 - [label_normalization.md](docs/label_normalization.md) — the `value/N` continuous-label problem + sidecar fix.
