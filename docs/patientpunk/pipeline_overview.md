@@ -42,7 +42,7 @@ I am recording things to improve upon in her repo here:
 ## 2. What NATURAL is:
 
 **Paper:** Dhawan, Cotta, Ullrich, Krishnan & Maddison, *End-To-End Causal Effect Estimation from
-Unstructured Natural Language Data*, arXiv:2407.07018 (NeurIPS 2024). We run pinned commit `7a2e006`.(naturalv2)
+Unstructured Natural Language Data*, arXiv:2407.07018 (NeurIPS 2024). We run pinned commit `7a2e006` of `naturalv2`.
 
 NATURAL uses an LLM as a *measurement instrument*. For a given trial it reads each patient report  
 and emits the four variables a causal estimator needs: which of **this trial's** treatment arms the  
@@ -69,7 +69,7 @@ explicit reweighting toward the trial-eligible population. It is a more exact cl
 **How what we are doing differs from what Nikita did: The math is the same.** We run her code, on her  
 pinned commit, with her estimators. Everything that differs is *input and context*, a different  
 patient population (Long-COVID Reddit), continuous symptom scales rather than proportion outcomes, a  
-7B model rather than a large one, and small early-phase trials rather than Phase 3/4. The §1[please link] list is  
+7B model rather than a large one, and small early-phase trials rather than Phase 3/4. The [§1](#1-orientation) list is  
 the full inventory of those differences. **I generally am finding lots of errors that I think biological expermentalists would find, and poor scraping practices,  which makes sense looking at the work of a math heavy ML lab.  The math is generally impressive.**
 
 ---
@@ -89,7 +89,7 @@ reports per trial out.
 
 
 **Sources for stage 1.** Primarily **ClinicalTrials.gov** (API v2, via naturalv2's own downloader).
-We add two paths of our own: a few **ISRCTN** trials[can you provide hyperlink?] adapted into the same schema, and  
+We add two paths of our own: a few trials from the **[ISRCTN registry](https://www.isrctn.com/)** adapted into the same schema, and  
 **papers-as-labels**, which rescues completed trials that never posted structured results by
 extracting the primary endpoint from the published paper. Those are flagged `registry_adapted` and
 `paper_extracted` respectively, so they can be excluded from any analysis that wants CT.gov-only.
@@ -104,9 +104,9 @@ extracting the primary endpoint from the published paper. Those are flagged `reg
 
 Two names to define first, since they recur throughout:
 
-- `**trial_filters`** — the block in naturalv2's config holding the four booleans below. It is the
+- **`trial_filters`** — the block in naturalv2's config holding the four booleans below. It is the
 only place trial eligibility is decided upstream.
-- `**noparallel_notbinary`** — the name we gave our filter settings, and the string that appears in
+- **`noparallel_notbinary`** — the name we gave our filter settings, and the string that appears in
 every output path and filename. It is purely descriptive: *no* `parallel` requirement, *not*
 `binary` endpoints. Upstream's default demands both; we demand neither.
 
@@ -127,7 +127,7 @@ on; we relax the last two, and the preset name `noparallel_notbinary` records ex
 | `binary_endpoint` | primary outcome is yes/no or a response rate                | **relaxed**  | the consequential one: demanding binary endpoints collapses the set by **92%**, because Long-COVID primaries are continuous symptom scales. Relaxing it is what makes the whole set viable — and what forces us onto the NATURAL-MC estimator (§10.4) |
 
 
-
+**Tier 2 — Condition** (ours; replaces upstream's substring matcher — [bug A1](#appendix-a--bug-index))
 
 - A keyword classifier, not `c in tc or tc in c`. The substring test admitted 12 acute-COVID
 hospitalisation trials (because `"covid"` ⊂ `"long covid"`) and dropped 7 genuine post-COVID ones
@@ -167,7 +167,7 @@ therefore measure the evidence available per treatment and drop trials below a f
 outcome* — not news, mechanism speculation, someone else's use, or acute-COVID use.
 - This replaced an earlier `is_corpus_learnable` gate that also demanded the drug be
 self-obtainable, single-agent, and blinded. That was wrong: NATURAL only needs a treatment to be
-**discussed** by people who took it. Using this gate instead of the one Nikita was using took us from **5 to 19** usable trials to train the model on.
+**discussed** by people who took it. Using this gate instead of the one Nikita was using took us from **5 to 19** usable trials. (Usable as *benchmark* trials — nothing is trained on them, see §2.)
 
 **Two things we record about each trial but deliberately do not filter on.**
 
@@ -238,10 +238,10 @@ nothing about the runs changes.
 
 | NCT                                                                                                                                                                                     | trial                            | sponsor                            | target arms                                                   | corpus signal                                               | status                                                                         |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ---------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **[NCT06366724](https://clinicaltrials.gov/study/NCT06366724)**                                                                                                                         | **LIFT: Life Improvement Trial** | **Open Medicine Foundation (OMF)** | `Placebo/LDN`, `Pyridostigmine/Placebo`, `Pyridostigmine/LDN` | 5,183 raw / **3,417 effective** (LDN); 683 (pyridostigmine) | recruiting — **running now** **(Note that we are meeting with them Thursday)** |
-| [NCT06095297](https://clinicaltrials.gov/study/NCT06095297) · [NCT06585254](https://clinicaltrials.gov/study/NCT06585254) · [NCT06968104](https://clinicaltrials.gov/study/NCT06968104) | tVNS ×3                          | —                                  | device arms [unclear]                                         | 3,091                                                       | recruiting / active                                                            |
+| **[NCT06366724](https://clinicaltrials.gov/study/NCT06366724)**                                                                                                                         | **LIFT: Life Improvement Trial** | **Open Medicine Foundation (OMF)** | `Placebo/LDN`, `Pyridostigmine/Placebo`, `Pyridostigmine/LDN` | 5,183 raw / **3,417 effective** (LDN); 683 (pyridostigmine) | recruiting — first run stopped early, see §8.1. **Meeting OMF Thursday** |
+| [NCT06095297](https://clinicaltrials.gov/study/NCT06095297) · [NCT06585254](https://clinicaltrials.gov/study/NCT06585254) · [NCT06968104](https://clinicaltrials.gov/study/NCT06968104) | tVNS ×3                          | —                                  | CICT / BFT (± VR); patient- vs device-controlled; Intervention A/B | 3,091                                                       | recruiting / active                                                            |
 | [NCT05852873](https://clinicaltrials.gov/study/NCT05852873) · [NCT06792214](https://clinicaltrials.gov/study/NCT06792214)                                                               | Paxlovid ×2                      | —                                  | nirmatrelvir-ritonavir                                        | 2,925                                                       | active / recruiting                                                            |
-| [NCT06082518](https://clinicaltrials.gov/study/NCT06082518)                                                                                                                             | HBOT                             | —                                  | hyperbaric arm [unclear]                                      | 1,404                                                       | recruiting                                                                     |
+| [NCT06082518](https://clinicaltrials.gov/study/NCT06082518)                                                                                                                             | HBOT                             | —                                  | immediate vs delayed start of hyperbaric treatment            | 1,404                                                       | recruiting                                                                     |
 
 
 **LIFT is probably the most important of the above studies to predict.**
@@ -253,9 +253,11 @@ nothing about the runs changes.
 3. It exercises two of our findings directly: [A3](#appendix-a--bug-index) and [A4](#appendix-a--bug-index).
 4. It is run by **OMF, who we meet on Thursday 13 August 2026**.
 
-> **Note a signal warning.** §4.2 and §4.3 report **effective** (validated on-target) counts. §4.4 reports
-> **raw** distinct authors, which is a larger number for the same evidence. LDN is 5,183 raw but  
-> 3,417 effective (reported this way because the trial has multiple expermental arms. 
+> **Signal warning: two different counts.** §4.2 and §4.3 report **effective** counts — distinct
+> authors, multiplied by the LLM-validated fraction that are genuine on-target usage reports. §4.4
+> reports **raw** distinct authors, before that validation, which is always the larger number for the
+> same evidence. LDN is 5,183 raw but 3,417 effective. Reading across the tables without noticing
+> makes LIFT look ~35× better supplied than lithium when the real ratio is ~23×.
 
 ---
 
@@ -309,7 +311,7 @@ it!"* — they explicitly have **not** taken it. The report is attributed to the
 *cost* (paying to score thousands of reports that will be discarded).  The primary step is just creating bias as to what the LLM sees. 
 
 **3. Recall is a hard ceiling, and failures are silent.** Anything the automaton misses is invisible  
-to every downstream stage — no LLM ever sees it, and nothing errors; there are simply fewer rows.   
+to every downstream stage — no LLM ever sees it, and nothing errors; there are simply fewer rows.  
 My back of napkin math shows that we can lose 50-80% of data that way.
 
 **Scale, for intuition:** lithium curates to 3,136 reports; LIFT to 42,617.
@@ -388,7 +390,7 @@ generated — the model is only ever asked to *score* text it was given, which i
 `length_norm: False`, so there is no division by token count. This yields a *distribution* over
 assignments per report rather than a hard label.
 
-It requires a **discrete option set for `Y`**, so it fails outright on continuous endpoints — see
+It requires a **discrete option set for `Y*`*, so it fails outright on continuous endpoints — see
 §10.4. It is also the reason we need a GPU at all: `prompt_logprobs` is a vLLM extension, and no
 chat API (OpenRouter, Anthropic, OpenAI) exposes it.
 
@@ -520,7 +522,7 @@ rebuild**:
 | --------------- | ---------------------------------------------- | ------------------------------------------------------ |
 | `MODEL`         | `Qwen/Qwen2.5-7B-Instruct`                     | change this to change models                           |
 | `MAX_MODEL_LEN` | `8192`                                         | bounds the logits tensor                               |
-| `GPU_MEM_UTIL`  | `**0.55`**                                     | leaves headroom for `prompt_logprobs` — see §10.6      |
+| `GPU_MEM_UTIL`  | **`0.55`**                                     | leaves headroom for `prompt_logprobs` — see §10.6      |
 | `EXTRA_ARGS`    | `--max-num-seqs 1 --no-enable-chunked-prefill` | `prompt_logprobs` is incompatible with chunked prefill |
 
 
@@ -540,7 +542,7 @@ small at the cost of ~5 minutes of startup.
 | `treatment_outcome_filter` | OpenRouter               | generative              | moderate                                           |
 | `knowns` / `imputations`   | OpenRouter               | generative              | small                                              |
 | `sample_ty`                | OpenRouter               | generative              | small                                              |
-| `**inclusion_prob`**       | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
+| **`inclusion_prob`**       | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
 | estimator + bootstrap      | local CPU (causallib)    | scikit-learn            | free                                               |
 
 
@@ -736,7 +738,7 @@ only one clean shot per trial.
 ## 10. Problems
 
 Defects we have found and diagnosed. The full registry, with evidence, is in
-`[bugs.md](findings.md)`; this is the readable summary.
+[findings.md](findings.md); this is the readable summary.
 
 ### 10.1 Change-from-baseline labels versus absolute predictions
 
@@ -776,18 +778,48 @@ error on n = 32 would give about ±4.8, not ±1.
 The mechanism is in §6.7: the bootstrap measures agreement among LLM samples rather than patient  
 heterogeneity or extraction error, and B = 10 is far too few for a stable 95% interval.
 
-### 10.3 Estimator and endpoint mismatch
+### 10.3 Coverage loss from short aliases — fixed 2026-08-11
+
+Two filters — in `build_treatment_automaton` and in curation — dropped any treatment alias of three
+characters or fewer. For LDN, the most-discussed Long-COVID treatment in the corpus:
+
+| | documents |
+|---|---|
+| spell out "naltrexone" | 6,368 |
+| use the bare abbreviation "LDN" | 25,619 |
+| **never spell it out** | **23,950** |
+| **share of LDN evidence lost** | **79%** |
+
+The root cause was not the threshold. `extract_mentions` matched without any word-boundary check, so
+a three-character pattern would hit inside ordinary words — "ldn" matches "cou**ldn**'t". The length
+filter was a workaround for substring matching, which is why simply raising it would have traded
+silent under-matching for silent over-matching.
+
+**The fix.** Aho-Corasick already reports the position of each match and the code was discarding it.
+We now reject a match unless the characters on both sides are non-alphanumeric (or the string edge),
+then lower the floor to three characters. One- and two-character fragments such as "mg" and "ml"
+stay excluded. About ten lines, verified on seven cases: "LDN" matches at sentence start, before
+punctuation and inside parentheses; "couldnt", "wouldnt" and "aldnamide" do not.
+
+**Measured effect:** rows matching the LDN alias set go from **31,567 to 138,618 — 4.4×**. It is a
+no-op for the four held-out core-5 trials, none of whose drugs has a short abbreviation, so it can
+land before the frozen-configuration run in §9.3. See [A9](#appendix-a--bug-index).
+
+Still open, separately: this fixes *matching* an alias once supplied. **Discovering** which aliases
+to supply is §11.6.
+
+### 10.4 Estimator and endpoint mismatch
 
 Upstream's default estimator (`natural_ipw`) cannot run a `notbinary` study: `conditional_extraction`
 enumerates multiple-choice options over the outcome, continuous endpoints have none, and it dies with
 a bare `ZeroDivisionError`. We use NATURAL-MC instead.
 
-### 10.4 Trial selection
+### 10.5 Trial selection
 
 [Bug A1](#appendix-a--bug-index) (the condition matcher) and [bug A4](#appendix-a--bug-index) (`status:act` excluding recruiting trials) both affect
 which trials are eligible at all. [A4](#appendix-a--bug-index) would exclude LIFT.
 
-### 10.5 Infrastructure
+### 10.6 Infrastructure
 
 `prompt_logprobs` needs a transient `[prompt_tokens × vocab]` logits tensor — about 3.5 GB for a
 5,700-token prompt at Qwen's 152k vocabulary — allocated *outside* the pool vLLM preallocates. The
@@ -830,8 +862,8 @@ The overshoot in §10.2 is the signature. `inclusion_prob` corrects for *eligibi
 This is unobservable by construction — non-posters leave no data — so it needs either an external
 anchor (a survey with known prevalence) or an explicit model of the posting mechanism.
 
-**Progress looks like:** a correction that reduces overshoot on the labelled trials without simply
-fitting to them. *Probably the deepest problem here.*
+**Progress looks like:** a correction that reduces overshoot on the labelled trials without simply  
+fitting to them. This may be a normalization problem?  Could also move to things being binary?
 
 ### 11.3 Extraction validity — is `Y_i` what the patient actually reported?
 
@@ -980,17 +1012,18 @@ docs; `dispersed/` holds the serving kit.
 
 - Runs in WSL Ubuntu, not native Windows: the estimator's compiled dependencies are blocked by
 Windows Smart App Control, and `contextualize` imports the Unix-only `resource` module.
-- Python 3.12 venv managed with `uv` at `~/pp-natural/.venv`; the fork checkout at `~/pp-natural/fork`.
+- Python 3.12 venv (managed with `uv`, since Ubuntu 26.04 ships 3.14 with no pip and some scientific
+  wheels lag). Point `PP_PYTHON` at it; see [patientpunk/README.md](../../patientpunk/README.md).
 
 **Data**
 
 - Corpus: `s3://patientpunk/trial_superset/natural_corpus_parquet/`
-- Run outputs: `~/pp-natural/outputs/` — `studies/`, `experiments/`, `nct_reports[_test]/`,
+- Run outputs: `$SAVE_PATH` (defaults to `<repo>/outputs`) — `studies/`, `experiments/`, `nct_reports[_test]/`,
 `reddit_data/`, `results/`
 
 **Further reading**
 
-- [bugs.md](findings.md) — the full bug registry with evidence, structured as a fix-by-fix summary.
+- [findings.md](findings.md) — the full bug registry with evidence, as a fix-by-fix summary.
 - [benchmark_19.md](benchmark_19.md) — how the 19-trial set was derived.
 - [method_and_scope.md](method_and_scope.md) — the original scope decisions.
 
@@ -1000,7 +1033,7 @@ Windows Smart App Control, and `contextualize` imports the Unix-only `resource` 
 
 Short forms used throughout this document. "Ours" means the defect is in our code or our data;
 everything else is in `naturalv2` and therefore affects Nikita's own results too. Full evidence for
-each is in [bugs.md](findings.md); the same list, restructured as a fix-by-fix summary for her, is on the
+each is in [findings.md](findings.md); the same list, restructured as a fix-by-fix summary for her, is on the
 fork at
 [docs/patientpunk/findings.md](https://github.com/Airwhale/naturalv2/blob/shaun/patientpunk-integration/docs/patientpunk/findings.md).
 
