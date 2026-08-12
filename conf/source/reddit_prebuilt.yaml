@@ -1,12 +1,18 @@
 # @package _global_
-# Source config for a PRE-BUILT contextualize-input parquet corpus (skips .zst download+parse).
-# condition_filter + treatment_synonyms are intentionally omitted: our corpus is already scoped to
-# the 3 Long-COVID subreddits (no subreddit discovery needed -> no Reddit OAuth), and synonyms need
-# OpenAI web-search. That leaves: adapter (contextualize) -> curate (rule-based treatment match).
+# Source config for a PRE-BUILT contextualize-input parquet corpus (skips the .zst download+parse).
+#
+# condition_filter and treatment_synonyms are intentionally omitted. condition_filter discovers
+# subreddits via the Reddit API, which our corpus does not need (it is already scoped) and which
+# requires OAuth credentials; seed the condition->subreddit map instead with
+# patientpunk/scripts/01_seed_study_dataset.py. treatment_synonyms needs OpenAI web-search; seed
+# aliases with 02_seed_treatment_aliases.py instead.
+#
+# That leaves: adapter (contextualise) -> curate (rule-based treatment match).
 stages:
   process_archive_dump:
     _target_: naturalv2.sources.reddit.stages.prebuilt_parquet.RedditPrebuiltParquet
-    parquet_dir: /mnt/c/Users/scgee/OneDrive/Documents/Projects/PatientPunk_data/natural_corpus_parquet
+    # Point PP_CORPUS_DIR at a corpus laid out as content_type=<submissions|comments>/bucket=<subreddit>/
+    parquet_dir: ${oc.env:PP_CORPUS_DIR}
   curate:
     _target_: naturalv2.sources.reddit.RedditCurateStage
     num_workers: null
