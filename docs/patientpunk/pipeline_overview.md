@@ -105,9 +105,9 @@ extracting the primary endpoint from the published paper. Those are flagged `reg
 
 Two names to define first, since they recur throughout:
 
-- **`trial_filters`** — the block in naturalv2's config holding the four booleans below. It is the
+- `trial_filters` — the block in naturalv2's config holding the four booleans below. It is the
 only place trial eligibility is decided upstream.
-- **`noparallel_notbinary`** — the name we gave our filter settings, and the string that appears in
+- `noparallel_notbinary` — the name we gave our filter settings, and the string that appears in
 every output path and filename. It is purely descriptive: *no* `parallel` requirement, *not*
 `binary` endpoints. Upstream's default demands both; we demand neither.
 
@@ -324,9 +324,7 @@ it!"* — they explicitly have **not** taken it. The report is attributed to the
 
 ## 6. Stage 3 — Estimation, and the maths
 
-The part with actual statistics in it. Read §6.1 and §6.2 if you read nothing else — the first says
-where the risk lives, the second says what number we are even trying to produce, and almost every
-misreading of our results traces back to one of those two.
+Yay maths! Read §6.1 and §6.2 if you read nothing else.
 
 ### 6.1 The shape of the method
 
@@ -340,20 +338,23 @@ to about this system.
 
 ### 6.2 What quantity we are actually predicting
 
-There are two different things you can predict about a trial, and it matters a great deal which one:
+There are two different things you can predict about a trial.
 
 - the **average potential outcome (APO)** — what one arm's patients scored, on its own. "Patients on
 lithium improved by 11.3 points."
 - the **average treatment effect (ATE)** — the *difference* between arms. "Lithium improved patients
 2.7 points **more than placebo** did."
 
-ATE is what a clinician cares about, because it isolates the drug. APO includes everything that
-would have happened anyway: placebo response, regression to the mean, natural recovery over the
-trial period.
+ATE is a stronger, harder target. It is what a clinician cares about, because it isolates the drug. 
 
 **We currently predict APO.** The config key is `ate: False`. For each arm we estimate the mean
 outcome among patients who took that arm's treatment — written `E[Y(t)]`, read as "the expected
 outcome `Y` if a patient were given treatment `t`".
+
+**We should be predicting the effect, not the level — that is the goal, and it is §11.9.** The
+obstacle is not the config flag but that Reddit has no placebo arm to contrast against, so the
+difference the corpus can support is drug-versus-untreated where the trial reports
+drug-versus-placebo.
 
 This is why the run output reads *Predicted Response* against *True Response*: we are predicting the
 lithium arm's own mean change of −11.3, not lithium-minus-placebo. Easy to misread, and §9.2 shows
@@ -398,7 +399,7 @@ generated — the model is only ever asked to *score* text it was given, which i
 `length_norm: False`, so there is no division by token count. This yields a *distribution* over
 assignments per report rather than a hard label.
 
-It requires a **discrete option set for `Y`**, so it fails outright on continuous endpoints — see
+It requires a **discrete option set** for `Y`, so it fails outright on continuous endpoints — see
 §10.3. It is also the reason we need a GPU at all: `prompt_logprobs` is a vLLM extension, and no
 chat API (OpenRouter, Anthropic, OpenAI) exposes it.
 
@@ -567,7 +568,7 @@ rebuild**:
 | --------------- | ---------------------------------------------- | ------------------------------------------------------ |
 | `MODEL`         | `Qwen/Qwen2.5-7B-Instruct`                     | change this to change models                           |
 | `MAX_MODEL_LEN` | `8192`                                         | bounds the logits tensor                               |
-| `GPU_MEM_UTIL`  | **`0.55`**                                     | leaves headroom for `prompt_logprobs` — see §7.5      |
+| `GPU_MEM_UTIL`  | `0.55`                                     | leaves headroom for `prompt_logprobs` — see §7.5       |
 | `EXTRA_ARGS`    | `--max-num-seqs 1 --no-enable-chunked-prefill` | `prompt_logprobs` is incompatible with chunked prefill |
 
 
@@ -587,7 +588,7 @@ small at the cost of ~5 minutes of startup.
 | `treatment_outcome_filter` | OpenRouter               | generative              | moderate                                           |
 | `knowns` / `imputations`   | OpenRouter               | generative              | small                                              |
 | `sample_ty`                | OpenRouter               | generative              | small                                              |
-| **`inclusion_prob`**       | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
+| `inclusion_prob`       | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
 | estimator + bootstrap      | local CPU (causallib)    | scikit-learn            | free                                               |
 
 
@@ -614,7 +615,7 @@ scheduler keeps assigning for a single-GPU request).
 - We have $500 of credit at dispersed right now,  and I can ask for more.  LMK if you need login credentials again. 
 - The web console and the job API disagree — an A6000 appears in the UI but not in
 `/v1/gpu-registry`, which is what job specs match against.
-- **`prompt_logprobs` needs a *low* `gpu_memory_utilization`** — 0.55, not the usual 0.90. Scoring a
+- **A low `gpu_memory_utilization` is required** — 0.55, not the usual 0.90. Scoring a
 prompt materialises a `[prompt_tokens × vocab]` logits tensor (~3.5 GB for a realistic report)
 *outside* the pool vLLM preallocates, and because the setting is a **fraction rather than an amount,
 a bigger card does not help**: the pool grows with the card and the leftover does not. The fix is to
@@ -774,7 +775,7 @@ only one clean shot per trial.
 
 ## 10. Problems
 
-Defects that are **still open in `naturalv2`** — including ones we route around locally, since a
+Defects **still open** in `naturalv2` — including ones we route around locally, since a
 workaround in our fork does not fix the pipeline for anyone else. Things we have genuinely closed are
 not here: the serving gotchas are in §7.5, and the complete registry of open *and* closed items, with
 evidence, is [findings.md](findings.md).
@@ -853,7 +854,8 @@ change is Nikita's call. Worth raising with her.
 
 Distinct from §10. Those are defects with known causes and mostly known fixes. These are the
 unsolved ones, where the right approach is genuinely undecided. Roughly ordered by how much each
-blocks trusting an estimate.
+blocks trusting an estimate — except the last, §11.9, which is not a blocker but the **goal** the
+other eight are in service of.
 
 ### 11.1 Uncertainty quantification — what should a confidence interval here even mean?
 
@@ -1023,7 +1025,49 @@ mismatches. How many trials are needed before an aggregate error is meaningful? 
 trials be pooled or down-weighted? And is per-arm APO even the right target, when the
 decision-relevant quantity is the treatment *contrast*?
 
-Without answers, "mean absolute error over 19 trials" is a number without an interpretation.
+Without answers, "mean absolute error over 19 trials" is a number without an interpretation. The
+"what quantity" half of that question is now stated as a goal in its own right — §11.9.
+
+### 11.9 The goal — predict the treatment effect, not the arm
+
+Everything above is an obstacle. This is the objective: **estimate the treatment effect, the
+difference between arms, rather than one arm's level.** In the doc's terms (§6.2), move from APO to
+ATE. Config-wise that is `ate: True`; conceptually it is most of the remaining work.
+
+**Why this is the target and not a refinement.** §9.2 is the argument. On lithium, a constant that
+knows nothing about the drug — "patients in a trial improve by about nine points" — beat us roughly
+twelve-fold. That is not mainly because our estimate was bad; it is because APO is dominated by
+placebo response, natural recovery and regression to the mean, all of which are the *same in both
+arms*. Lithium's real effect was −2.7 on Fatigue and −0.9 on Brain Fog, against arm levels of −11.3
+and −9.0. Predicting the level well is mostly predicting the placebo response well. **Error against
+APO barely tests whether the method detects a drug effect at all**, so no amount of accuracy on the
+current target establishes the thing we want to claim.
+
+**The hard part is that Reddit has no placebo arm.** Nobody posts about taking a placebo, so the
+contrast the corpus can support is *drug versus no drug*, while the trial reports *drug versus
+placebo*. Those differ by exactly the placebo response — which for lithium was −8.6 of the −11.3.
+Estimating the first and scoring it against the second builds in an error the size of the effect
+being measured. Three ways out, none free:
+
+1. **Estimate drug-versus-untreated from the corpus** and accept that it answers a different, still
+   useful question — "what happens to people who take this?" — rather than the trial's.
+2. **Model the placebo response explicitly** and subtract it, which needs an external estimate of
+   placebo response for the condition and endpoint, and imports that estimate's error.
+3. **Benchmark only against trials that report both arms**, and compare our drug-minus-untreated to
+   their drug-minus-placebo as a deliberately biased-but-bounded comparison, with the bias named.
+
+**What it requires beyond a config flag.** Both arms need evidence, so `treatment_names` has to
+include a control that a Reddit author could plausibly be, which "Placebo" is not. Positivity has to
+hold — comparable people on both sides — and §11.4's confounding concern becomes sharper, since
+choosing to take a drug is exactly what the untreated did not do. It also multiplies the evidence
+requirement: two arms, each needing enough on-target reports, against a corpus where §11.6 says we
+reach perhaps a fifth of what is there.
+
+**Progress looks like:** one completed trial with both arms reported, estimated as a contrast and
+scored against the trial's own ATE, alongside the drug-versus-untreated number so the gap between
+them is visible rather than assumed. Until then §9.2's baseline table is the honest framing of what
+our error figures mean — and A11 has to be fixed first, since a contrast between two mismeasured
+arms is worse than a level, not better.
 
 ---
 
@@ -1102,21 +1146,21 @@ bug — evidence, root cause, and what was done about it — structured fix-by-f
 in the C and D series that this document does not use.
 
 
-| id      | what                                                                                                                                                                                             | where                                          | status                                                                 |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------- |
-| **A1**  | Condition matcher over- and under-matches. A plain substring test in both directions admitted 12 acute-COVID trials into Long COVID and dropped 7 genuine post-COVID ones.                       | `find_condition_ncts`                          | open upstream; we use a keyword classifier (§4.1 Tier 2)               |
-| **A2**  | `notbinary` labels computed as `value / N`, which is a response rate for binary endpoints but meaningless for a continuous mean.                                                                 | `Experiment`                                   | **fixed upstream** in `7a2e006`                                        |
-| **A3**  | Factorial arms named `"X/Placebo"` classified as placebo by title and silently dropped — including LIFT's LDN main effect.                                                                       | `check_nonplacebo` → `check_arm`               | **fixed upstream**; arms now typed by `ArmGroupType`                   |
-| **A4**  | Test universe uses `status:act`, which means "active, not recruiting" and excludes every *recruiting* trial — LIFT included.                                                                     | test aggFilters                                | open; we use a recruiting-inclusive universe                           |
-| **A5**  | The default estimator cannot run a `notbinary` study: `conditional_extraction` enumerates options over the outcome, continuous endpoints have none, and it dies with a bare `ZeroDivisionError`. | `conditional_extraction`                       | open; we supply `conf/estimate_mc.yaml` (§10.3)                        |
-| **A6**  | Change-from-baseline labels compared against absolute predictions (§10.1).                                                                                                                       | `Experiment` + our tooling                     | open — a design question for Nikita                                    |
-| **A7**  | `detokenize=False` is hardcoded on every `prompt_logprobs` call; harmless in-process, but it crashes a *hosted* vLLM server.                                                                     | `conditional_extraction`                       | **fix written** — an in-process guard, on our branch                   |
-| **A8**  | Bootstrap intervals implausibly tight — ±1 on n=32 (§10.2).                                                                                                                                      | `bootstrap_size`                               | open — needs her view                                                  |
-| **A9**  | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence.                                                                                                                    | `build_treatment_automaton` + curate           | **fixed** — boundary-aware matching added; strongest PR candidate      |
-| **A10** | `author` is discarded after stage 2, so one prolific poster becomes many synthetic patients — 99 posts from one person became 99 "patients" (§11.7).                                             | contextualise + curate                         | open — a salted author hash is small; the statistics are the hard part |
-| **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                               | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found                         |
-| **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                               | `sample_ty` parsing                            | open — mechanical, and the range is already known                      |
-| **B1**  | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                        | our CT.gov scope layer                         | fixed in `seed_terms`                                                  |
+| id      | what                                                                                                                                                                                                                              | where                                          | status                                                                 |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------- |
+| **A1**  | Condition matcher over- and under-matches. A plain substring test in both directions admitted 12 acute-COVID trials into Long COVID and dropped 7 genuine post-COVID ones.                                                        | `find_condition_ncts`                          | open upstream; we use a keyword classifier (§4.1 Tier 2)               |
+| **A2**  | `notbinary` labels computed as `value / N`, which is a response rate for binary endpoints but meaningless for a continuous mean.                                                                                                  | `Experiment`                                   | **fixed upstream** in `7a2e006`                                        |
+| **A3**  | Factorial arms named `"X/Placebo"` classified as placebo by title and silently dropped — including LIFT's LDN main effect.                                                                                                        | `check_nonplacebo` → `check_arm`               | **fixed upstream**; arms now typed by `ArmGroupType`                   |
+| **A4**  | Test universe uses `status:act`, which means "active, not recruiting" and excludes every *recruiting* trial — LIFT included.                                                                                                      | test aggFilters                                | open; we use a recruiting-inclusive universe                           |
+| **A5**  | The default estimator cannot run a `notbinary` study: `conditional_extraction` enumerates options over the outcome, continuous endpoints have none, and it dies with a bare `ZeroDivisionError`.                                  | `conditional_extraction`                       | open; we supply `conf/estimate_mc.yaml` (§10.3)                        |
+| **A6**  | Change-from-baseline labels compared against absolute predictions (§10.1).                                                                                                                                                        | `Experiment` + our tooling                     | open — a design question for Nikita                                    |
+| **A7**  | `detokenize=False` is hardcoded on every `prompt_logprobs` call; harmless in-process, but it crashes a *hosted* vLLM server.                                                                                                      | `conditional_extraction`                       | **fix written** — an in-process guard, on our branch                   |
+| **A8**  | Bootstrap intervals implausibly tight — ±1 on n=32 (§10.2).                                                                                                                                                                       | `bootstrap_size`                               | open — needs her view                                                  |
+| **A9**  | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence.                                                                                                                                                     | `build_treatment_automaton` + curate           | **fixed** — boundary-aware matching added; strongest PR candidate      |
+| **A10** | `author` is discarded after stage 2, so one prolific poster becomes many synthetic patients — 99 posts from one person became 99 "patients" (§11.7).                                                                              | contextualise + curate                         | open — a salted author hash is small; the statistics are the hard part |
+| **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                                                                | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found                         |
+| **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                                                                | `sample_ty` parsing                            | open — mechanical, and the range is already known                      |
+| **B1**  | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                                                         | our CT.gov scope layer                         | fixed in `seed_terms`                                                  |
 | **D1**  | `gpu_memory_utilization` starves `prompt_logprobs`. The transient logits tensor sits outside vLLM's preallocated pool, so the usual `0.90` crashes the engine — and because it is a fraction, a bigger card does not help (§7.5). | serving config (ours)                          | **fixed** — `0.55`, plus a realistic-length probe before every run     |
 
 
