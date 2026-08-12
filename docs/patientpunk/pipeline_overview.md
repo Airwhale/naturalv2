@@ -378,38 +378,23 @@ step is the identity function for it, which is worth knowing because the name su
 
 ### 6.4 Two extraction modes
 
-**Why there are two at all.** The estimator does not want an answer, it wants a *probability*.
-"This patient scored 30" is worth less than "60% chance it is 30, 30% chance 25, 10% chance 40" —
-that uncertainty is supposed to flow through into the estimate and its interval. Ask a chat model
-and you get the first kind: one sampled answer, probabilities discarded.
-
-Conditional extraction is how you get the second kind. **List every answer the patient could have
-given, and have the model score each one rather than write any.** That list is the grid. Scoring all
-of it gives you a distribution over what the patient reported, instead of a guess.
-
-**It only works when the list is finite.** Our endpoints are continuous scales, so the set of
-possible values is infinite and there is nothing to enumerate. That forces us into mode (b): ask
-once, keep the single number, lose the distribution. Not a preference — the price of continuous
-endpoints, and what §6.7, [A11](#appendix-a--bug-index) and [A12](#appendix-a--bug-index) are all
-downstream of.
-
 The pipeline is a list of stages. Ours differs from upstream's default in exactly **one swap**:
 
 
-| # | stage                      | upstream `estimate_ate.yaml` | ours `estimate_mc.yaml` |
-| - | -------------------------- | ---------------------------- | ----------------------- |
-| 1 | `relevance_filter`         | yes                          | yes                     |
-| 2 | `treatment_outcome_filter` | yes                          | yes                     |
-| 3 | `knowns`                   | yes                          | yes                     |
-| 4 | `imputations`              | yes                          | yes                     |
-| 5 | `sample_ty`                | present but commented out    | **added**               |
-| 6 | `inclusion_prob`           | yes                          | yes — **unchanged**     |
-| 7 | `conditional_extraction`   | yes                          | **removed**             |
+| #   | stage                      | upstream `estimate_ate.yaml` | ours `estimate_mc.yaml` |
+| --- | -------------------------- | ---------------------------- | ----------------------- |
+| 1   | `relevance_filter`         | yes                          | yes                     |
+| 2   | `treatment_outcome_filter` | yes                          | yes                     |
+| 3   | `knowns`                   | yes                          | yes                     |
+| 4   | `imputations`              | yes                          | yes                     |
+| 5   | `sample_ty`                | present but commented out    | **added**               |
+| 6   | `inclusion_prob`           | yes                          | yes — **unchanged**     |
+| 7   | `conditional_extraction`   | yes                          | **removed**             |
 
 
 Stages 5 and 7 are the two modes below. Stage 6 is unchanged, and that matters more than it looks.
 
-**(a) Conditional extraction — teacher-forced scoring.** `ConditionalExtractionStage`, stage 7, and
+**Mode 1 — conditional extraction, i.e. scoring the grid.** `ConditionalExtractionStage`, stage 7, and
 upstream's default. **This is the part that works over a grid.** It enumerates every candidate
 assignment `a = (x, t, y)` the option lists allow, and scores each one by summing the token
 log-probabilities of the *prompt* (`prompt_logprobs`, `max_tokens=1` — nothing is generated):
@@ -427,15 +412,13 @@ prompt was, and turn those scores into a probability distribution over the candi
 only ever asked to *score* text it was given, never to write any — which is what `prompt_logprobs`
 returns, and what no chat API exposes. A collapsed single answer from a chat model cannot substitute.
 
-**(b) Monte Carlo — direct sampling.** `SampleTYStage`, stage 5. NATURAL-MC, and what we run. Rather
-than scoring an enumerated grid, the model is asked the question once and replies with
-`{treatment, outcome}` as JSON, `Y_i` a real number. That is the only mode a continuous endpoint can
-use — there is no grid to enumerate when `Y` is continuous (§10.3) — and it is far cheaper: one API
-call per report, against one scored prompt per candidate assignment.
+**Mode 2 — Monte Carlo, i.e. sampling.** `SampleTYStage`, stage 5. NATURAL-MC. Rather  
+than scoring an enumerated grid for predicting results as in the standard pipeline,    
+the model is asked the question once and replies with `{treatment, outcome}` as JSON, `Y_i` a real number. This is nessasary because the endpoints we are looking at are continuous, not binary. 
 
-The cost is that a sampled answer carries no distribution with it. Mode (a) returns a probability
-across candidates, so a report the model is unsure about contributes a spread; mode (b) returns a
-single number, and taking one draw per report (§6.7) discards that uncertainty entirely. This is why
+This Monte Carlo prediction cannot express uncertainty. Scoring the grid returns a probability across
+candidates, so a report the model is unsure about contributes a spread. Sampling returns one number,
+and taking a single draw per report (§6.7) discards that uncertainty entirely. This is why
 [A11](#appendix-a--bug-index) and [A12](#appendix-a--bug-index) were invisible until we read the rows
 back — a confabulated value, an out-of-range value and a well-grounded one are all just numbers in
 the output table.
@@ -458,10 +441,10 @@ their configs are Nikita's, and what we contributed is the pipeline config that 
 combinations, not two:
 
 
-|                              | conditional extraction        | Monte Carlo extraction    |
-| ---------------------------- | ----------------------------- | ------------------------- |
-| **IPW** (propensity)         | `natural_ipw` — upstream default | `natural_mc_ipw`       |
-| **OI** (outcome imputation)  | `natural_oi`                  | `natural_mc_oi` — what we run |
+|                             | conditional extraction           | Monte Carlo extraction        |
+| --------------------------- | -------------------------------- | ----------------------------- |
+| **IPW** (propensity)        | `natural_ipw` — upstream default | `natural_mc_ipw`              |
+| **OI** (outcome imputation) | `natural_oi`                     | `natural_mc_oi` — what we run |
 
 
 We moved from the top-left to the bottom-right, so we changed **both** axes at once. The extraction
@@ -473,8 +456,7 @@ of the sample. `oi` imputes the outcome under `t` for every report, which is the
 right quantity. Lithium has a single arm so the mask is all ones and the two would agree; anything
 multi-arm they would not.
 
-**One caution from upstream.** `NaturalMC`'s own docstring carries `TODO: Do not use for APOs;
-off-the-shelf estimators do not trivially extend to APOs` — and APO is exactly what we run
+**One caution from upstream.** `NaturalMC`'s own docstring carries `TODO: Do not use for APOs; off-the-shelf estimators do not trivially extend to APOs` — and APO is exactly what we run
 (`ate: False`). The `oi` branch reads like a correct standardisation estimator for an APO, so we do
 not think this is wrong, but it is an explicit caution sitting above the class we depend on and it
 needs Nikita's read. Tracked as [A13](#appendix-a--bug-index).
@@ -1225,8 +1207,8 @@ in the C and D series that this document does not use.
 | **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                                                                | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found                         |
 | **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                                                                | `sample_ty` parsing                            | open — mechanical, and the range is already known                      |
 | **B1**  | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                                                         | our CT.gov scope layer                         | fixed in `seed_terms`                                                  |
-| **A13** | `NaturalMC`'s own docstring says not to use it for APOs — and `ate: False` is exactly that. The `oi` branch looks correct for an APO; the `ipw` branch does not (§6.4). | `natural_mc.py`                                | open — a question for Nikita, upstream of every estimate we have     |
-| **A14** | A bare `except:` in the same class turns any fit failure into a silent `NaN`. Most likely to fire on the small-n outcomes, where the outcome model is already saturated (§6.6). | `natural_mc.py`                                | open — small; our runs did not hit it                                 |
+| **A13** | `NaturalMC`'s own docstring says not to use it for APOs — and `ate: False` is exactly that. The `oi` branch looks correct for an APO; the `ipw` branch does not (§6.4).                                                           | `natural_mc.py`                                | open — a question for Nikita, upstream of every estimate we have       |
+| **A14** | A bare `except:` in the same class turns any fit failure into a silent `NaN`. Most likely to fire on the small-n outcomes, where the outcome model is already saturated (§6.6).                                                   | `natural_mc.py`                                | open — small; our runs did not hit it                                  |
 | **D1**  | `gpu_memory_utilization` starves `prompt_logprobs`. The transient logits tensor sits outside vLLM's preallocated pool, so the usual `0.90` crashes the engine — and because it is a fraction, a bigger card does not help (§7.5). | serving config (ours)                          | **fixed** — `0.55`, plus a realistic-length probe before every run     |
 
 
