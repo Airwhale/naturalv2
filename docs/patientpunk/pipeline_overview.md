@@ -414,7 +414,13 @@ returns, and what no chat API exposes. A collapsed single answer from a chat mod
 
 **Mode 2 — Monte Carlo, i.e. sampling.** `SampleTYStage`, stage 5. NATURAL-MC. Rather  
 than scoring an enumerated grid for predicting results as in the standard pipeline,    
-the model is asked the question once and replies with `{treatment, outcome}` as JSON, `Y_i` a real number. This is nessasary because the endpoints we are looking at are continuous, not binary. 
+the model is asked the question once and replies with `{treatment, outcome}` as JSON, `Y_i` a real
+number. This is necessary because the endpoints we are looking at are continuous, not binary.
+
+**Conditional extraction is still needed for the inclusion probability —
+`P(meets the trial's inclusion criteria | report)` — when using a Monte Carlo method.** Sampling
+replaces grid-scoring for `T` and `Y` only. The eligibility weight (§6.5) is still obtained by
+scoring a grid, and that is why the pipeline still needs a GPU.
 
 This Monte Carlo prediction cannot express uncertainty. Scoring the grid returns a probability across
 candidates, so a report the model is unsure about contributes a spread. Sampling returns one number,
