@@ -526,7 +526,7 @@ rebuild**:
 | --------------- | ---------------------------------------------- | ------------------------------------------------------ |
 | `MODEL`         | `Qwen/Qwen2.5-7B-Instruct`                     | change this to change models                           |
 | `MAX_MODEL_LEN` | `8192`                                         | bounds the logits tensor                               |
-| `GPU_MEM_UTIL`  | `**0.55`**                                     | leaves headroom for `prompt_logprobs` — see §10.5      |
+| `GPU_MEM_UTIL`  | `**0.55`**                                     | leaves headroom for `prompt_logprobs` — see §10.4      |
 | `EXTRA_ARGS`    | `--max-num-seqs 1 --no-enable-chunked-prefill` | `prompt_logprobs` is incompatible with chunked prefill |
 
 
@@ -755,20 +755,9 @@ on a scale whose maximum possible improvement is −48. The model is claiming ne
 `(−34.87, −32.92)` misses −9.0 by about 25 half-widths. Neither outcome's interval contains the
 truth: **coverage is 0 of 2**.
 
-Fixing either one alone leaves the estimate useless. Honest intervals around a biased estimate would
-at least *say* it does not know; a correct estimate with uninterpretable intervals could not be used
-for a decision. What we have is the worst pairing — **confidently wrong**.
+These answers seem suspicious, and it's because of bad attribution as to who is taking the drug.
 
-#### What is actually causing it
-
-The obvious reading of (1) is selection bias — people post about dramatic outcomes, so the evidence
-skews toward dramatic recoveries. That is a real hazard (§11.2), and it was our first explanation.
-Going back to the extracted rows shows it is **not** what produced these numbers.
-
-The extracted values are not spread out like patient outcomes. **21 of the 32 Brain Fog rows carry
-the identical value −35.0**, and the 32 rows come from only **7 threads**. The three largest are
-recovery announcements — the biggest, supplying 11 rows on its own, is titled *"Long Covid Recovery
-to 90% — Antihistamine Treatment"*. The comments scored −35 read, in full:
+**Take for example the following comments, each scored −35 as a reply within one post's history:**
 
 ```
 "Yes! Those are horrible when they happen.. Thanks for sharing."
@@ -776,57 +765,67 @@ to 90% — Antihistamine Treatment"*. The comments scored −35 read, in full:
 "It's cheap. Will give it a try. I take generic zyrtec and Benadryl at night"
 ```
 
-None of them reports an outcome. None is about lithium. Every comment's prompt embeds the **full
-initial post**, and the extraction question asks for the value *"the individual described in the
-report"* would give — which, in a comment, describes two people, with the original poster described
-far more fully. The model reads the thread's headline recovery and stamps it on each commenter.
+None of them reports an outcome, and none is about lithium. Every comment's prompt embeds the **full
+initial post**, and the question asks what *"the individual described in the report"* would score —
+which, in a comment, is two people, with the original poster described far more fully. The model
+answers about the wrong one.
 
 The separation is clean:
 
 
-| lithium Brain Fog rows          | n   | mean extracted value |
-| ------------------------------- | --- | -------------------- |
-| own comment discusses lithium   | 4   | **−2.5**             |
-| only the thread mentions it     | 28  | **−33.2**            |
-| *trial's answer*                |     | *−9.0*               |
+| lithium Brain Fog rows        | n   | mean extracted value |
+| ----------------------------- | --- | -------------------- |
+| own comment discusses lithium | 4   | **−2.5**             |
+| only the thread mentions it   | 28  | **−33.2**            |
+| *trial's answer*              |     | *−9.0*               |
 
 
-The rows genuinely about the drug are the ones closest to correct. The estimate is driven by the
-88% that are not. This is a **measurement** failure — `Y_i` is not the outcome of the person the row
-claims to represent — and it is registered as [A11](#appendix-a--bug-index). It is not confined to
-lithium: across LIFT's 3,127 rows, **76% never name the drug in their own text**.
+Nor is this a lithium quirk: across LIFT's 3,127 rows, **76% never name the drug in their own text**.
 
-This also explains (2) without appeal to sample size. With 21 of 32 values identical, every bootstrap
-resample returns roughly the same number, so the interval collapses regardless of `bootstrap_size`.
-It is why n = 9 gave the *wider* interval — Fatigue's values are simply more spread. `B = 10` is
-still too small (§6.7) and A10's prolific posters still break independence, but neither is the
-leading term.
+This referent binding problem has been solved in our native pipeline, and we can probably just port
+the fix over here — the `REPLY CHAIN` block in `src/prompts/intervention_config.py`, which demotes
+upstream text to context and lets the model return *neutral* when a reply expresses no experience of
+its own. The one adaptation needed is that `sample_ty` returns a continuous value, so it needs a real
+null (`"Not stated"`) rather than another category.
 
-A third defect compounds both: extracted values are **never checked against the endpoint's range**
-([A12](#appendix-a--bug-index)). LIFT's FUNCAP55 is a 0–55 scale, and 14.8% of extracted values fall
-outside it — the largest is **4,444,000**. One such parse is enough to make a mean meaningless, and
-nothing warns.
+
 
 ### 10.3 Estimator and endpoint mismatch — [A5](#appendix-a--bug-index)
 
 Upstream's default estimator (`natural_ipw`) cannot run a `notbinary` study: `conditional_extraction`
 enumerates multiple-choice options over the outcome, continuous endpoints have none, and it dies with
-a bare `ZeroDivisionError`. We use NATURAL-MC instead.
+a bare `ZeroDivisionError`. We use NATURAL-MC instead. I believe this is fixed, but it is probably
+worth talking about.
 
-### 10.4 Trial selection — [A1](#appendix-a--bug-index), [A4](#appendix-a--bug-index)
+### 10.4 Why this needs a GPU at all, and the trap in it — [D1](#appendix-a--bug-index)
 
-[Bug A1](#appendix-a--bug-index) (the condition matcher) and [bug A4](#appendix-a--bug-index) (`status:act` excluding recruiting trials) both affect
-which trials are eligible at all. [A4](#appendix-a--bug-index) would exclude LIFT.
+Exactly one stage, `inclusion_prob`, needs **teacher-forced token probabilities** — given a prompt
+*we* wrote, how likely was each token in it? That is vLLM's `prompt_logprobs`, and no hosted chat API
+exposes it: they return probabilities for tokens the model *generates*, never for tokens you supply.
+So that single stage is what forces a self-hosted server and a rented GPU. Every other stage runs
+against an ordinary API.
 
-### 10.5 Infrastructure — [D1](#appendix-a--bug-index)
+The trap is that scoring a prompt this way materialises a probability for **every token position
+across the whole vocabulary** at once:
 
-`prompt_logprobs` needs a transient `[prompt_tokens × vocab]` logits tensor — about 3.5 GB for a
-5,700-token prompt at Qwen's 152k vocabulary — allocated *outside* the pool vLLM preallocates. The
-usual `gpu_memory_utilization: 0.90` leaves no room and the engine dies. Because it is a *fraction*,
-**moving to a bigger card does not help**: more VRAM simply buys a bigger KV cache. The fix is to
-lower it to 0.55.
+```
+5,700 prompt tokens  ×  152,064 vocabulary entries  ×  4 bytes  =  3.5 GB
+```
 
-Separately: we are running a **7B** model where the method assumes ~70B.
+and that tensor is allocated *outside* the memory pool vLLM reserves when it starts.
+`gpu_memory_utilization` controls how much of the card that pool claims, so the usual `0.90` leaves
+roughly a tenth of the card for everything else — not enough for the 3.5 GB, and the engine is killed
+mid-run.
+
+**The counterintuitive part is that a bigger card does not help.** The setting is a *fraction*, not
+an amount: `0.90` reserves 21.6 GB of a 24 GB card and 72 GB of an 80 GB one. The pool grows with the
+card, so the leftover stays proportionally the same, while the 3.5 GB tensor is a fixed cost that has
+to fit inside it. Renting more VRAM just buys more KV cache. The fix is to *lower* the fraction — we
+run **0.55** — which is the opposite of what an out-of-memory error usually suggests, and is why this
+cost five debugging cycles.
+
+Separately: we are running a **7B** model where the method assumes ~70B. That is easy to solve, but
+we want to tighten and validate everything before paying for a bigger model.
 
 ---
 
@@ -977,11 +976,11 @@ lithium reports are. The numbers above are pre-filter.
 sharper cut anyway:
 
 
-| final evidence rows          | rows      | distinct threads | largest thread's share |
-| ---------------------------- | --------- | ---------------- | ---------------------- |
-| lithium, Brain Fog           | 32        | **7**            | 11 rows (34%)          |
-| lithium, Fatigue             | 9         | **4**            | —                      |
-| LIFT, Functional Capacity    | 3,127     | **494**          | —                      |
+| final evidence rows       | rows  | distinct threads | largest thread's share |
+| ------------------------- | ----- | ---------------- | ---------------------- |
+| lithium, Brain Fog        | 32    | **7**            | 11 rows (34%)          |
+| lithium, Fatigue          | 9     | **4**            | —                      |
+| LIFT, Functional Capacity | 3,127 | **494**          | —                      |
 
 
 So the nominal n = 32 rests on seven conversations. Two units of clustering are in play — the person
@@ -1077,21 +1076,21 @@ fork at
 [docs/patientpunk/findings.md](https://github.com/Airwhale/naturalv2/blob/shaun/patientpunk-integration/docs/patientpunk/findings.md).
 
 
-| id     | what                                                                                                                                                                                             | where                                | status                                                            |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------- |
-| **A1** | Condition matcher over- and under-matches. A plain substring test in both directions admitted 12 acute-COVID trials into Long COVID and dropped 7 genuine post-COVID ones.                       | `find_condition_ncts`                | open upstream; we use a keyword classifier (§4.1 Tier 2)          |
-| **A2** | `notbinary` labels computed as `value / N`, which is a response rate for binary endpoints but meaningless for a continuous mean.                                                                 | `Experiment`                         | **fixed upstream** in `7a2e006`                                   |
-| **A3** | Factorial arms named `"X/Placebo"` classified as placebo by title and silently dropped — including LIFT's LDN main effect.                                                                       | `check_nonplacebo` → `check_arm`     | **fixed upstream**; arms now typed by `ArmGroupType`              |
-| **A4** | Test universe uses `status:act`, which means "active, not recruiting" and excludes every *recruiting* trial — LIFT included.                                                                     | test aggFilters                      | open; we use a recruiting-inclusive universe                      |
-| **A5** | The default estimator cannot run a `notbinary` study: `conditional_extraction` enumerates options over the outcome, continuous endpoints have none, and it dies with a bare `ZeroDivisionError`. | `conditional_extraction`             | open; we supply `conf/estimate_mc.yaml` (§10.3)                   |
-| **A6** | Change-from-baseline labels compared against absolute predictions (§10.1).                                                                                                                       | `Experiment` + our tooling           | open — a design question for Nikita                               |
-| **A7** | `detokenize=False` is hardcoded on every `prompt_logprobs` call; harmless in-process, but it crashes a *hosted* vLLM server.                                                                     | `conditional_extraction`             | **fix written** — an in-process guard, on our branch              |
-| **A8** | Bootstrap intervals implausibly tight — ±1 on n=32 (§10.2).                                                                                                                                      | `bootstrap_size`                     | open — needs her view                                             |
-| **A9** | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence.                                                                                                                    | `build_treatment_automaton` + curate | **fixed** — boundary-aware matching added; strongest PR candidate |
-| **A10** | `author` is discarded after stage 2, so one prolific poster becomes many synthetic patients — 99 posts from one person became 99 "patients" (§11.7).                                            | contextualise + curate               | open — a salted author hash is small; the statistics are the hard part |
-| **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                              | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found |
-| **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                              | `sample_ty` parsing                  | open — mechanical, and the range is already known |
-| **B1** | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                        | our CT.gov scope layer               | fixed in `seed_terms`                                             |
+| id      | what                                                                                                                                                                                             | where                                          | status                                                                 |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------- |
+| **A1**  | Condition matcher over- and under-matches. A plain substring test in both directions admitted 12 acute-COVID trials into Long COVID and dropped 7 genuine post-COVID ones.                       | `find_condition_ncts`                          | open upstream; we use a keyword classifier (§4.1 Tier 2)               |
+| **A2**  | `notbinary` labels computed as `value / N`, which is a response rate for binary endpoints but meaningless for a continuous mean.                                                                 | `Experiment`                                   | **fixed upstream** in `7a2e006`                                        |
+| **A3**  | Factorial arms named `"X/Placebo"` classified as placebo by title and silently dropped — including LIFT's LDN main effect.                                                                       | `check_nonplacebo` → `check_arm`               | **fixed upstream**; arms now typed by `ArmGroupType`                   |
+| **A4**  | Test universe uses `status:act`, which means "active, not recruiting" and excludes every *recruiting* trial — LIFT included.                                                                     | test aggFilters                                | open; we use a recruiting-inclusive universe                           |
+| **A5**  | The default estimator cannot run a `notbinary` study: `conditional_extraction` enumerates options over the outcome, continuous endpoints have none, and it dies with a bare `ZeroDivisionError`. | `conditional_extraction`                       | open; we supply `conf/estimate_mc.yaml` (§10.3)                        |
+| **A6**  | Change-from-baseline labels compared against absolute predictions (§10.1).                                                                                                                       | `Experiment` + our tooling                     | open — a design question for Nikita                                    |
+| **A7**  | `detokenize=False` is hardcoded on every `prompt_logprobs` call; harmless in-process, but it crashes a *hosted* vLLM server.                                                                     | `conditional_extraction`                       | **fix written** — an in-process guard, on our branch                   |
+| **A8**  | Bootstrap intervals implausibly tight — ±1 on n=32 (§10.2).                                                                                                                                      | `bootstrap_size`                               | open — needs her view                                                  |
+| **A9**  | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence.                                                                                                                    | `build_treatment_automaton` + curate           | **fixed** — boundary-aware matching added; strongest PR candidate      |
+| **A10** | `author` is discarded after stage 2, so one prolific poster becomes many synthetic patients — 99 posts from one person became 99 "patients" (§11.7).                                             | contextualise + curate                         | open — a salted author hash is small; the statistics are the hard part |
+| **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                               | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found                         |
+| **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                               | `sample_ty` parsing                            | open — mechanical, and the range is already known                      |
+| **B1**  | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                        | our CT.gov scope layer                         | fixed in `seed_terms`                                                  |
 
 
 ---
