@@ -525,7 +525,7 @@ it just will not fix an interval computed over the wrong quantity.
 | `estimator`             | `natural_mc_oi`               | continuous endpoints; the IPW path cannot enumerate them |
 | `ate`                   | `False`                       | average potential outcome per arm                        |
 | `use_inclusion_weights` | `True`                        | reweight community → trial-eligible population           |
-| `bootstrap_size`        | `10` (upstream default)       | **too small — the first thing to change**                |
+| `bootstrap_size`        | `10` (upstream default)       | too small, but A11 outranks it (§10.2)                   |
 | `probs_model`           | Qwen2.5-7B via vLLM           | the only role needing a GPU; **should be 70B**           |
 | generative roles        | gemini-2.5-flash / flash-lite | cost; flash-lite for the two filter stages               |
 
@@ -807,6 +807,12 @@ the fix over here — the `REPLY CHAIN` block in `src/prompts/intervention_confi
 upstream text to context and lets the model return *neutral* when a reply expresses no experience of
 its own. The one adaptation needed is that `sample_ty` returns a continuous value, so it needs a real
 null (`"Not stated"`) rather than another category.
+
+**The same thing explains the tiny error bar.** 21 of the 32 Brain Fog values are the identical
+−35.0, inherited from the same handful of threads. Resampling a column that is mostly one number
+returns that number, so the interval collapses however many resamples you take. `bootstrap_size: 10`
+is genuinely too low (§6.7) and worth raising — but it is not what caused this, and raising it on its
+own would not have widened the interval by much.
 
 ### 10.3 Estimator and endpoint mismatch — [A5](#appendix-a--bug-index)
 
@@ -1207,7 +1213,7 @@ covariates, option lists and (for completed trials) the label. Everything downst
 | **ATE**                 | average treatment effect — the *difference* between arms. What we do **not** currently estimate (§6.2)                                                                                                          |
 | `ate: False`            | the config key selecting APO over ATE                                                                                                                                                                           |
 | `use_inclusion_weights` | whether to apply the `inclusion_prob` weights                                                                                                                                                                   |
-| `bootstrap_size`        | number of bootstrap resamples for the confidence interval. Upstream default 10 — too few (§10.2)                                                                                                                |
+| `bootstrap_size`        | number of bootstrap resamples for the confidence interval. Upstream default 10 — too few, though not what collapsed our intervals (§10.2)                                                                        |
 | `natural_mc_oi`         | the estimator we use: Monte-Carlo extraction (`sample_ty`) plus outcome imputation                                                                                                                              |
 | `natural_ipw`           | upstream's default: enumerated extraction plus inverse propensity weighting. Cannot run continuous outcomes                                                                                                     |
 
