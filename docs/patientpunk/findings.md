@@ -65,7 +65,7 @@ after we flagged it; "ours" means we wrote the fix.
 |---|---|---|---|---|
 | **1. Prebuilt-corpus source** | new `SourceStage` that contextualises an already-built parquet corpus instead of downloading `.zst` archives | `naturalv2/sources/reddit/stages/prebuilt_parquet.py` + `conf/source/reddit_prebuilt.yaml` | no bug — additive; also a way around the-eye outage | **PR-ready**, purely additive |
 | **2. Hosted-vLLM guard** | send `detokenize=False` only when the model is an in-process `VLLMModel` | `naturalv2/pipeline/conditional_extraction.py` (+12 −2) | **A7** | **PR-ready**, her path untouched |
-| **3. NATURAL-MC config** | `sample_ty` in, `conditional_extraction` out, estimator `natural_mc_oi` | `conf/estimate_mc.yaml` | **A5** | **PR-ready**, but the default is a design call |
+| **3. Pipeline wiring for NATURAL-MC** (config only — the estimator is yours) | `sample_ty` in, `conditional_extraction` out, estimator `natural_mc_oi` | `conf/estimate_mc.yaml` | **A5** | **PR-ready**, but the default is a design call |
 | **4. OpenRouter provider** | provider config beside the existing gemini/anthropic/openai | `conf/model/openrouter.yaml` | none — convenience | optional |
 | **5. Serving config** | `gpu_memory_utilization 0.55`, no chunked prefill, 1 seq | *ours, not her code* | **D1** | docs note only |
 | **6. Change-scale rewrite** | restate a change-from-baseline outcome's description so the sampled quantity matches the label | *ours* (`fix_change_outcomes.py`) | **A6** | **issue, not a PR** — one option among several |

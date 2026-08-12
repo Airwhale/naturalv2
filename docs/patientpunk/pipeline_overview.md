@@ -408,14 +408,16 @@ single number, and taking one draw per report (§6.7) discards that uncertainty 
 rows back — a confabulated value, an out-of-range value and a well-grounded one are all just numbers
 in the output table.
 
-**What the swap does and does not change.** "NATURAL-MC" names the *extraction* only. The estimator
-is an independent choice, and there are four combinations, not two:
+**What the swap does and does not change.** All four of these are upstream — the estimators and
+their configs are Nikita's, and what we contributed is the pipeline config that selects among them.
+"NATURAL-MC" names the *extraction* only; the estimator is an independent choice, and there are four
+combinations, not two:
 
 
 |                              | conditional extraction        | Monte Carlo extraction    |
 | ---------------------------- | ----------------------------- | ------------------------- |
 | **IPW** (propensity)         | `natural_ipw` — upstream default | `natural_mc_ipw`       |
-| **OI** (outcome imputation)  | `natural_oi`                  | `natural_mc_oi` — **ours** |
+| **OI** (outcome imputation)  | `natural_oi`                  | `natural_mc_oi` — what we run |
 
 
 We moved from the top-left to the bottom-right, so we changed **both** axes at once. The extraction
