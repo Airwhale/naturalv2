@@ -378,10 +378,26 @@ step is the identity function for it, which is worth knowing because the name su
 
 ### 6.4 Two extraction modes
 
-**(a) Conditional extraction — teacher-forced scoring.** Upstream's default, used by NATURAL-IPW.
-Enumerate every candidate assignment `a = (x, t, y)` over the option grid and score each by summing
-the token log-probabilities of the *prompt* (`prompt_logprobs`, `max_tokens=1` — nothing is
-generated):
+The pipeline is a list of stages. Ours differs from upstream's default in exactly **one swap**:
+
+
+| # | stage                      | upstream `estimate_ate.yaml` | ours `estimate_mc.yaml` |
+| - | -------------------------- | ---------------------------- | ----------------------- |
+| 1 | `relevance_filter`         | yes                          | yes                     |
+| 2 | `treatment_outcome_filter` | yes                          | yes                     |
+| 3 | `knowns`                   | yes                          | yes                     |
+| 4 | `imputations`              | yes                          | yes                     |
+| 5 | `sample_ty`                | present but commented out    | **added**               |
+| 6 | `inclusion_prob`           | yes                          | yes — **unchanged**     |
+| 7 | `conditional_extraction`   | yes                          | **removed**             |
+
+
+Stages 5 and 7 are the two modes below. Stage 6 is unchanged, and that matters more than it looks.
+
+**(a) Conditional extraction — teacher-forced scoring.** `ConditionalExtractionStage`, stage 7, and
+upstream's default. **This is the part that works over a grid.** It enumerates every candidate
+assignment `a = (x, t, y)` the option lists allow, and scores each one by summing the token
+log-probabilities of the *prompt* (`prompt_logprobs`, `max_tokens=1` — nothing is generated):
 
 ```
 for each candidate answer a = (x, t, y):
@@ -391,22 +407,35 @@ for each candidate answer a = (x, t, y):
 P(a) = softmax over all candidates of score(a)
 ```
 
-IIn words: paste each candidate answer into the prompt, ask the model how unsurprising that whole  
-prompt was, and turn those scores into a probability distribution over the candidates. Nothing is  
-generated — the model is only ever asked to *score* text it was given, which is what  
-`prompt_logprobs` returns. Collapsed LLM answers don't work here.  It is also the reason we need a GPU at all: `prompt_logprobs` is a vLLM extension, and no chat API (OpenRouter, Anthropic, OpenAI) exposes it.
+In words: paste each candidate answer into the prompt, ask the model how unsurprising that whole
+prompt was, and turn those scores into a probability distribution over the candidates. The model is
+only ever asked to *score* text it was given, never to write any — which is what `prompt_logprobs`
+returns, and what no chat API exposes. A collapsed single answer from a chat model cannot substitute.
 
-**(b) Monte Carlo — direct sampling.** NATURAL-MC, and **what we use**. Instead of scoring a grid of
-candidate answers, the model is asked the question directly and emits `{treatment, outcome}` as JSON,
-with `Y_i` a real number. That is the only mode a continuous endpoint can use, and it is cheaper —
-one API call per report rather than one scored prompt per candidate assignment.
+**(b) Monte Carlo — direct sampling.** `SampleTYStage`, stage 5. NATURAL-MC, and what we run. Rather
+than scoring an enumerated grid, the model is asked the question once and replies with
+`{treatment, outcome}` as JSON, `Y_i` a real number. That is the only mode a continuous endpoint can
+use — there is no grid to enumerate when `Y` is continuous (§10.3) — and it is far cheaper: one API
+call per report, against one scored prompt per candidate assignment.
 
 The cost is that a sampled answer carries no distribution with it. Mode (a) returns a probability
 across candidates, so a report the model is unsure about contributes a spread; mode (b) returns a
 single number, and taking one draw per report (§6.7) discards that uncertainty entirely. This is why
-[A11](#appendix-a--bug-index) and [A12](#appendix-a--bug-index) were invisible until we read the
-rows back — a confabulated value, an out-of-range value and a well-grounded one are all just numbers
-in the output table.
+[A11](#appendix-a--bug-index) and [A12](#appendix-a--bug-index) were invisible until we read the rows
+back — a confabulated value, an out-of-range value and a well-grounded one are all just numbers in
+the output table.
+
+**This does not replace conditional extraction.** The name does double duty, which is where the
+confusion comes from:
+
+- the **stage** `conditional_extraction` (row 7) — removed;
+- the **module** `naturalv2/pipeline/conditional_extraction.py` — still very much in use.
+
+`InclusionProbStage` lives in that module and *subclasses* `ConditionalExtractionStage`. So stage 6
+**is** a conditional-extraction stage: still running, still teacher-forcing, still calling
+`prompt_logprobs`. What the swap removes is one *use* of the technique — inferring `T` and `Y`. The
+technique itself survives for inclusion weighting (§6.5), and that is exactly why the GPU
+requirement survives with it: stage 6 is the "exactly one stage needs a GPU" of §7.3.
 
 **What the swap does and does not change.** All four of these are upstream — the estimators and
 their configs are Nikita's, and what we contributed is the pipeline config that selects among them.
@@ -428,10 +457,6 @@ than one arm it returns `E[Y · 1{T=t}]` rather than `E[Y(t)]` — shrunk toward
 of the sample. `oi` imputes the outcome under `t` for every report, which is the g-formula and the
 right quantity. Lithium has a single arm so the mask is all ones and the two would agree; anything
 multi-arm they would not.
-
-**It does not remove the GPU.** `inclusion_prob` still scores by teacher-forcing (§6.5), so
-`prompt_logprobs` leaves the `(T, Y)` extraction but not the pipeline. That surviving stage is the
-"exactly one stage needs a GPU" of §7.3.
 
 **One caution from upstream.** `NaturalMC`'s own docstring carries `TODO: Do not use for APOs;
 off-the-shelf estimators do not trivially extend to APOs` — and APO is exactly what we run
