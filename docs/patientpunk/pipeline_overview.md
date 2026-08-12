@@ -70,11 +70,8 @@ explicit reweighting toward the trial-eligible population. It is a more exact cl
 pinned commit, with her estimators. Everything that differs is *input and context*, a different  
 patient population (Long-COVID Reddit), continuous symptom scales rather than proportion outcomes, a  
 7B model rather than a large one, and small early-phase trials rather than Phase 3/4. The [§1](#1-orientation) list is  
-the full inventory of those differences. **The causal machinery is the strong part of that work, and
-we are using it unchanged.** Most of what we have run into sits at the other end — trial selection,
-endpoint semantics, corpus construction — the parts where clinical-domain context does the work
-rather than the statistics. That split is what we bring; the issues we log in
-[findings.md](findings.md) are almost all of that kind.
+the full inventory of those differences. **The causal machinery is the strong part of that work, and**  
+**we are using it unchanged.** We have run into some problems with scraping and expermental design as documented below:  I don't think we are done finding these problems. Check out[findings.md](findings.md) for more details on this.
 
 ---
 
@@ -108,9 +105,9 @@ extracting the primary endpoint from the published paper. Those are flagged `reg
 
 Two names to define first, since they recur throughout:
 
-- **`trial_filters`** — the block in naturalv2's config holding the four booleans below. It is the
+- `**trial_filters*`* — the block in naturalv2's config holding the four booleans below. It is the
 only place trial eligibility is decided upstream.
-- **`noparallel_notbinary`** — the name we gave our filter settings, and the string that appears in
+- `**noparallel_notbinary**` — the name we gave our filter settings, and the string that appears in
 every output path and filename. It is purely descriptive: *no* `parallel` requirement, *not*
 `binary` endpoints. Upstream's default demands both; we demand neither.
 
@@ -123,12 +120,12 @@ the property is no longer demanded and trials lacking it are kept. Upstream's de
 on; we relax the last two, and the preset name `noparallel_notbinary` records exactly that.
 
 
-| filter            | what the trial must have                                    | our setting  | why                                                                                                                                                                                                                                                   |
-| ----------------- | ----------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `randomized`      | participants randomly assigned to arms                      | **required** | without randomisation there is no causal contrast to predict against                                                                                                                                                                                  |
-| `nonhealthy`      | enrolls patients with the condition, not healthy volunteers | **required** | healthy-volunteer trials (safety, PK) have no symptom outcome to compare                                                                                                                                                                              |
-| `parallel`        | arms run concurrently, each participant in one arm          | **relaxed**  | crossover and factorial designs are common here — LIFT is a 2×2 factorial and would be dropped                                                                                                                                                        |
-| `binary_endpoint` | primary outcome is yes/no or a response rate                | **relaxed**  | the consequential one: demanding binary endpoints collapses the set by **92%**, because Long-COVID primaries are continuous symptom scales. Relaxing it is what makes the whole set viable — and what forces us onto the NATURAL-MC estimator (§10.4) |
+| filter            | what the trial must have                                    | our setting      | why                                                                                                                                                                                                                                                   |
+| ----------------- | ----------------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `randomized`      | participants randomly assigned to arms                      | **required**     | without randomisation there is no causal contrast to predict against                                                                                                                                                                                  |
+| `nonhealthy`      | enrolls patients with the condition, not healthy volunteers | **required**     | healthy-volunteer trials (safety, PK) have no symptom outcome to compare                                                                                                                                                                              |
+| `parallel`        | arms run concurrently, each participant in one arm          | **Not required** | crossover and factorial designs are common here — LIFT is a 2×2 factorial and would be dropped                                                                                                                                                        |
+| `binary_endpoint` | primary outcome is yes/no or a response rate                | **Not required** | the consequential one: demanding binary endpoints collapses the set by **92%**, because Long-COVID primaries are continuous symptom scales. Relaxing it is what makes the whole set viable — and what forces us onto the NATURAL-MC estimator (§10.3) |
 
 
 **Tier 2 — Condition** (ours; replaces upstream's substring matcher — [bug A1](#appendix-a--bug-index))
@@ -246,12 +243,12 @@ nothing about the runs changes.
 ### 4.4 Prediction targets — What we are trying to predict from this.
 
 
-| NCT                                                                                                                                                                                     | trial                            | sponsor                            | target arms                                                   | corpus signal                                               | status                                                                         |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ---------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **[NCT06366724](https://clinicaltrials.gov/study/NCT06366724)**                                                                                                                         | **LIFT: Life Improvement Trial** | **Open Medicine Foundation (OMF)** | `Placebo/LDN`, `Pyridostigmine/Placebo`, `Pyridostigmine/LDN` | 5,183 raw / **3,417 effective** (LDN); 683 (pyridostigmine) | recruiting — planned, see §8. **Meeting OMF Thursday** |
-| [NCT06095297](https://clinicaltrials.gov/study/NCT06095297) · [NCT06585254](https://clinicaltrials.gov/study/NCT06585254) · [NCT06968104](https://clinicaltrials.gov/study/NCT06968104) | tVNS ×3                          | —                                  | CICT / BFT (± VR); patient- vs device-controlled; Intervention A/B | 3,091                                                       | recruiting / active                                                            |
-| [NCT05852873](https://clinicaltrials.gov/study/NCT05852873) · [NCT06792214](https://clinicaltrials.gov/study/NCT06792214)                                                               | Paxlovid ×2                      | —                                  | nirmatrelvir-ritonavir                                        | 2,925                                                       | active / recruiting                                                            |
-| [NCT06082518](https://clinicaltrials.gov/study/NCT06082518)                                                                                                                             | HBOT                             | —                                  | immediate vs delayed start of hyperbaric treatment            | 1,404                                                       | recruiting                                                                     |
+| NCT                                                                                                                                                                                     | trial                            | sponsor                            | target arms                                                        | corpus signal                                               | status                                                 |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ---------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------ |
+| **[NCT06366724](https://clinicaltrials.gov/study/NCT06366724)**                                                                                                                         | **LIFT: Life Improvement Trial** | **Open Medicine Foundation (OMF)** | `Placebo/LDN`, `Pyridostigmine/Placebo`, `Pyridostigmine/LDN`      | 5,183 raw / **3,417 effective** (LDN); 683 (pyridostigmine) | recruiting — planned, see §8. **Meeting OMF Thursday** |
+| [NCT06095297](https://clinicaltrials.gov/study/NCT06095297) · [NCT06585254](https://clinicaltrials.gov/study/NCT06585254) · [NCT06968104](https://clinicaltrials.gov/study/NCT06968104) | tVNS ×3                          | —                                  | CICT / BFT (± VR); patient- vs device-controlled; Intervention A/B | 3,091                                                       | recruiting / active                                    |
+| [NCT05852873](https://clinicaltrials.gov/study/NCT05852873) · [NCT06792214](https://clinicaltrials.gov/study/NCT06792214)                                                               | Paxlovid ×2                      | —                                  | nirmatrelvir-ritonavir                                             | 2,925                                                       | active / recruiting                                    |
+| [NCT06082518](https://clinicaltrials.gov/study/NCT06082518)                                                                                                                             | HBOT                             | —                                  | immediate vs delayed start of hyperbaric treatment                 | 1,404                                                       | recruiting                                             |
 
 
 **LIFT is probably the most important of the above studies to predict.**
@@ -320,11 +317,7 @@ it!"* — they explicitly have **not** taken it. The report is attributed to the
 **2. The LLM stages are carrying the entire semantic burden.** The collapse from 3,136 reports to 61 for lithium (98%) is the LLM stages doing the real filtering. That is the intended division of labour, but it means curation quality shows up as  
 *cost* (paying to score thousands of reports that will be discarded).  The primary step is just creating bias as to what the LLM sees. 
 
-**3. Recall is a hard ceiling, and failures are silent.** Anything the automaton misses is invisible  
-to every downstream stage — no LLM ever sees it, and nothing errors; there are simply fewer rows.  
-My back of napkin math shows that we can lose 50-80% of data that way.
-
-**Scale, for intuition:** lithium curates to 3,136 reports; LIFT to 42,617.
+**3. There is no good way to mesure the amount of bias or noise this creates.**
 
 ---
 
@@ -400,8 +393,8 @@ generated — the model is only ever asked to *score* text it was given, which i
 `length_norm: False`, so there is no division by token count. This yields a *distribution* over
 assignments per report rather than a hard label.
 
-It requires a **discrete option set for **`Y`**, so it fails outright on continuous endpoints — see
-§10.4. It is also the reason we need a GPU at all: `prompt_logprobs` is a vLLM extension, and no
+It requires a **discrete option set for `**Y*`*, so it fails outright on continuous endpoints — see
+§10.3. It is also the reason we need a GPU at all: `prompt_logprobs` is a vLLM extension, and no
 chat API (OpenRouter, Anthropic, OpenAI) exposes it.
 
 **(b) Monte Carlo — direct sampling.** NATURAL-MC, and **what we use**. The LLM emits
@@ -417,7 +410,7 @@ This is the pipeline's one explicit correction for *"Reddit is not the trial coh
 
 ### 6.6 The estimators
 
-Nothing here is bespoke. Verified against `naturalv2/models/causal_models.py`, the estimators are
+Verified against `naturalv2/models/causal_models.py`, the estimators are
 **causallib** — an open-source causal-inference library from IBM Research that implements the
 standard estimators as scikit-learn-style objects — with ordinary scikit-learn models doing the
 actual fitting:
@@ -532,7 +525,7 @@ rebuild**:
 | --------------- | ---------------------------------------------- | ------------------------------------------------------ |
 | `MODEL`         | `Qwen/Qwen2.5-7B-Instruct`                     | change this to change models                           |
 | `MAX_MODEL_LEN` | `8192`                                         | bounds the logits tensor                               |
-| `GPU_MEM_UTIL`  | **`0.55`**                                     | leaves headroom for `prompt_logprobs` — see §10.6      |
+| `GPU_MEM_UTIL`  | `**0.55`**                                     | leaves headroom for `prompt_logprobs` — see §10.5      |
 | `EXTRA_ARGS`    | `--max-num-seqs 1 --no-enable-chunked-prefill` | `prompt_logprobs` is incompatible with chunked prefill |
 
 
@@ -552,7 +545,7 @@ small at the cost of ~5 minutes of startup.
 | `treatment_outcome_filter` | OpenRouter               | generative              | moderate                                           |
 | `knowns` / `imputations`   | OpenRouter               | generative              | small                                              |
 | `sample_ty`                | OpenRouter               | generative              | small                                              |
-| **`inclusion_prob`**       | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
+| `**inclusion_prob`**       | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
 | estimator + bootstrap      | local CPU (causallib)    | scikit-learn            | free                                               |
 
 
@@ -605,19 +598,21 @@ arm matching would have dropped both main-effect arms, and [A4](#appendix-a--bug
 `status:act` would exclude a recruiting trial from prediction altogether.
 
 **Why we stopped.** Outcome 1 completed its funnel (42,456 → 5,898 → 3,127) and the pipeline was
-working, but the run had been launched before the boundary-matching fix (§10.3), so it was using
+working, but the run had been launched before the boundary-matching fix ([A9](#appendix-a--bug-index)), so it was using
 roughly a fifth of the available LDN evidence. Finishing would have cost about $65 more for an
 answer we had already decided not to present (§12) and would supersede immediately. Spend before
 stopping: **$8.69 GPU plus roughly $12–14 of API**.
 
 **Prerequisites for the real run:**
 
-| prerequisite | why |
-|---|---|
-| boundary-matching fix (§10.3, done) | raises the candidate pool from ~42,600 to ~138,600 reports |
-| acquire the GPU only for `inclusion_prob` | it sat idle ~90% of the run; removes ~85% of GPU cost |
-| DrugBank aliases (§11.6) | free additional synonyms before paying to scan anything |
-| decide the outcome count | four outcomes quadruples the dominant `relevance_filter` cost |
+
+| prerequisite                              | why                                                           |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| boundary-matching fix ([A9](#appendix-a--bug-index), done) | raises the candidate pool from ~42,600 to ~138,600 reports |
+| acquire the GPU only for `inclusion_prob` | it sat idle ~90% of the run; removes ~85% of GPU cost         |
+| DrugBank aliases (§11.6)                  | free additional synonyms before paying to scan anything       |
+| decide the outcome count                  | four outcomes quadruples the dominant `relevance_filter` cost |
+
 
 **Sequencing:** LIFT is a prediction target, so it is not on the critical path. The four held-out
 core-5 trials (§9.3) come first — they are what tell us whether any LIFT number is worth reporting.
@@ -758,48 +753,18 @@ error on n = 32 would give about ±4.8, not ±1.
 The mechanism is in §6.7: the bootstrap measures agreement among LLM samples rather than patient  
 heterogeneity or extraction error, and B = 10 is far too few for a stable 95% interval.
 
-### 10.3 Coverage loss from short aliases — fixed 2026-08-11
-
-Two filters — in `build_treatment_automaton` and in curation — dropped any treatment alias of three
-characters or fewer. For LDN, the most-discussed Long-COVID treatment in the corpus:
-
-| | documents |
-|---|---|
-| spell out "naltrexone" | 6,368 |
-| use the bare abbreviation "LDN" | 25,619 |
-| **never spell it out** | **23,950** |
-| **share of LDN evidence lost** | **79%** |
-
-The root cause was not the threshold. `extract_mentions` matched without any word-boundary check, so
-a three-character pattern would hit inside ordinary words — "ldn" matches "cou**ldn**'t". The length
-filter was a workaround for substring matching, which is why simply raising it would have traded
-silent under-matching for silent over-matching.
-
-**The fix.** Aho-Corasick already reports the position of each match and the code was discarding it.
-We now reject a match unless the characters on both sides are non-alphanumeric (or the string edge),
-then lower the floor to three characters. One- and two-character fragments such as "mg" and "ml"
-stay excluded. About ten lines, verified on seven cases: "LDN" matches at sentence start, before
-punctuation and inside parentheses; "couldnt", "wouldnt" and "aldnamide" do not.
-
-**Measured effect:** rows matching the LDN alias set go from **31,567 to 138,618 — 4.4×**. It is a
-no-op for the four held-out core-5 trials, none of whose drugs has a short abbreviation, so it can
-land before the frozen-configuration run in §9.3. See [A9](#appendix-a--bug-index).
-
-Still open, separately: this fixes *matching* an alias once supplied. **Discovering** which aliases
-to supply is §11.6.
-
-### 10.4 Estimator and endpoint mismatch
+### 10.3 Estimator and endpoint mismatch
 
 Upstream's default estimator (`natural_ipw`) cannot run a `notbinary` study: `conditional_extraction`
 enumerates multiple-choice options over the outcome, continuous endpoints have none, and it dies with
 a bare `ZeroDivisionError`. We use NATURAL-MC instead.
 
-### 10.5 Trial selection
+### 10.4 Trial selection
 
 [Bug A1](#appendix-a--bug-index) (the condition matcher) and [bug A4](#appendix-a--bug-index) (`status:act` excluding recruiting trials) both affect
 which trials are eligible at all. [A4](#appendix-a--bug-index) would exclude LIFT.
 
-### 10.6 Infrastructure
+### 10.5 Infrastructure
 
 `prompt_logprobs` needs a transient `[prompt_tokens × vocab]` logits tensor — about 3.5 GB for a
 5,700-token prompt at Qwen's 152k vocabulary — allocated *outside* the pool vLLM preallocates. The
@@ -883,7 +848,7 @@ available, and arguably what to do first.*
 
 ### 11.6 How treatment mentions should be found at all — the matcher probably needs replacing
 
-Fixing the boundary bug (§10.3) removed the worst symptom, but it patched a design that is
+Fixing the boundary bug ([A9](#appendix-a--bug-index)) removed the worst symptom, but it patched a design that is
 fundamentally limited. The current matcher is an Aho-Corasick automaton doing **exact substring
 matching against a hand-supplied alias list**. Both halves of that are weak:
 
@@ -970,7 +935,7 @@ patients report about their own trial's interventions.
 
 **Not solid enough to present as a forecast:** the point estimate. On lithium, where we can check,
 the pipeline was off by roughly 2–3× with the sign initially inverted, its intervals are
-demonstrably uncalibrated, we are on a 7B smoke model, problems §10.1–10.3 are open, and only ~21%
+demonstrably uncalibrated, we are on a 7B smoke model, §10.1 and §10.2 are open, and only ~21%
 of LDN evidence is reachable.
 
 **The position to take:** *"Here is what patients report, here is a pipeline that turns it into a
@@ -993,7 +958,7 @@ docs; `dispersed/` holds the serving kit.
 - Runs in WSL Ubuntu, not native Windows: the estimator's compiled dependencies are blocked by
 Windows Smart App Control, and `contextualize` imports the Unix-only `resource` module.
 - Python 3.12 venv (managed with `uv`, since Ubuntu 26.04 ships 3.14 with no pip and some scientific
-  wheels lag). Point `PP_PYTHON` at it; see [patientpunk/README.md](../../patientpunk/README.md).
+wheels lag). Point `PP_PYTHON` at it; see [patientpunk/README.md](../../patientpunk/README.md).
 
 **Data**
 
@@ -1024,11 +989,11 @@ fork at
 | **A2** | `notbinary` labels computed as `value / N`, which is a response rate for binary endpoints but meaningless for a continuous mean.                                                                 | `Experiment`                         | **fixed upstream** in `7a2e006`                                   |
 | **A3** | Factorial arms named `"X/Placebo"` classified as placebo by title and silently dropped — including LIFT's LDN main effect.                                                                       | `check_nonplacebo` → `check_arm`     | **fixed upstream**; arms now typed by `ArmGroupType`              |
 | **A4** | Test universe uses `status:act`, which means "active, not recruiting" and excludes every *recruiting* trial — LIFT included.                                                                     | test aggFilters                      | open; we use a recruiting-inclusive universe                      |
-| **A5** | The default estimator cannot run a `notbinary` study: `conditional_extraction` enumerates options over the outcome, continuous endpoints have none, and it dies with a bare `ZeroDivisionError`. | `conditional_extraction`             | open; we supply `conf/estimate_mc.yaml` (§10.4)                   |
+| **A5** | The default estimator cannot run a `notbinary` study: `conditional_extraction` enumerates options over the outcome, continuous endpoints have none, and it dies with a bare `ZeroDivisionError`. | `conditional_extraction`             | open; we supply `conf/estimate_mc.yaml` (§10.3)                   |
 | **A6** | Change-from-baseline labels compared against absolute predictions (§10.1).                                                                                                                       | `Experiment` + our tooling           | open — a design question for Nikita                               |
 | **A7** | `detokenize=False` is hardcoded on every `prompt_logprobs` call; harmless in-process, but it crashes a *hosted* vLLM server.                                                                     | `conditional_extraction`             | **fix written** — an in-process guard, on our branch              |
 | **A8** | Bootstrap intervals implausibly tight — ±1 on n=32 (§10.2).                                                                                                                                      | `bootstrap_size`                     | open — needs her view                                             |
-| **A9** | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence (§10.3).                                                                                                            | `build_treatment_automaton` + curate | **fixed** — boundary-aware matching added; strongest PR candidate |
+| **A9** | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence.                                                                                                            | `build_treatment_automaton` + curate | **fixed** — boundary-aware matching added; strongest PR candidate |
 | **B1** | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                        | our CT.gov scope layer               | fixed in `seed_terms`                                             |
 |        |                                                                                                                                                                                                  |                                      |                                                                   |
 
