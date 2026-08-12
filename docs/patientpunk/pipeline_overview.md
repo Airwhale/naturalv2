@@ -70,7 +70,7 @@ explicit reweighting toward the trial-eligible population. It is a more exact cl
 pinned commit, with her estimators. Everything that differs is *input and context*, a different  
 patient population (Long-COVID Reddit), continuous symptom scales rather than proportion outcomes, a  
 7B model rather than a large one, and small early-phase trials rather than Phase 3/4. The §1[please link] list is  
-the full inventory of those differences. **I generally am finding lots of errors that I think biological expermentalists would find, and poor scraping practices,  which makes sense looking at the work of a math heavy ML lab I suppose.**
+the full inventory of those differences. **I generally am finding lots of errors that I think biological expermentalists would find, and poor scraping practices,  which makes sense looking at the work of a math heavy ML lab.  The math is generally impressive.**
 
 ---
 
@@ -127,11 +127,12 @@ on; we relax the last two, and the preset name `noparallel_notbinary` records ex
 | `binary_endpoint` | primary outcome is yes/no or a response rate                | **relaxed**  | the consequential one: demanding binary endpoints collapses the set by **92%**, because Long-COVID primaries are continuous symptom scales. Relaxing it is what makes the whole set viable — and what forces us onto the NATURAL-MC estimator (§10.4) |
 
 
-**Tier 2 — Condition** (ours; replaces upstream's substring matcher — [bug A1](#appendix-a--bug-index))
+
 
 - A keyword classifier, not `c in tc or tc in c`. The substring test admitted 12 acute-COVID
 hospitalisation trials (because `"covid"` ⊂ `"long covid"`) and dropped 7 genuine post-COVID ones
 tagged `"post-acute covid-19 syndrome"`.  This way of doing things was causing a lot of problems, obviously,  and is something I want to document and bring to Nikita. 
+- We should probably have Eli or another expert go through these trials and make sure they are suitable for extablishing ground truth.
 - Broadened the CT.gov search scope. Upstream searched `query.cond="COVID"`; we search
 `COVID OR SARS-CoV-2 OR PASC OR Post-Acute Sequelae of SARS-CoV-2 OR Post-COVID-19 Condition OR Chronic COVID OR Long-haul COVID`. A trial tagged only `"Post-Acute Sequelae of SARS-CoV-2"`
 contains no "COVID" substring, and the registry does not expand the term for you
@@ -304,28 +305,12 @@ Three consequences, and the first is visible in the example above.
 replies, pulled in as thread context. The comment author's actual words are *"I havent … ill try
 it!"* — they explicitly have **not** taken it. The report is attributed to them anyway, causing them to be a phantom patient in our data. This bias is systematic rather than random: it inflates whichever drugs are most discussed *in threads*, which is likely a lot of conversation.
 
-**2. The LLM stages are carrying the entire semantic burden.** Curation's precision is poor by
-design; the collapse from 3,136 reports to 61 for lithium (98%) is the LLM stages doing the real
-filtering. That is the intended division of labour, but it means curation quality shows up as
-*cost* (paying to score thousands of reports that will be discarded) rather than as an error you can
-see.
+**2. The LLM stages are carrying the entire semantic burden.** The collapse from 3,136 reports to 61 for lithium (98%) is the LLM stages doing the real filtering. That is the intended division of labour, but it means curation quality shows up as  
+*cost* (paying to score thousands of reports that will be discarded).  The primary step is just creating bias as to what the LLM sees. 
 
-**3. Recall is a hard ceiling, and failures are silent.** Anything the automaton misses is invisible
-to every downstream stage — no LLM ever sees it, and nothing errors; there are simply fewer rows.
-This is the failure mode that has bitten us twice: a partitioning mismatch that silently produced
-*zero* records, and the three-character alias filter that silently cost 79% of LDN evidence
-(§10.3, since fixed). **The free stage sets the recall ceiling; the expensive stages can only ever
-remove** — so a bug here is invisible and unrecoverable, which is why it is worth disproportionate
-attention for a stage that costs nothing to run.
-
-**Where this leaves the curation rules.** Word-boundary checking has since been added (§10.3), so  
-short drug abbreviations such as LDN are now matched. Matching remains purely lexical, with no  
-morphology, and no spelling tolerance — a misspelled "naltroxone" is invisible. Improving it is  
-tracked as §11.6, and measuring the phantom-patient rate is a concrete thing to check in the  
-human-labelled sample proposed in §11.3.
-
-- `Skipped treatment_synonyms` — needs OpenAI web-search, which I have not implemented. We hand-seed aliases instead, which is where  
-problem §10.3 comes from.
+**3. Recall is a hard ceiling, and failures are silent.** Anything the automaton misses is invisible  
+to every downstream stage — no LLM ever sees it, and nothing errors; there are simply fewer rows.   
+My back of napkin math shows that we can lose 50-80% of data that way.
 
 **Scale, for intuition:** lithium curates to 3,136 reports; LIFT to 42,617.
 
@@ -387,7 +372,18 @@ Enumerate every candidate assignment `a = (x, t, y)` over the option grid and sc
 the token log-probabilities of the *prompt* (`prompt_logprobs`, `max_tokens=1` — nothing is
 generated):
 
-$$s_i(a)=\sum_k \log p(\text{tok}*k \mid \text{prefix}*{<k}), \qquad P_i(a)=\mathrm{softmax}_a s_i(a)$$ 
+```
+for each candidate answer a = (x, t, y):
+    score(a) = sum over every token k in the prompt of
+                   log P( token_k | all tokens before it )
+
+P(a) = softmax over all candidates of score(a)
+```
+
+In words: paste each candidate answer into the prompt, ask the model how unsurprising that whole
+prompt was, and turn those scores into a probability distribution over the candidates. Nothing is
+generated — the model is only ever asked to *score* text it was given, which is what
+`prompt_logprobs` returns and what no chat API exposes.
 
 `length_norm: False`, so there is no division by token count. This yields a *distribution* over
 assignments per report rather than a hard label.
