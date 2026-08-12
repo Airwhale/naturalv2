@@ -20,7 +20,7 @@ After a bunch of fiddling, I have **the pipeline running end-to-end, but I do no
    outcomes. Binary endpoints are bounded in [0,1], are directly enumerable by the default estimator,  
    and are far easier to read off a post ("did they improve — yes or no?"). Our data is often in terms of subjective severity,  fatigue reports, etc. **We cannot compare our error to their 3 points.**
 2. **They report against Phase 3/4 trials.** Those are large, well-powered, and mostly test
-  established drugs. Our Long-COVID set is small early-phase work — lithium's arm was n=24.
+  established drugs. Our Long-COVID set is small early-phase work, for example a trial we are looking at involving lithium has an arm with n=24.
 3. **Model scale.** The method assumes a large model; we are running a 7B smoke model (see §11.5). Once we get everything else working better we should ask Nikita to run it on UofT's machines or source some more heavy duty VRAM having machines to get an 80B parameter model or larger running it.
 4. **Label cleanliness.** Several of our endpoints report a *change from baseline* while describing an
   absolute scale, which silently mismatches the prediction target (§10.1). A response rate has no
@@ -105,9 +105,9 @@ extracting the primary endpoint from the published paper. Those are flagged `reg
 
 Two names to define first, since they recur throughout:
 
-- `**trial_filters*`* — the block in naturalv2's config holding the four booleans below. It is the
+- `**trial_filters`** — the block in naturalv2's config holding the four booleans below. It is the
 only place trial eligibility is decided upstream.
-- `**noparallel_notbinary**` — the name we gave our filter settings, and the string that appears in
+- `**noparallel_notbinary*`* — the name we gave our filter settings, and the string that appears in
 every output path and filename. It is purely descriptive: *no* `parallel` requirement, *not*
 `binary` endpoints. Upstream's default demands both; we demand neither.
 
@@ -132,8 +132,9 @@ on; we relax the last two, and the preset name `noparallel_notbinary` records ex
 
 - A keyword classifier, not `c in tc or tc in c`. The substring test admitted 12 acute-COVID
 hospitalisation trials (because `"covid"` ⊂ `"long covid"`) and dropped 7 genuine post-COVID ones
-tagged `"post-acute covid-19 syndrome"`.  Substring matching on free-text condition names is brittle in both directions, and this is one of
-the main things we want to raise with Nikita.
+tagged `"post-acute covid-19 syndrome"`. Substring matching on free-text condition names is brittle
+in both directions. Tracked as [bug A1](#appendix-a--bug-index), and one of the main things to raise
+with Nikita — it is still open upstream, so it affects her own results as well as ours.
 - We should probably have Eli or another expert go through these trials and make sure they are suitable for establishing ground truth.
 - Broadened the CT.gov search scope. Upstream searched `query.cond="COVID"`; we search
 `COVID OR SARS-CoV-2 OR PASC OR Post-Acute Sequelae of SARS-CoV-2 OR Post-COVID-19 Condition OR Chronic COVID OR Long-haul COVID`. A trial tagged only `"Post-Acute Sequelae of SARS-CoV-2"`
@@ -606,12 +607,12 @@ stopping: **$8.69 GPU plus roughly $12–14 of API**.
 **Prerequisites for the real run:**
 
 
-| prerequisite                              | why                                                           |
-| ----------------------------------------- | ------------------------------------------------------------- |
-| boundary-matching fix ([A9](#appendix-a--bug-index), done) | raises the candidate pool from ~42,600 to ~138,600 reports |
-| acquire the GPU only for `inclusion_prob` | it sat idle ~90% of the run; removes ~85% of GPU cost         |
-| DrugBank aliases (§11.6)                  | free additional synonyms before paying to scan anything       |
-| decide the outcome count                  | four outcomes quadruples the dominant `relevance_filter` cost |
+| prerequisite                                               | why                                                           |
+| ---------------------------------------------------------- | ------------------------------------------------------------- |
+| boundary-matching fix ([A9](#appendix-a--bug-index), done) | raises the candidate pool from ~42,600 to ~138,600 reports    |
+| acquire the GPU only for `inclusion_prob`                  | it sat idle ~90% of the run; removes ~85% of GPU cost         |
+| DrugBank aliases (§11.6)                                   | free additional synonyms before paying to scan anything       |
+| decide the outcome count                                   | four outcomes quadruples the dominant `relevance_filter` cost |
 
 
 **Sequencing:** LIFT is a prediction target, so it is not on the critical path. The four held-out
@@ -715,7 +716,7 @@ only one clean shot per trial.
 Defects we have found and diagnosed. The full registry, with evidence, is in
 [findings.md](findings.md); this is the readable summary.
 
-### 10.1 Change-from-baseline labels versus absolute predictions
+### 10.1 Change-from-baseline labels versus absolute predictions — [A6](#appendix-a--bug-index)
 
 Lithium reports **−11.3** for an outcome whose description says *"Score range 1-49"*. A value of
 −11.3 is impossible on that scale — the trial reported a *change* from baseline while describing an
@@ -729,7 +730,7 @@ Our fix restates the description so the sampled quantity matches the label. Nota
 detector missed this** — it regexed the outcome *title*, which says nothing about change. All four
 LIFT outcomes are change endpoints too.
 
-### 10.2 Estimate quality and interval calibration — the lithium variance
+### 10.2 Estimate quality and interval calibration — the lithium variance — [A8](#appendix-a--bug-index)
 
 Two separate problems live here.
 
@@ -753,18 +754,18 @@ error on n = 32 would give about ±4.8, not ±1.
 The mechanism is in §6.7: the bootstrap measures agreement among LLM samples rather than patient  
 heterogeneity or extraction error, and B = 10 is far too few for a stable 95% interval.
 
-### 10.3 Estimator and endpoint mismatch
+### 10.3 Estimator and endpoint mismatch — [A5](#appendix-a--bug-index)
 
 Upstream's default estimator (`natural_ipw`) cannot run a `notbinary` study: `conditional_extraction`
 enumerates multiple-choice options over the outcome, continuous endpoints have none, and it dies with
 a bare `ZeroDivisionError`. We use NATURAL-MC instead.
 
-### 10.4 Trial selection
+### 10.4 Trial selection — [A1](#appendix-a--bug-index), [A4](#appendix-a--bug-index)
 
 [Bug A1](#appendix-a--bug-index) (the condition matcher) and [bug A4](#appendix-a--bug-index) (`status:act` excluding recruiting trials) both affect
 which trials are eligible at all. [A4](#appendix-a--bug-index) would exclude LIFT.
 
-### 10.5 Infrastructure
+### 10.5 Infrastructure — [D1](#appendix-a--bug-index)
 
 `prompt_logprobs` needs a transient `[prompt_tokens × vocab]` logits tensor — about 3.5 GB for a
 5,700-token prompt at Qwen's 152k vocabulary — allocated *outside* the pool vLLM preallocates. The
@@ -993,7 +994,7 @@ fork at
 | **A6** | Change-from-baseline labels compared against absolute predictions (§10.1).                                                                                                                       | `Experiment` + our tooling           | open — a design question for Nikita                               |
 | **A7** | `detokenize=False` is hardcoded on every `prompt_logprobs` call; harmless in-process, but it crashes a *hosted* vLLM server.                                                                     | `conditional_extraction`             | **fix written** — an in-process guard, on our branch              |
 | **A8** | Bootstrap intervals implausibly tight — ±1 on n=32 (§10.2).                                                                                                                                      | `bootstrap_size`                     | open — needs her view                                             |
-| **A9** | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence.                                                                                                            | `build_treatment_automaton` + curate | **fixed** — boundary-aware matching added; strongest PR candidate |
+| **A9** | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence.                                                                                                                    | `build_treatment_automaton` + curate | **fixed** — boundary-aware matching added; strongest PR candidate |
 | **B1** | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                        | our CT.gov scope layer               | fixed in `seed_terms`                                             |
 |        |                                                                                                                                                                                                  |                                      |                                                                   |
 
