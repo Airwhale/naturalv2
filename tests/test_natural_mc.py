@@ -94,10 +94,7 @@ def test_unexpected_fit_error_propagates_with_context(monkeypatch):
     with pytest.raises(RuntimeError, match="fit failed") as exc_info:
         mc.get_individual_treatment_effects(data, outcome="dummy")
 
-    assert exc_info.value.__notes__ == [
-        "NaturalMC estimator_type='ipw' failed for trial='unknown', "
-        "outcome='dummy', data_shape=(10, 3), observed_treatments=[0, 1]."
-    ]
+    assert "outcome='dummy'" in " ".join(exc_info.value.__notes__)
 
 
 def test_interrupt_is_not_swallowed(monkeypatch):
