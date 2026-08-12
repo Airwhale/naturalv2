@@ -26,7 +26,7 @@ Full detail for A1, A2 and A4 also lives in the per-topic docs alongside this on
 
 ### Closed — what is now fixed
 
-Eighteen defects found; **ten are closed**. "Upstream" means Nikita fixed it in her 2026-08-09 push
+Twenty-two defects found; **ten are closed**. "Upstream" means Nikita fixed it in her 2026-08-09 push
 after we flagged it; "ours" means we wrote the fix.
 
 | # | what was wrong | fixed by | how |
@@ -54,6 +54,8 @@ after we flagged it; "ours" means we wrote the fix.
 | **A10** | `author` is dropped, so one prolific poster counts as many patients | Nikita | schema change is small; the statistics of what to do about it are open |
 | **A11** | a comment inherits the **outcome of the thread it replies to** — 76–88% of our evidence rows never mention the treatment in their own text | Nikita | measurement error, and the likeliest cause of both our overshoot and A8 |
 | **A12** | extracted outcome values are never range-checked — LIFT produced 4,444,000 on a 0–55 scale | Nikita | mechanical; the endpoint range is already known where the description states it |
+| **A13** | `NaturalMC`'s docstring says not to use it for APOs — which is our configuration | Nikita | a question for her, and upstream of every number we have produced |
+| **A14** | a bare `except:` turns any fit failure into silent `NaN` | Nikita | small and independent; matters most for the small-n outcomes |
 | **C4** | our analysis scripts assume a working directory and a local data mirror | ours | works, but not portable — see `patientpunk/analysis/README.md` |
 | **D3** | the GPU is held for a whole run but used only by `inclusion_prob` | ours | ~85% of GPU spend is idle time; needs the runner to acquire it later |
 
@@ -93,6 +95,8 @@ after we flagged it; "ours" means we wrote the fix.
 | **A10** | `author` dropped, so prolific posters count many times | `naturalv2` contextualise + curate | **yes** | **high** | **open** — schema change small, statistics open |
 | **A11** | a comment inherits the thread's outcome | `curate.py` `fmt_comment` + `sample_ty` prompt | **yes** | **highest** | **open** — measurement error; drives the overshoot and A8 |
 | **A12** | extracted outcomes never range-checked | `sample_ty` parsing | **yes** | **high** | **open** — 14.8% of LIFT rows out of range, max 4.4M on a 0–55 scale |
+| **A13** | `NaturalMC` docstring warns against APO use | `natural_mc.py` | **yes** | **high** | **open** — needs her answer; `ipw` branch looks wrong for APOs |
+| **A14** | bare `except:` → silent `NaN` | `natural_mc.py` | **yes** | medium | **open** — our runs did not hit it; small-n fits are the risk |
 | **C3** | `is_change` title regex missed untitled change endpoints | our `build_labels_sidecar.py` | no | **high** | **FIXED** — now reads timeFrame + range-checks the value |
 | **C4** | analysis scripts assume a cwd and a local data mirror | our `patientpunk/analysis/` | no | low | **open** — not portable |
 | **D1** | `gpu_memory_utilization` starves `prompt_logprobs` | serving config | no | high | fixed (0.55) |
@@ -174,7 +178,7 @@ CT.gov populated `ArmGroupType`, which well-formed records do). Caveat: LIFT sti
 to be pullable into the test universe at all.
 
 ### A4 — `status:act` excludes recruiting trials, and the pinned code ≠ her shared study
-**Where:** test universe `aggFilters=studyType:int,results:without,status:act`, where **`status:act`
+**Where:** test universe `aggFilters=studyType:int,results:without,status:act`, where `status:act`
 = "Active, not recruiting" only** — it drops every still-**recruiting** trial.
 **Evidence:** LIFT (`overallStatus = RECRUITING`) is dropped solely by `status:act`. For Long COVID,
 strict `status:act` = 13 test trials vs relaxed = 50 (+37). Critically, her *shared* study's 51-trial
@@ -456,6 +460,65 @@ Rejecting (not clamping — a clamp turns a parse failure into a confident extre
 values, and logging the rate, would be a small patch. The rate itself is a useful extraction-quality
 signal.
 
+### A13 — `NaturalMC`'s docstring says not to use it for APOs, which is what we do
+**Where:** `naturalv2/estimators/natural_mc.py`, the class docstring:
+
+```
+class NaturalMC:
+    """NATURAL Monte Carlo Estimator for individual treatment responses.
+    TODO: Do not use for APOs; off-the-shelf estimators do not trivially extend to APOs.
+```
+
+We run `ate: False`, which is an APO per arm, with `estimator: natural_mc_oi`.
+
+**This is a question, not an accusation.** Reading the `oi` branch, it imputes the outcome under each
+treatment value for every unit and the caller averages those — which is the standardisation estimator
+(g-formula) for `E[Y(t)]`, and correct for an APO as far as we can tell. So either the caution is
+about the `ipw` branch specifically, or it is about a subtlety we have not spotted. **We would rather
+ask than guess**, because every number in this document depends on the answer.
+
+The `ipw` branch does look wrong for APOs, which may be what the note means. It computes
+`all_ites[t, :] = individual_outcomes * t_mask`, zeroing every unit that did not take arm `t`, and
+`estimate_ate.py` then averages over *all* units. That returns `E[Y · 1{T=t}]`, not `E[Y(t)]` —
+shrunk toward zero by arm `t`'s share of the sample. With a single-arm experiment the mask is all
+ones and the bug is invisible, which is why our lithium run is unaffected.
+
+**Questions for Nikita:** is `natural_mc_oi` sound for `ate: False`? Is the TODO about the `ipw`
+branch, about both, or about something else? If MC is unsuitable for APOs generally, what should a
+continuous-endpoint APO study use, given `natural_ipw` cannot run one at all (A5)?
+
+**Fix/status:** open — blocked on her answer, and the highest-leverage question in this document,
+since it is upstream of every estimate we have produced.
+
+### A14 — A bare `except:` turns any fit failure into silent `NaN`
+**Where:** `naturalv2/estimators/natural_mc.py`, `get_individual_treatment_effects`:
+
+```python
+try:
+    model.fit(data)
+    ...
+except:
+    all_ites = np.full((self._num_treat, len(observational_data)), np.nan)
+return all_ites
+```
+
+**Why it matters:** a bare `except` catches everything — a singular design matrix, a dtype problem, a
+`KeyboardInterrupt` — and returns `NaN` with no log line and no exception. The caller cannot tell a
+failed fit from a fit that legitimately produced nothing, and the failure surfaces much later as a
+missing result that looks like a data problem rather than a modelling one.
+
+This is not hypothetical for studies like ours. The outcome model is an unregularised
+`LinearRegression` over 8 discretised covariates plus treatment, and our Fatigue outcome had **n = 9
+reports** — as many parameters as rows. That is exactly the regime where a fit degenerates, and the
+place where a silent `NaN` is most likely and least noticeable.
+
+**Our runs did not hit it** — both lithium estimates came back as numbers, so the fits succeeded.
+That is luck rather than evidence it is safe.
+
+**Fix/status:** open, small, and independent of everything else — catch the specific exceptions,
+log which unit and outcome failed and why, and let anything unexpected propagate. Worth doing before
+any run large enough that nobody reads the per-trial output.
+
 ---
 
 ## B. Data-source gotcha (CT.gov search)
@@ -486,7 +549,7 @@ re-added a never-written trial to the `Study` (because the schema still had arms
 `build_exp` crashed trying to read the absent JSON.
 **Trigger:** `NCT04574050` — the first paper extraction with arms but no numeric values, surfaced by
 the broadened-scope re-run.
-**Fix/status:** `inject_one` now returns **`False`** when nothing is written; the caller appends only
+**Fix/status:** `inject_one` now returns `False` when nothing is written; the caller appends only
 when a file was actually written. **Fixed** (commit `d74d713`).
 
 ### C3 — `is_change` misses change endpoints whose title says nothing about change
@@ -504,7 +567,7 @@ title wording it cannot be worded around. Titles remain useful as a secondary si
 ### C2 — Misc implementation slips (all fixed during development)
 - **EPMC full-text 404** — URL had a double `/PMC/` segment; corrected to the bare PMCID path
   (`{base}/{pmcid}/fullTextXML`).
-- **`enrollmentInfo` missing `type`** — some CT.gov records fail her pydantic model; wrapped
+- `enrollmentInfo` missing `type` — some CT.gov records fail her pydantic model; wrapped
   `ClinicalTrial.from_json_file` in try/except and skip.
 - **Synthetic `resultsSection` ValidationError** — her model requires `participantFlowModule` +
   `baselineCharacteristicsModule`; we stub them empty and carry only `outcomeMeasuresModule`.

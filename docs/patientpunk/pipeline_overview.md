@@ -391,17 +391,10 @@ for each candidate answer a = (x, t, y):
 P(a) = softmax over all candidates of score(a)
 ```
 
-In words: paste each candidate answer into the prompt, ask the model how unsurprising that whole
-prompt was, and turn those scores into a probability distribution over the candidates. Nothing is
-generated — the model is only ever asked to *score* text it was given, which is what
-`prompt_logprobs` returns and what no chat API exposes.
-
-`length_norm: False`, so there is no division by token count. This yields a *distribution* over
-assignments per report rather than a hard label.
-
-It requires a **discrete option set** for `Y`, so it fails outright on continuous endpoints — see
-§10.3. It is also the reason we need a GPU at all: `prompt_logprobs` is a vLLM extension, and no
-chat API (OpenRouter, Anthropic, OpenAI) exposes it.
+IIn words: paste each candidate answer into the prompt, ask the model how unsurprising that whole  
+prompt was, and turn those scores into a probability distribution over the candidates. Nothing is  
+generated — the model is only ever asked to *score* text it was given, which is what  
+`prompt_logprobs` returns. Collapsed LLM answers don't work here.  It is also the reason we need a GPU at all: `prompt_logprobs` is a vLLM extension, and no chat API (OpenRouter, Anthropic, OpenAI) exposes it.
 
 **(b) Monte Carlo — direct sampling.** NATURAL-MC, and **what we use**. Instead of scoring a grid of
 candidate answers, the model is asked the question directly and emits `{treatment, outcome}` as JSON,
@@ -414,6 +407,35 @@ single number, and taking one draw per report (§6.7) discards that uncertainty 
 [A11](#appendix-a--bug-index) and [A12](#appendix-a--bug-index) were invisible until we read the
 rows back — a confabulated value, an out-of-range value and a well-grounded one are all just numbers
 in the output table.
+
+**What the swap does and does not change.** "NATURAL-MC" names the *extraction* only. The estimator
+is an independent choice, and there are four combinations, not two:
+
+
+|                              | conditional extraction        | Monte Carlo extraction    |
+| ---------------------------- | ----------------------------- | ------------------------- |
+| **IPW** (propensity)         | `natural_ipw` — upstream default | `natural_mc_ipw`       |
+| **OI** (outcome imputation)  | `natural_oi`                  | `natural_mc_oi` — **ours** |
+
+
+We moved from the top-left to the bottom-right, so we changed **both** axes at once. The extraction
+change was forced — continuous endpoints have no grid to enumerate (§10.3). The estimator change was
+not forced by that, but it is right anyway: the `ipw` branch multiplies each report by a mask of
+whether that person took arm `t`, and the downstream average runs over *all* reports, so with more
+than one arm it returns `E[Y · 1{T=t}]` rather than `E[Y(t)]` — shrunk toward zero by the arm's share
+of the sample. `oi` imputes the outcome under `t` for every report, which is the g-formula and the
+right quantity. Lithium has a single arm so the mask is all ones and the two would agree; anything
+multi-arm they would not.
+
+**It does not remove the GPU.** `inclusion_prob` still scores by teacher-forcing (§6.5), so
+`prompt_logprobs` leaves the `(T, Y)` extraction but not the pipeline. That surviving stage is the
+"exactly one stage needs a GPU" of §7.3.
+
+**One caution from upstream.** `NaturalMC`'s own docstring carries `TODO: Do not use for APOs;
+off-the-shelf estimators do not trivially extend to APOs` — and APO is exactly what we run
+(`ate: False`). The `oi` branch reads like a correct standardisation estimator for an APO, so we do
+not think this is wrong, but it is an explicit caution sitting above the class we depend on and it
+needs Nikita's read. Tracked as [A13](#appendix-a--bug-index).
 
 ### 6.5 Inclusion weighting
 
@@ -568,7 +590,7 @@ rebuild**:
 | --------------- | ---------------------------------------------- | ------------------------------------------------------ |
 | `MODEL`         | `Qwen/Qwen2.5-7B-Instruct`                     | change this to change models                           |
 | `MAX_MODEL_LEN` | `8192`                                         | bounds the logits tensor                               |
-| `GPU_MEM_UTIL`  | `0.55`                                     | leaves headroom for `prompt_logprobs` — see §7.5       |
+| `GPU_MEM_UTIL`  | `0.55`                                         | leaves headroom for `prompt_logprobs` — see §7.5       |
 | `EXTRA_ARGS`    | `--max-num-seqs 1 --no-enable-chunked-prefill` | `prompt_logprobs` is incompatible with chunked prefill |
 
 
@@ -588,7 +610,7 @@ small at the cost of ~5 minutes of startup.
 | `treatment_outcome_filter` | OpenRouter               | generative              | moderate                                           |
 | `knowns` / `imputations`   | OpenRouter               | generative              | small                                              |
 | `sample_ty`                | OpenRouter               | generative              | small                                              |
-| `inclusion_prob`       | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
+| `inclusion_prob`           | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
 | estimator + bootstrap      | local CPU (causallib)    | scikit-learn            | free                                               |
 
 
@@ -1050,11 +1072,11 @@ Estimating the first and scoring it against the second builds in an error the si
 being measured. Three ways out, none free:
 
 1. **Estimate drug-versus-untreated from the corpus** and accept that it answers a different, still
-   useful question — "what happens to people who take this?" — rather than the trial's.
+  useful question — "what happens to people who take this?" — rather than the trial's.
 2. **Model the placebo response explicitly** and subtract it, which needs an external estimate of
-   placebo response for the condition and endpoint, and imports that estimate's error.
+  placebo response for the condition and endpoint, and imports that estimate's error.
 3. **Benchmark only against trials that report both arms**, and compare our drug-minus-untreated to
-   their drug-minus-placebo as a deliberately biased-but-bounded comparison, with the bias named.
+  their drug-minus-placebo as a deliberately biased-but-bounded comparison, with the bias named.
 
 **What it requires beyond a config flag.** Both arms need evidence, so `treatment_names` has to
 include a control that a Reddit author could plausibly be, which "Placebo" is not. Positivity has to
@@ -1161,6 +1183,8 @@ in the C and D series that this document does not use.
 | **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                                                                | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found                         |
 | **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                                                                | `sample_ty` parsing                            | open — mechanical, and the range is already known                      |
 | **B1**  | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                                                         | our CT.gov scope layer                         | fixed in `seed_terms`                                                  |
+| **A13** | `NaturalMC`'s own docstring says not to use it for APOs — and `ate: False` is exactly that. The `oi` branch looks correct for an APO; the `ipw` branch does not (§6.4). | `natural_mc.py`                                | open — a question for Nikita, upstream of every estimate we have     |
+| **A14** | A bare `except:` in the same class turns any fit failure into a silent `NaN`. Most likely to fire on the small-n outcomes, where the outcome model is already saturated (§6.6). | `natural_mc.py`                                | open — small; our runs did not hit it                                 |
 | **D1**  | `gpu_memory_utilization` starves `prompt_logprobs`. The transient logits tensor sits outside vLLM's preallocated pool, so the usual `0.90` crashes the engine — and because it is a fraction, a bigger card does not help (§7.5). | serving config (ours)                          | **fixed** — `0.55`, plus a realistic-length probe before every run     |
 
 
