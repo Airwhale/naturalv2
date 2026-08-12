@@ -21,7 +21,7 @@ After a bunch of fiddling, I have **the pipeline running end-to-end, but I do no
    and are far easier to read off a post ("did they improve — yes or no?"). Our data is often in terms of subjective severity,  fatigue reports, etc. **We cannot compare our error to their 3 points.**
 2. **They report against Phase 3/4 trials.** Those are large, well-powered, and mostly test
   established drugs. Our Long-COVID set is small early-phase work, for example a trial we are looking at involving lithium has an arm with n=24.
-3. **Model scale.** The method assumes a large model; we are running a 7B smoke model (see §11.5). Once we get everything else working better we should ask Nikita to run it on UofT's machines or source some more heavy duty VRAM having machines to get an 80B parameter model or larger running it.
+3. **Model scale.** The method assumes a large model; we are running a 7B smoke model (see §11.4). Once we get everything else working better we should ask Nikita to run it on UofT's machines or source some more heavy duty VRAM having machines to get an 80B parameter model or larger running it.
 4. **Label cleanliness.** Several of our endpoints report a *change from baseline* while describing an
   absolute scale, which silently mismatches the prediction target (§10.1). A response rate has no
    equivalent failure mode.
@@ -351,7 +351,7 @@ ATE is a stronger, harder target. It is what a clinician cares about, because it
 outcome among patients who took that arm's treatment — written `E[Y(t)]`, read as "the expected
 outcome `Y` if a patient were given treatment `t`".
 
-**We should be predicting the effect, not the level — that is the goal, and it is §11.9.** The
+**We should be predicting the effect, not the level — that is the goal, and it is §11.8.** The
 obstacle is not the config flag but that Reddit has no placebo arm to contrast against, so the
 difference the corpus can support is drug-versus-untreated where the trial reports
 drug-versus-placebo.
@@ -499,7 +499,7 @@ interaction terms, no check that n exceeds the number of parameters.
 
 **Identification rests on the usual assumptions:** consistency, positivity, and **no unmeasured
 confounding given those 8 covariates**. That is a strong assumption anywhere, and a particularly
-demanding one on Reddit; §11.4 sets out why.
+demanding one on Reddit; §11.3 sets out why.
 
 ### 6.7 Uncertainty
 
@@ -663,7 +663,7 @@ stopping: **$8.69 GPU plus roughly $12–14 of API**.
 | ---------------------------------------------------------- | ------------------------------------------------------------- |
 | boundary-matching fix ([A9](#appendix-a--bug-index), done) | raises the candidate pool from ~42,600 to ~138,600 reports    |
 | acquire the GPU only for `inclusion_prob`                  | it sat idle ~90% of the run; removes ~85% of GPU cost         |
-| DrugBank aliases (§11.6)                                   | free additional synonyms before paying to scan anything       |
+| DrugBank aliases (§11.5)                                   | free additional synonyms before paying to scan anything       |
 | decide the outcome count                                   | four outcomes quadruples the dominant `relevance_filter` cost |
 
 
@@ -703,41 +703,8 @@ which is noise. Sign and magnitude are separate problems, and only the first was
 > showed that 21 of the 32 Brain Fog values are identical, inherited from the recovery threads the
 > comments replied to rather than extracted from the commenters themselves
 > ([A11](#appendix-a--bug-index)). The table is kept because the *diagnosis* is the result; the
-> estimates are not.
-
-### 9.2 What those numbers do not tell us
-
-An error of 21 points is uninterpretable on its own, because nothing here says what a *good* number
-would be. Computing that comparison — which we had not done until writing this section — is
-uncomfortable. (To be clear about what is being compared: the last row is the NATURAL pipeline as
-described in this document, not any earlier PatientPunk analysis. The rows above it are trivial
-predictors that use no patient text at all.)
-
-Start with what the trial actually found. Lithium reported both arms:
-
-
-| outcome                  | lithium arm | placebo arm | true treatment effect |
-| ------------------------ | ----------- | ----------- | --------------------- |
-| Fatigue Severity Scale   | −11.3       | −8.6        | **−2.7**              |
-| Brain Fog Severity Scale | −9.0        | −8.1        | **−0.9**              |
-
-
-Lithium is close to a **null trial**. Almost all of that −11.3 is placebo response and regression to
-the mean, not drug. Which means a predictor that knows nothing about lithium, and simply guesses that
-patients in a trial improve by roughly nine points, does very well:
-
-
-| predictor                               | Fatigue error | Brain Fog error | **MAE**  |
-| --------------------------------------- | ------------- | --------------- | -------- |
-| predict the **placebo arm's value**     | 2.7           | 0.9             | **1.8**  |
-| predict **zero change**                 | 11.3          | 9.0             | **10.2** |
-| **NATURAL as we are running it** (§9.1) | 17.2          | 24.9            | **21.0** |
-
-
-That constant beats us roughly twelve-fold. On one trial, with a 7B model, this is not a verdict on  
-the method — but there is very clearly bias and noise to the point of making us question everything here.
-
-
+> estimates are not.  
+> There is very clearly bias and noise to the point of making us question everything here.
 
 ---
 
@@ -818,9 +785,8 @@ own would not have widened the interval by much.
 
 Upstream's default estimator (`natural_ipw`) cannot run a `notbinary` study: `conditional_extraction`
 enumerates multiple-choice options over the outcome, continuous endpoints have none, and it dies with
-a bare `ZeroDivisionError`. We route around it with `conf/estimate_mc.yaml`, so it no longer blocks
-us — but the shipped default still cannot run a study like ours, and whether that default should
-change is Nikita's call. Worth raising with her.
+a bare `ZeroDivisionError`. We route around it with `conf/estimate_mc.yaml`, so it no longer blocks  
+us — but I'm not sure that this is the correct path forward.
 
 ---
 
@@ -828,106 +794,69 @@ change is Nikita's call. Worth raising with her.
 
 Distinct from §10. Those are defects with known causes and mostly known fixes. These are the
 unsolved ones, where the right approach is genuinely undecided. Roughly ordered by how much each
-blocks trusting an estimate — except the last, §11.9, which is not a blocker but the **goal** the
+blocks trusting an estimate — except the last, §11.8, which is not a blocker but the **goal** the
 other eight are in service of.
 
 ### 11.1 Uncertainty quantification — what should a confidence interval here even mean?
 
-The bootstrap resamples an already-extracted table, capturing one variance component and silently
-ignoring the rest: extraction error, LLM sampling variance, selection variance, and
-model-specification variance.
+Our interval measures exactly one thing: **how much the estimate would move if we drew a different
+subset of the same extracted rows.** The bootstrap resamples a table that has already been extracted,
+so every source of error that acted before that table existed sits outside the interval:
 
-The dominant uncertainty is epistemic and LLM-shaped — *"how much do I trust this extraction"* has no
-standard estimator. Taking multiple draws per report would capture sampling variance but not
-systematic extraction bias.
+- **extraction error** — the model misreading a post. [A11](#appendix-a--bug-index) is one confirmed
+case, and it moved the estimate by more than 20 points.
+- **sampling variance in the LLM** — we take one draw per report, so a report the model was unsure
+about is indistinguishable from one it was certain about (§6.4).
+- **selection variance** — which patients chose to write anything down (§11.2).
+- **model-specification variance** — the outcome model being an underdetermined linear regression
+(§6.6).
 
-**Progress looks like:** an interval whose empirical coverage across the 19 labelled trials is close
-to nominal. That is measurable with what we already have, and nobody has measured it.
-*Self-contained; needs no new data.*
+If possible, we need to measure error in each of these.
 
-**The other interval — the trial's.** We score against the trial's reported value as though it were
-exact. It is not: lithium's −9.0 is an estimate from one finite arm, reported with an SD of 13.8, and
-it carries its own interval. Treating it as a point makes our error look sharper than it is on the
-target side, in the same way the bootstrap makes it look sharper on ours.
+**But we do not have to separate them to catch the problem: a 95% interval promises the true answer falls inside it 95% of the time, and we can just check whether it does.**
 
-This does not rescue the numbers in §9 — being 25 half-widths out is not a rounding question — but it
-changes what "correct" means once we are close, which is exactly the regime the four held-out trials
-will land in. A prediction sitting inside the trial's own interval is not distinguishable from right,
-and scoring it as a 3-point error would be measuring noise in the label.
+For each of the 19 trials whose real results we already have:
 
-**Progress looks like:** carrying the trial's own standard error through the comparison, so accuracy
-is measured interval-against-interval rather than point-against-point. The spreads are already in the
-trial records we hold.
+1. run the pipeline and record the interval it produces;
+2. check whether the trial's published value falls inside that interval;
+3. count how often it did.
+
+**Progress looks like:** that count, for all 19 trials. It needs no new data, no labelling and no
+GPU beyond the runs themselves — the trials are built, the answers are known, and nobody has done it.
+It is also the cheapest way to find out whether any interval this pipeline reports can be quoted to
+anyone.
 
 ### 11.2 Selection bias — people post about dramatic outcomes
 
-The pseudo-population is self-selected in a way that correlates directly with the outcome. Dramatic
-recoveries and dramatic failures are both over-represented; "mild and unremarkable" is not.
+The pseudo-population is self-selected in a way that correlates directly with the outcome. Dramatic  
+recoveries and dramatic failures are both over-represented; "mild and unremarkable" is not.  
 `inclusion_prob` corrects for *eligibility*, not for *propensity to post*.
 
-**This is a real hazard, but it is not what caused our overshoot.** We originally read §10.2's
-overshoot as the signature of selection bias. It is not: selection over *patient outcomes* predicts
-both tails inflating — a U-shape — and what the extracted values actually show is a spike at a single
-number, because comments inherited their thread's outcome ([A11](#appendix-a--bug-index)). The
-mechanical defect has to be fixed before there is anything left to attribute to selection.
+We need to mesure and account for **selection bias if possible**. It needs either an external anchor (a survey with  
+known prevalence) or an explicit model of the posting mechanism.  
 
-So the honest position is that **we have not measured selection bias at all yet**. It remains the
-obvious next suspect once A11 is fixed, and it is the harder problem of the two: unobservable by
-construction, since non-posters leave no data. It needs either an external anchor (a survey with
-known prevalence) or an explicit model of the posting mechanism.
+**Progress looks like:** mesuring and normalizing magnatude of changes/effects reported somehow. 
 
-**Progress looks like:** first, re-running the labelled trials after A11 to see how much overshoot
-survives — that number is the actual size of the problem, and we do not currently know it. Then a
-correction that reduces what is left without simply fitting to the labels.
+### 11.3 Confounding — are we comparing like with like?
 
-### 11.3 Extraction validity — is `Y_i` what the patient actually reported?
+The estimator assumes **no unmeasured confounding** given eight covariates, all of them demographic:
+condition on those and the treated are exchangeable with the untreated.
 
-There is no gold standard, so extraction error is entangled with estimator error and selection bias.
-Validating means humans reading posts and assigning outcome values, which is expensive — and
-inter-rater agreement on *"what FSS score does this post imply?"* may itself be poor.
+A confounder is anything that drives *both* the choice of treatment and the outcome. Baseline
+severity, comorbidity and prior treatment failures all qualify, and none is among the eight. Someone
+reaching for LDN after five failures is not exchangeable with someone trying it first.
 
-**A11 is the first confirmed instance of this**, and it is worse than noisy extraction: `Y_i` is not
-a bad reading of the right person's text, it is a reading of *someone else's* text. That it went
-unnoticed until we read the extracted rows back is the argument for doing so routinely. A cheap
-standing check falls out of it — the share of rows whose own text never mentions the matched
-treatment, which was 76–88% for us and should be near zero.
+**Open question:** can those be extracted from the text itself, and does adding them move the
+estimate or just add noise?
 
-Underneath is a real question: **is there a ceiling?** If humans cannot agree on the outcome implied
-by a Reddit post, no model can extract it reliably, and the method has an intrinsic noise floor worth
-knowing about.
+**Progress looks like:** running a sensitivity analysis — how large would an unmeasured difference have to be  
+to explain our error? "Implausibly large" clears confounding; "mild" implicates it.
 
-**Progress looks like:** a small human-labelled set of 100–200 posts, giving a per-report error
-distribution — which feeds directly into §11.1.
+### 11.4 Does model scale fix this?
 
-### 11.4 Confounding — is the identification assumption ever plausible?
+Things could magically get better with a bigger more modern model!
 
-The estimator assumes no unmeasured confounding given eight covariates. But baseline severity,
-comorbidity, prior treatment failures and treatment-seeking behaviour are all unmeasured, and all
-drive both what people try and how they report it. Someone trying LDN after five failed treatments is
-not exchangeable with someone trying it first.
-
-**Open question:** can richer confounders be extracted from the text itself, and does adding them
-actually move the estimate or just add noise?
-
-**Progress looks like:** a sensitivity analysis — how large would an unmeasured confounder have to be
-to explain the error we see?
-
-### 11.5 Does model scale fix this?
-
-We run Qwen2.5-**7B**; the method assumes ~70B. We do not know whether accuracy is model-limited or
-evidence-limited, and that decides where all the remaining effort should go. If 70B closes the gap,
-this is an infrastructure problem; if it does not, §11.1–11.4 are the whole story.
-
-**A11 changes the ordering.** Scaling up is easy — the serving image is env-driven, so it is a config
-change and a bigger card (§7.2) — but doing it now would measure the wrong thing. A larger model does
-not resolve a referent the prompt leaves ambiguous; it reaches the same reading for the same reason,
-and states it more fluently. Tighten and validate the extraction first, then pay for the bigger
-model.
-
-**Progress looks like:** the same trials at 7B and 70B, run *after* A11 is fixed. Still the cheapest
-decisive experiment on the model-versus-evidence question — just no longer the first thing to do.
-
-### 11.6 How treatment mentions should be found at all — the matcher probably needs replacing
+### 11.5 How treatment mentions should be found at all — the matcher probably needs replacing
 
 Fixing the boundary bug ([A9](#appendix-a--bug-index)) removed the worst symptom, but it patched a design that is
 fundamentally limited. The current matcher is an Aho-Corasick automaton doing **exact substring
@@ -959,12 +888,9 @@ effort:
   expensive, and it changes the stage from a free prefilter into an inference cost over 2.45M
    documents.
 
-The tension is that the current stage's virtue *is* that it is free and deterministic, and that is
-what lets us pay LLM cost only on candidates. Anything that replaces it has to preserve that or
-justify the expense. Worth measuring first: how much evidence are we still missing after the
-boundary fix? That is answerable by sampling reports the matcher rejected.
 
-### 11.7 Prolific posters — the wrong unit of analysis
+
+### 11.6 Prolific posters — the wrong unit of analysis
 
 Every surviving report becomes one synthetic patient (§6.1), so a patient who posts fifty times
 counts fifty times. For lithium's evidence:
@@ -982,31 +908,9 @@ counts fifty times. For lithium's evidence:
 
 One person supplies a tenth of it. Ten people supply nearly a third.
 
-**We cannot currently measure this by author downstream, because `author` is discarded.** It exists
-in the raw corpus but survives neither contextualisation nor curation, so nothing after stage 2 can
-deduplicate, cluster or weight by patient — and we cannot tell how concentrated the 61 surviving
-lithium reports are. The numbers above are pre-filter.
+**This is VERY BAD for obvious reasons.** 
 
-**We can measure it by thread, because `initial_post` does survive** — and that turns out to be the
-sharper cut anyway:
-
-
-| final evidence rows       | rows  | distinct threads | largest thread's share |
-| ------------------------- | ----- | ---------------- | ---------------------- |
-| lithium, Brain Fog        | 32    | **7**            | 11 rows (34%)          |
-| lithium, Fatigue          | 9     | **4**            | —                      |
-| LIFT, Functional Capacity | 3,127 | **494**          | —                      |
-
-
-So the nominal n = 32 rests on seven conversations. Two units of clustering are in play — the person
-and the thread — and only the second is currently observable. Under A11 the thread is also the unit
-that *carries the outcome*, which makes a cluster bootstrap by thread the obvious first correction:
-it needs no schema change, unlike the author fix.
-
-Both are real, and both inflate confidence in the same direction. Retaining a salted author hash
-remains the right long-term fix; clustering by thread is available today.
-
-### 11.8 What is this benchmark actually measuring?
+### 11.7 What is this benchmark actually measuring?
 
 19 trials reduce to **16 independent drug signals**, several with change-from-baseline label
 mismatches. How many trials are needed before an aggregate error is meaningful? Should shared-pool
@@ -1014,42 +918,11 @@ trials be pooled or down-weighted? And is per-arm APO even the right target, whe
 decision-relevant quantity is the treatment *contrast*?
 
 Without answers, "mean absolute error over 19 trials" is a number without an interpretation. The
-"what quantity" half of that question is now stated as a goal in its own right — §11.9.
+"what quantity" half of that question is now stated as a goal in its own right — §11.8.
 
-### 11.9 The goal — predict the treatment effect, not the arm
+### 11.8 The goal — predict the treatment effect, not the arm
 
-Everything above is an obstacle. This is the objective: **estimate the treatment effect, the
-difference between arms, rather than one arm's level.** In the doc's terms (§6.2), move from APO to
-ATE. Config-wise that is `ate: True`; conceptually it is most of the remaining work.
-
-**Why this is the target and not a refinement.** §9.2 is the argument. On lithium, a constant that
-knows nothing about the drug — "patients in a trial improve by about nine points" — beat us roughly
-twelve-fold. That is not mainly because our estimate was bad; it is because APO is dominated by
-placebo response, natural recovery and regression to the mean, all of which are the *same in both
-arms*. Lithium's real effect was −2.7 on Fatigue and −0.9 on Brain Fog, against arm levels of −11.3
-and −9.0. Predicting the level well is mostly predicting the placebo response well. **Error against
-APO barely tests whether the method detects a drug effect at all**, so no amount of accuracy on the
-current target establishes the thing we want to claim.
-
-**The hard part is that Reddit has no placebo arm.** Nobody posts about taking a placebo, so the
-contrast the corpus can support is *drug versus no drug*, while the trial reports *drug versus
-placebo*. Those differ by exactly the placebo response — which for lithium was −8.6 of the −11.3.
-Estimating the first and scoring it against the second builds in an error the size of the effect
-being measured. Three ways out, none free:
-
-1. **Estimate drug-versus-untreated from the corpus** and accept that it answers a different, still
-  useful question — "what happens to people who take this?" — rather than the trial's.
-2. **Model the placebo response explicitly** and subtract it, which needs an external estimate of
-  placebo response for the condition and endpoint, and imports that estimate's error.
-3. **Benchmark only against trials that report both arms**, and compare our drug-minus-untreated to
-  their drug-minus-placebo as a deliberately biased-but-bounded comparison, with the bias named.
-
-**What it requires beyond a config flag.** Both arms need evidence, so `treatment_names` has to
-include a control that a Reddit author could plausibly be, which "Placebo" is not. Positivity has to
-hold — comparable people on both sides — and §11.4's confounding concern becomes sharper, since
-choosing to take a drug is exactly what the untreated did not do. It also multiplies the evidence
-requirement: two arms, each needing enough on-target reports, against a corpus where §11.6 says we
-reach perhaps a fifth of what is there.
+We might want to look at what it would take to predict ATE, not ATO.
 
 **Progress looks like:** one completed trial with both arms reported, estimated as a contrast and
 scored against the trial's own ATE, alongside the drug-versus-untreated number so the gap between
@@ -1145,7 +1018,7 @@ in the C and D series that this document does not use.
 | **A7**  | `detokenize=False` is hardcoded on every `prompt_logprobs` call; harmless in-process, but it crashes a *hosted* vLLM server.                                                                                                      | `conditional_extraction`                       | **fix written** — an in-process guard, on our branch                   |
 | **A8**  | Bootstrap intervals implausibly tight — ±1 on n=32 (§10.2).                                                                                                                                                                       | `bootstrap_size`                               | open — needs her view                                                  |
 | **A9**  | Treatment matching dropped ≤3-character aliases, costing 79% of LDN evidence.                                                                                                                                                     | `build_treatment_automaton` + curate           | **fixed** — boundary-aware matching added; strongest PR candidate      |
-| **A10** | `author` is discarded after stage 2, so one prolific poster becomes many synthetic patients — 99 posts from one person became 99 "patients" (§11.7).                                                                              | contextualise + curate                         | open — a salted author hash is small; the statistics are the hard part |
+| **A10** | `author` is discarded after stage 2, so one prolific poster becomes many synthetic patients — 99 posts from one person became 99 "patients" (§11.6).                                                                              | contextualise + curate                         | open — a salted author hash is small; the statistics are the hard part |
 | **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                                                                | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found                         |
 | **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                                                                | `sample_ty` parsing                            | open — mechanical, and the range is already known                      |
 | **B1**  | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                                                         | our CT.gov scope layer                         | fixed in `seed_terms`                                                  |
@@ -1213,7 +1086,7 @@ covariates, option lists and (for completed trials) the label. Everything downst
 | **ATE**                 | average treatment effect — the *difference* between arms. What we do **not** currently estimate (§6.2)                                                                                                          |
 | `ate: False`            | the config key selecting APO over ATE                                                                                                                                                                           |
 | `use_inclusion_weights` | whether to apply the `inclusion_prob` weights                                                                                                                                                                   |
-| `bootstrap_size`        | number of bootstrap resamples for the confidence interval. Upstream default 10 — too few, though not what collapsed our intervals (§10.2)                                                                        |
+| `bootstrap_size`        | number of bootstrap resamples for the confidence interval. Upstream default 10 — too few, though not what collapsed our intervals (§10.2)                                                                       |
 | `natural_mc_oi`         | the estimator we use: Monte-Carlo extraction (`sample_ty`) plus outcome imputation                                                                                                                              |
 | `natural_ipw`           | upstream's default: enumerated extraction plus inverse propensity weighting. Cannot run continuous outcomes                                                                                                     |
 

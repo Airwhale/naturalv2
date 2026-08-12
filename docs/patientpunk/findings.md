@@ -9,6 +9,10 @@ A single registry of every bug we hit running NATURAL end-to-end on a Long-COVID
 **Start with the fix-by-fix summary below** — it lists each change we made and what it is for. The
 numbered sections after it carry the evidence.
 
+> **Filing to upstream?** Use [upstream_queue.md](upstream_queue.md) instead. It carries the same
+> issues ordered by how much each damages a result, with a PR sketch under each one we can already
+> fix. This document stays the evidence registry behind it.
+
 Category A is real issues in `naturalv2` (they affect Nikita's *own* results, not just ours);
 B is a CT.gov search gotcha; C is bugs in our own code (kept because C3 is the mirror image of A6);
 D is serving/ops. Each entry: what · where · evidence · impact · fix/status.
