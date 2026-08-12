@@ -105,9 +105,9 @@ extracting the primary endpoint from the published paper. Those are flagged `reg
 
 Two names to define first, since they recur throughout:
 
-- `**trial_filters`** — the block in naturalv2's config holding the four booleans below. It is the
+- **`trial_filters`** — the block in naturalv2's config holding the four booleans below. It is the
 only place trial eligibility is decided upstream.
-- `**noparallel_notbinary`** — the name we gave our filter settings, and the string that appears in
+- **`noparallel_notbinary`** — the name we gave our filter settings, and the string that appears in
 every output path and filename. It is purely descriptive: *no* `parallel` requirement, *not*
 `binary` endpoints. Upstream's default demands both; we demand neither.
 
@@ -324,7 +324,9 @@ it!"* — they explicitly have **not** taken it. The report is attributed to the
 
 ## 6. Stage 3 — Estimation, and the maths
 
-yay maths!
+The part with actual statistics in it. Read §6.1 and §6.2 if you read nothing else — the first says
+where the risk lives, the second says what number we are even trying to produce, and almost every
+misreading of our results traces back to one of those two.
 
 ### 6.1 The shape of the method
 
@@ -354,8 +356,9 @@ outcome among patients who took that arm's treatment — written `E[Y(t)]`, read
 outcome `Y` if a patient were given treatment `t`".
 
 This is why the run output reads *Predicted Response* against *True Response*: we are predicting the
-lithium arm's own mean change of −11.3, not
-lithium-minus-placebo. Easy to misread; worth reading twice.
+lithium arm's own mean change of −11.3, not lithium-minus-placebo. Easy to misread, and §9.2 shows
+what it costs — on a near-null trial, APO is dominated by the placebo response, so error against it
+barely tests whether the method detects a drug effect at all.
 
 ### 6.3 What the LLM has to produce, per report
 
@@ -368,8 +371,9 @@ lithium-minus-placebo. Easy to misread; worth reading twice.
 | `w_i`  | P(author would meet the trial's inclusion criteria)                                                     | `inclusion_prob`                                           |
 
 
-All are then discretised: covariates to an index into their option list, treatment to an index into
-`treatment_names`, and a continuous outcome to a numeric value (identity).
+Covariates and treatment are then encoded as indices — into their option list and into
+`treatment_names` respectively. A continuous outcome is passed through unchanged; the "discretise"
+step is the identity function for it, which is worth knowing because the name suggests otherwise.
 
 ### 6.4 Two extraction modes
 
@@ -394,27 +398,61 @@ generated — the model is only ever asked to *score* text it was given, which i
 `length_norm: False`, so there is no division by token count. This yields a *distribution* over
 assignments per report rather than a hard label.
 
-It requires a **discrete option set for `**Y*`*, so it fails outright on continuous endpoints — see
+It requires a **discrete option set for `Y`**, so it fails outright on continuous endpoints — see
 §10.3. It is also the reason we need a GPU at all: `prompt_logprobs` is a vLLM extension, and no
 chat API (OpenRouter, Anthropic, OpenAI) exposes it.
 
-**(b) Monte Carlo — direct sampling.** NATURAL-MC, and **what we use**. The LLM emits
-`{treatment, outcome}` as JSON, sampling `Y_i` as a real number. Handles continuous endpoints
-natively.
+**(b) Monte Carlo — direct sampling.** NATURAL-MC, and **what we use**. Instead of scoring a grid of
+candidate answers, the model is asked the question directly and emits `{treatment, outcome}` as JSON,
+with `Y_i` a real number. That is the only mode a continuous endpoint can use, and it is cheaper —
+one API call per report rather than one scored prompt per candidate assignment.
+
+The cost is that a sampled answer carries no distribution with it. Mode (a) returns a probability
+across candidates, so a report the model is unsure about contributes a spread; mode (b) returns a
+single number, and taking one draw per report (§6.7) discards that uncertainty entirely. This is why
+[A11](#appendix-a--bug-index) and [A12](#appendix-a--bug-index) were invisible until we read the
+rows back — a confabulated value, an out-of-range value and a well-grounded one are all just numbers
+in the output table.
 
 ### 6.5 Inclusion weighting
 
-`inclusion_prob` scores `P(meets_inclusion_criteria = Yes | report)` by the same teacher-forced
-method, and the weights reweight the community population toward the trial's eligible population.
-This is the pipeline's one explicit correction for *"Reddit is not the trial cohort"*. Controlled by
+Reddit is not the trial's cohort, and this is the pipeline's one explicit correction for that.
+`inclusion_prob` scores `P(meets_inclusion_criteria = Yes | report)` by the teacher-forced method of
+§6.4(a), and each report then enters the average weighted by that probability — in
+`estimate_ate.py`, literally `np.average(responses, weights=probs)`. Someone who reads as clearly
+trial-eligible counts nearly fully; someone who reads as ineligible counts nearly zero. Controlled by
 `use_inclusion_weights: True`.
+
+Two things about how it behaved on lithium.
+
+**The probability is entirely inferred.** The extracted `meets_inclusion_criteria` field was
+`Unknown` on all 32 Brain Fog reports and all 9 Fatigue ones — no Reddit post says whether its author
+would pass a trial screen. The weight is the model's read of the report, not something a patient
+stated.
+
+**It does something, but nothing dramatic.** Weighting costs roughly a fifth of the sample:
+
+
+| outcome   | rows | effective sample size | heaviest single row |
+| --------- | ---- | --------------------- | ------------------- |
+| Brain Fog | 32   | 25.5 (80%)            | 4.9%                |
+| Fatigue   | 9    | 6.2 (69%)             | 24.4%               |
+
+
+*(Effective sample size is `(Σw)² / Σw²` — how many equally-weighted reports would carry the same
+information.)* No single report dominates, so this is **not** a contributor to the problems in §10.2.
+Worth stating explicitly, because concentrated weights are a standard place for instability to hide
+and it would be reasonable to suspect them here.
+
+**What it does not correct for is propensity to post** (§11.2). Being eligible for a trial and being
+the kind of person who writes about their illness online are different things, and only the first is
+modelled.
 
 ### 6.6 The estimators
 
-Verified against `naturalv2/models/causal_models.py`, the estimators are
-**causallib** — an open-source causal-inference library from IBM Research that implements the
-standard estimators as scikit-learn-style objects — with ordinary scikit-learn models doing the
-actual fitting:
+The estimators come from **causallib** — an open-source causal-inference library from IBM Research
+that wraps the standard estimators as scikit-learn-style objects — with ordinary scikit-learn models
+doing the actual fitting. Checked against `naturalv2/models/causal_models.py`:
 
 
 | name          | class                                  | the model it fits                |
@@ -460,18 +498,21 @@ interaction terms, no check that n exceeds the number of parameters.
 confounding given those 8 covariates**. That is a strong assumption anywhere, and a particularly
 demanding one on Reddit; §11.4 sets out why.
 
-I can probably find and pull more studies to use as ground truth/trial stuff.
-
 ### 6.7 Uncertainty
 
 A percentile bootstrap with `bootstrap_size: 10` and `alpha: 0.05`, resampling the
 **already-extracted** table.
 
-This is the crux of §10.2. The bootstrap propagates sampling variability *of the pseudo-population*,
-but not extraction error (how wrong `Y_i` is given the text), not LLM sampling variance (one draw
-per report), and not selection bias. So the interval answers *"how much would this move if I drew a
-different subset of the same extracted rows"* — which is not the question anyone is asking. Also,
-with B = 10, the 2.5th and 97.5th percentiles are simply the minimum and maximum of ten numbers.
+The key word is *already*. The bootstrap propagates sampling variability of the pseudo-population,
+but not extraction error (how wrong `Y_i` is given the text), not LLM sampling variance (one draw per
+report), and not selection bias. So the interval answers *"how much would this move if I drew a
+different subset of the same extracted rows"* — which is not the question anyone is asking. And with
+B = 10, the 2.5th and 97.5th percentiles are simply the minimum and maximum of ten numbers.
+
+Both limitations are real, but neither is what collapsed the lithium intervals. Resampling a column
+in which 21 of 32 values are identical returns the same number however large B is — the values
+themselves were degenerate, for the reason in §10.2. Raising `bootstrap_size` is still worth doing;
+it just will not fix an interval computed over the wrong quantity.
 
 ### 6.8 The knobs we set, and why
 
@@ -526,7 +567,7 @@ rebuild**:
 | --------------- | ---------------------------------------------- | ------------------------------------------------------ |
 | `MODEL`         | `Qwen/Qwen2.5-7B-Instruct`                     | change this to change models                           |
 | `MAX_MODEL_LEN` | `8192`                                         | bounds the logits tensor                               |
-| `GPU_MEM_UTIL`  | `**0.55`**                                     | leaves headroom for `prompt_logprobs` — see §7.5      |
+| `GPU_MEM_UTIL`  | **`0.55`**                                     | leaves headroom for `prompt_logprobs` — see §7.5      |
 | `EXTRA_ARGS`    | `--max-num-seqs 1 --no-enable-chunked-prefill` | `prompt_logprobs` is incompatible with chunked prefill |
 
 
@@ -546,7 +587,7 @@ small at the cost of ~5 minutes of startup.
 | `treatment_outcome_filter` | OpenRouter               | generative              | moderate                                           |
 | `knowns` / `imputations`   | OpenRouter               | generative              | small                                              |
 | `sample_ty`                | OpenRouter               | generative              | small                                              |
-| `**inclusion_prob`**       | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
+| **`inclusion_prob`**       | **dispersed GPU**        | needs `prompt_logprobs` | GPU-hours                                          |
 | estimator + bootstrap      | local CPU (causallib)    | scikit-learn            | free                                               |
 
 
