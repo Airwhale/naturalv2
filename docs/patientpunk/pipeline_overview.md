@@ -213,10 +213,10 @@ Split is temporal (3 train / 2 val), ordered by readout date.
 | [NCT04842448](https://clinicaltrials.gov/study/NCT04842448)                                                                                                                             | hyperbaric oxygen       | 757 | clinic          | caveated | not self-obtainable                        |
 | [NCT05576662](https://clinicaltrials.gov/study/NCT05576662) · [NCT05595369](https://clinicaltrials.gov/study/NCT05595369) · [NCT05965726](https://clinicaltrials.gov/study/NCT05965726) | Paxlovid ×3             | 354 | Rx oral         | high     | **three trials, one shared evidence pool** |
 | [NCT06253806](https://clinicaltrials.gov/study/NCT06253806)                                                                                                                             | stellate ganglion block | 311 | clinic          | caveated | procedure                                  |
-| [NCT05445674](https://clinicaltrials.gov/study/NCT05445674) · [NCT05841498](https://clinicaltrials.gov/study/NCT05841498)                                                               | apheresis ×2            | 213 | device          | caveated | procedure; shared pool                     |
+| [NCT05445674](https://clinicaltrials.gov/study/NCT05445674) · [NCT05841498](https://clinicaltrials.gov/study/NCT05841498)                                                               | apheresis ×2            | 213 | clinic          | caveated | procedure; shared pool                     |
 | [NCT07544186](https://clinicaltrials.gov/study/NCT07544186)                                                                                                                             | L-citrulline            | 144 | self-obtainable | high     | biomarker endpoint                         |
 | [NCT05200858](https://clinicaltrials.gov/study/NCT05200858)                                                                                                                             | TENS                    | 127 | device          | caveated | device                                     |
-| [NCT05840237](https://clinicaltrials.gov/study/NCT05840237)                                                                                                                             | oxaloacetate            | 125 | *mis-tagged*    | caveated | supplement                                 |
+| [NCT05840237](https://clinicaltrials.gov/study/NCT05840237)                                                                                                                             | oxaloacetate            | 125 | self-obtainable | high     | supplement                                 |
 | [NCT05126563](https://clinicaltrials.gov/study/NCT05126563)                                                                                                                             | mesenchymal stem cells  | 66  | clinic          | caveated | procedure                                  |
 
 
@@ -225,8 +225,12 @@ Two things to keep in mind when reading any aggregate over these:
 - **The rows are not independent.** 19 trials draw on **16 distinct drug signals**; Paxlovid has  
 three trials and apheresis two, each sharing a single Reddit pool. NATURAL produces one estimate  
 per drug, scored against several trial outcomes. There is probably an argument for removing some of these so that they are independent.
-- `**oxaloacetate` is mis-tagged** `behavioral_or_device` in our annotation; it is an oral
-supplement. Our bug, not upstream's.
+- **Two annotation errors, since corrected.** Our LLM drug classifier had put `oxaloacetate` in
+`behavioral_or_device` (it is an oral supplement, bought over the counter) and `apheresis` there too
+(it is a clinic procedure). Fixed: oxaloacetate is now `self_obtainable`, which also moves it to
+`high_clean_self_selection`, so the reliability split is **12 clean / 7 access-confounded**, not
+11/8. Neither field is read by the pipeline — they annotate results rather than filter trials — so
+nothing about the runs changes.
 
 ### 4.4 Prediction targets — What we are trying to predict from this.
 

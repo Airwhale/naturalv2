@@ -33,8 +33,8 @@ Recovered 14, by why they'd been dropped:
 ## Reliability annotation (an interpretive covariate, NOT a filter)
 | reliability | count | meaning |
 |---|---|---|
-| `high_clean_self_selection` | 11 | self-obtainable / oral-Rx — patient drives the decision, often states why → cleaner observational structure |
-| `caveated_access_confounded` | 8 | clinic-administered / procedure — who receives it is selected by severity, wealth, access → confounding NATURAL can only partly adjust for |
+| `high_clean_self_selection` | 12 | self-obtainable / oral-Rx — patient drives the decision, often states why → cleaner observational structure |
+| `caveated_access_confounded` | 7 | clinic-administered / procedure — who receives it is selected by severity, wealth, access → confounding NATURAL can only partly adjust for |
 
 Keep this for **interpreting** results (if NATURAL misses on IVIG/HBOT/stem-cells, these are the access-confounded ones), not for excluding or weighting the benchmark.
 
