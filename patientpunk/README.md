@@ -1,22 +1,34 @@
 # patientpunk — running NATURAL on a pre-built patient corpus
 
-Everything needed to reproduce our runs lives in this directory. **Nothing outside this repository
-is required** except two things you must supply yourself: the Reddit corpus (too large to commit)
-and API keys.
+All the code needed to reproduce our runs lives in this directory — nothing outside this repository
+is required. **No data lives here**: the corpus, trial records and study definition are on S3, and
+`scripts/00_fetch_inputs.sh` pulls them. You supply API keys.
 
 For *what we found* rather than *how to run it*, see
-[docs/patientpunk/findings.md](../docs/patientpunk/findings.md).
+[docs/patientpunk/findings.md](../docs/patientpunk/findings.md); for the full write-up of the method
+and its open problems, [docs/patientpunk/pipeline_overview.md](../docs/patientpunk/pipeline_overview.md).
 
 ```
 patientpunk/
   serving/            get a vLLM server up on rented GPU, and tear it down again
-    launch_gpu.py       create/cancel a dispersed GPU job
-    probe_long_logprobs.py  fail-fast check that a server can do prompt_logprobs
-    run_estimate_chain.py   launch -> wait -> probe -> estimate -> ALWAYS stop
-    vllm-server/        the container image (env-driven; one image serves any model)
-  scripts/            the pipeline, stage by stage
-  data/               the core-5 study + trial JSONs, enough to run without any other repo
+    launch_gpu.py             create/cancel a dispersed GPU job
+    probe_long_logprobs.py    fail-fast check that a server can do prompt_logprobs
+    run_estimate_chain.py     launch -> wait -> probe -> estimate -> ALWAYS stop
+    vllm-server/              the container image (env-driven; one image serves any model)
+  scripts/            the pipeline, stage by stage (00_fetch_inputs first)
+  analysis/           how the study itself was built: trial selection, corpus coverage,
+                      papers-as-labels, audits. Not needed to run a trial
 ```
+
+**Data lives on S3**, under `s3://patientpunk/trial_superset/`:
+
+| prefix | what |
+|---|---|
+| `natural_corpus_parquet/` | the corpus, ~458 MB |
+| `core5/` | the study definition |
+| `m3_labeled/long_covid/nct_reports/` | trial records with posted results |
+| `relaxed_test/nct_reports_test/` | prediction-target trial records |
+| `*.csv` | analysis outputs — coverage, validation, the trial list, label sidecar |
 
 ## What you supply
 
@@ -44,15 +56,12 @@ never committed.
 
 ## Run it
 
-**0. Stage the study and build experiments.** `data/` already holds the core-5 study and its trial
-JSONs, so this is a copy plus one command.
+**0. Fetch inputs and build experiments.** No data lives in this repository — it is all on S3.
 
 ```bash
 export SAVE_PATH=$PWD/outputs
-mkdir -p "$SAVE_PATH/studies" "$SAVE_PATH/nct_reports" "$SAVE_PATH/nct_reports_test"
-cp patientpunk/data/studies/*.yaml "$SAVE_PATH/studies/"
-cp patientpunk/data/nct_reports/*.json "$SAVE_PATH/nct_reports/"
-cp patientpunk/data/nct_reports_test/*.json "$SAVE_PATH/nct_reports_test/"
+bash patientpunk/scripts/00_fetch_inputs.sh            # study + trial records (~1 MB)
+# add --corpus to also sync the ~458 MB corpus into $PP_CORPUS_DIR
 
 # NOTE: no --require_binary_endpoint. This is a notbinary study; the flag defaults ON and would
 # drop every one of these continuous-endpoint trials.
@@ -63,9 +72,8 @@ python -m scripts.build_experiments_from_study \
 
 > **The study filename is load-bearing.** Every CLI locates the study via `get_study_filepaths`,
 > which *derives* the name from the condition and experiment: `Long Covid` + `noparallel_notbinary`
-> + `ate: False` → `long_covid_noparallel_notbinary_apo_study.yaml`. Rename the file and the
-> pipeline reports a missing study rather than a naming problem. If you change `CONDITION` or
-> `EXPERIMENT`, rename the study file to match.
+> + `ate: False` → `long_covid_noparallel_notbinary_apo_study.yaml`. Rename it and the pipeline
+> reports a missing study rather than a naming problem.
 
 **1. Seed what the skipped stages would have written.** We skip `condition_filter` (needs Reddit
 OAuth) and `treatment_synonyms` (needs OpenAI web-search), so two small things must be supplied by

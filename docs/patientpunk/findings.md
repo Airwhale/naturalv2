@@ -22,11 +22,40 @@ Full detail for A1/A4/A2 also lives in the per-topic docs (linked); this file is
 > fluvoxamine `-47.3`). **A1 and A4 are untouched by that push.** The index table reflects post-re-pin
 > status; each item's original evidence is kept below as the record of what was wrong.
 
-## Fix-by-fix summary
+## Summary
 
-Everything we changed, and what each change is for. Detail for each is in the numbered section below.
+### Closed — what is now fixed
 
-### Fixes we wrote (ready to look at)
+Fifteen defects found; **ten are closed**. "Upstream" means Nikita fixed it in her 2026-08-09 push
+after we flagged it; "ours" means we wrote the fix.
+
+| # | what was wrong | fixed by | how |
+|---|---|---|---|
+| **A2** | `notbinary` labels computed as `value / N` — meaningless for a continuous mean, and ~84% of our rows are continuous | upstream | `_normalize_outcome_value` now returns the raw value for MEAN/MEDIAN/LSM. One residual: `NUMBER`/`COUNT_OF_UNITS` are still divided by N |
+| **A3** | factorial arms named `"X/Placebo"` classified as placebo *by title* and silently dropped — including LIFT's LDN main effect | upstream | arms now typed by CT.gov `ArmGroupType` via `check_arm`; verified on LIFT, all three treatment arms survive |
+| **A7** | `detokenize=False` hardcoded on every `prompt_logprobs` call; harmless in-process, fatal against a hosted vLLM server | **ours** | `_detokenize_kwargs(llm)` sends it only for in-process `VLLMModel`, so her path is untouched |
+| **A9** | treatment matching dropped ≤3-char aliases, costing **79% of LDN evidence** | **ours** | boundary-aware matching using the position Aho-Corasick already returned, then floor lowered to 3. **4.4× more matching rows** |
+| **B1** | `query.cond="COVID"` silently missed trials tagged `SARS-CoV-2` / `PASC` | **ours** | broadened the search scope; recovered +4 with-results and +33 without |
+| **C1** | `inject_one` returned `None` for two different outcomes, so the caller re-added a never-written trial | **ours** | returns `False` when nothing is written |
+| **C2** | misc slips: EPMC double-`/PMC/` URL, missing `enrollmentInfo.type`, synthetic-results ValidationError, Windows `cp1252` crashes | **ours** | all fixed during development |
+| **C3** | our own change-from-baseline detector read only the outcome *title*, so it missed the very trial that motivated it | **ours** | now also reads `timeFrame` and the description, and flags any value outside the range the description states |
+| **D1** | `prompt_logprobs` OOM-killed vLLM; a bigger GPU did not help | **ours** | `gpu_memory_utilization` **lowered** to 0.55 — it is a fraction, so more VRAM just becomes more KV cache |
+| **D2** | crashed stages left 0-byte CSVs that the resume logic then read | **ours** | deleted before every run |
+
+### Open — still outstanding
+
+| # | issue | owner | why it is still open |
+|---|---|---|---|
+| **A1** | condition matcher over/under-matches (~half her Long-COVID set is acute-COVID) | Nikita | ours is a keyword classifier; the right shape for her repo is her call |
+| **A4** | `status:act` excludes recruiting trials; pinned code ≠ her shared study | Nikita | a tradeoff, not a defect — which status selection is canonical? |
+| **A5** | default estimator cannot run a `notbinary` study (`ZeroDivisionError`) | Nikita | we supply `estimate_mc.yaml`, but changing the *default* is a design call |
+| **A6** | change-from-baseline labels compared against absolute predictions | Nikita | fixing it in `Experiment`, rewriting descriptions, or excluding such trials are all defensible |
+| **A8** | bootstrap intervals implausibly tight (±1 on n=32) | Nikita | she may already treat these as descriptive rather than calibrated |
+| **A10** | `author` is dropped, so one prolific poster counts as many patients | Nikita | schema change is small; the statistics of what to do about it are open |
+| **C4** | our analysis scripts assume a working directory and a local data mirror | ours | works, but not portable — see `patientpunk/analysis/README.md` |
+| **D3** | the GPU is held for a whole run but used only by `inclusion_prob` | ours | ~85% of GPU spend is idle time; needs the runner to acquire it later |
+
+### The changes we wrote (for review)
 
 | fix | what changed | file | addresses | status |
 |---|---|---|---|---|
@@ -39,14 +68,6 @@ Everything we changed, and what each change is for. Detail for each is in the nu
 | **7. Boundary-aware treatment matching** | use the match position Aho-Corasick already returns to reject matches inside words, then lower the alias floor from `>3` to `>=3` chars | `naturalv2/sources/components/helpers.py` + `sources/reddit/stages/curate.py` (~10 lines) | **A9** | **PR-ready** — recovers 4.4× the LDN evidence |
 | **8. Alias seeding** | hand-seed `treatment_common_names` when `treatment_synonyms` can't run | *ours* | works around missing web-search | stopgap only |
 
-### Open — no fix proposed, needs your call
-
-| # | issue | why we stopped short |
-|---|---|---|
-| **A1** | condition matcher over/under-matches | ours is a keyword classifier; the right shape for your repo is your call |
-| **A4** | `status:act` excludes recruiting; pinned ≠ shared study | a tradeoff, not a defect — which status set is canonical? |
-| **A6** | change-from-baseline vs absolute predictions | fixing it in `Experiment`, rewriting descriptions, or excluding such trials are all defensible |
-| **A8** | bootstrap intervals implausibly tight (±1 on n=32) | you may already treat these as descriptive rather than calibrated |
 
 
 ---
@@ -67,9 +88,12 @@ Everything we changed, and what each change is for. Detail for each is in the nu
 | **B1** | `query.cond="COVID"` misses SARS-CoV-2/PASC tags | CT.gov search (our scope layer) | indirect | medium | fixed in `seed_terms` scope |
 | **C1** | `inject_one` ambiguous `None` return | our `build_augmented.py` | no | medium | **fixed** |
 | **C2** | misc implementation slips | our code | no | low | **fixed** |
-| **C3** | `is_change` title regex misses untitled change endpoints | our `build_labels_sidecar.py` | no | **high** | **open** — see A6 |
+| **A10** | `author` dropped, so prolific posters count many times | `naturalv2` contextualise + curate | **yes** | **high** | **open** — schema change small, statistics open |
+| **C3** | `is_change` title regex missed untitled change endpoints | our `build_labels_sidecar.py` | no | **high** | **FIXED** — now reads timeFrame + range-checks the value |
+| **C4** | analysis scripts assume a cwd and a local data mirror | our `patientpunk/analysis/` | no | low | **open** — not portable |
 | **D1** | `gpu_memory_utilization` starves `prompt_logprobs` | serving config | no | high | fixed (0.55) |
 | **D2** | stage CSV caches survive a pipeline-shape change | `naturalv2` stage resume | no | low | delete stale caches |
+| **D3** | GPU held for a whole run, used only by `inclusion_prob` | our runner | no | medium | **open** — ~85% of GPU spend is idle |
 
 ---
 
@@ -300,6 +324,34 @@ silently on misspellings and unlisted brand names. Worth noting `naturalv2` alre
 `full_database.xml.gz` we have never supplied — the "DrugBank data file not found" warning in every
 run. That is an ontology-backed synonym source already wired in and unused.
 
+### A10 — `author` is discarded, so prolific posters count as many patients
+**Where:** the raw corpus carries `author`, but neither the contextualised dataset nor the curated
+output retains it. Nothing after stage 2 can deduplicate, cluster or weight by patient.
+**Evidence (lithium's evidence pool, pre-filter):**
+
+| | |
+|---|---|
+| documents mentioning lithium | 1,012 |
+| distinct authors | 365 |
+| median documents per author | **1** |
+| **maximum** | **99** |
+| top 10 authors' share | **30.3%** |
+| single most prolific author | **9.8% of all the evidence** |
+
+One person supplies a tenth of it; ten people supply nearly a third. We cannot measure the
+post-filter concentration *because* the field is gone — which is itself part of the argument.
+**Impact on her:** every surviving report becomes one synthetic patient, so 99 posts from one person
+become 99 "patients". That breaks the independence assumption behind both the estimator and the
+bootstrap, and is a plausible **second mechanism behind A8** — under clustering this severe the
+effective sample size is far below the nominal count, so intervals are narrower than the data
+warrants. It also amplifies selection bias, since prolific posters are more engaged and plausibly
+evangelising something that worked.
+**Fix/status:** open. The mechanical half is small — retain a **salted hash** of the author through
+contextualisation and curation, which gives clustering without storing handles. The statistical half
+is a real choice: cluster-bootstrap by author (most defensible first move), weight by 1/nᵢ, or
+deduplicate. With a median of one document per author, the tail is doing the damage, so a cap may
+beat a global reweighting.
+
 ---
 
 ## B. Data-source gotcha (CT.gov search)
@@ -355,7 +407,16 @@ title wording it cannot be worded around. Titles remain useful as a secondary si
 - **Windows `cp1252` UnicodeEncodeError** — em-dash / non-ASCII in trial titles crash console prints;
   use ASCII-safe output.
 
----
+### C4 — The analysis scripts are not portable
+**Where:** `patientpunk/analysis/`. They were written with `trial_superset/` as the working
+directory and a local `data/` mirror of the S3 prefixes, so paths inside them are relative to that
+layout.
+**Impact:** none on results — they produced the study we are running, and are correct. But someone
+picking them up cannot run them from a fresh checkout without repointing paths, which makes
+re-deriving the coverage numbers harder than it should be.
+**Fix/status:** open, low priority. The run-time pipeline (`patientpunk/scripts/`, `serving/`) has
+already been made path-independent; the analysis tooling has not. Documented in
+`patientpunk/analysis/README.md` so nobody loses an afternoon to it.
 
 ---
 
@@ -388,6 +449,19 @@ a cache written by the *old* shape is stale — `SampleTYStage` writes its CSV *
 stale last-stage cache yields `KeyError: treatment_taken_discretized`.
 **Fix:** delete 0-byte CSVs before every run (the runner now does), and drop caches for any stage
 downstream of a composition change.
+
+### D3 — The GPU is held for the whole run but used by one stage
+**Where:** our runner (`patientpunk/serving/run_estimate_chain.py`) acquires a GPU job, runs the
+entire pipeline against it, then cancels.
+**Evidence (the LIFT attempt):** the first outcome spent **two hours** in the OpenRouter stages —
+`relevance_filter` alone scored 42,456 reports — before touching the GPU at `inclusion_prob`. The
+card was idle for roughly 90% of that, billing the whole time. Compounded by the scheduler placing a
+single-GPU request on a six-GPU node at $4.14/hr, we paid something like 50× what the GPU work
+needed.
+**Impact:** cost only, but it dominates the bill on any large trial. A four-outcome LIFT run would
+have been ~$33 of GPU against roughly $5 of actual use.
+**Fix/status:** open. The runner should acquire the GPU immediately before the logprob stages and
+release it after, rather than wrapping the whole pipeline. Worth doing before the LIFT re-run.
 
 ---
 
