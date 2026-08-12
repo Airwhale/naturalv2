@@ -10,28 +10,28 @@
 ## 1. Orientation
 
 We are trying to estimate what a clinical trial will find, using what patients wrote about the same
-treatment **before the trial reported**.  This matches what Nikita et. al did with [https://www.cs.toronto.edu/~nikita/natural/](https://www.cs.toronto.edu/~nikita/natural/)  
-, but with a different population.  This is a different approach then the between group differences that we showed in our pilot paper,  and should be much more exact.  For our data we are using three Long-COVID subreddits (r/covidlonghaulers, r/LongCovid, r/LongHaulersRecovery). The trials come from **ClinicalTrials.gov**, pulled through naturalv2's own downloader against the CT.gov API v2, with two additions of ours: a handful of **ISRCTN** trials adapted into the same schema, and a **papers-as-labels** path that recovers completed trials which never posted structured results by extracting the primary endpoint from the published paper.
+treatment **before the trial reported**.  This matches what Nikita et al. did with [https://www.cs.toronto.edu/~nikita/natural/](https://www.cs.toronto.edu/~nikita/natural/)  
+, but with a different population.  This is a different approach than the between-group differences that we showed in our pilot paper,  and should be much more exact.  For our data we are using three Long-COVID subreddits (r/covidlonghaulers, r/LongCovid, r/LongHaulersRecovery). The trials come from **ClinicalTrials.gov**, pulled through naturalv2's own downloader against the CT.gov API v2, with two additions of ours: a handful of **ISRCTN** trials adapted into the same schema, and a **papers-as-labels** path that recovers completed trials which never posted structured results by extracting the primary endpoint from the published paper.
 
-After a bunch of fiddling, I have **the pipeline runing end-to-end, but I do not trust validity.** Natural's paper had a lot of things going for it that ours does not:
+After a bunch of fiddling, I have **the pipeline running end-to-end, but I do not trust validity.** Natural's paper had a lot of things going for it that ours does not:
 
 1. **Their endpoints are proportions; ours are continuous symptom scales.** Their headline result is
   "within 3 percentage points of ground truth" — a *percentage point* metric, i.e. binary/response-rate  
    outcomes. Binary endpoints are bounded in [0,1], are directly enumerable by the default estimator,  
-   and are far easier to read off a post ("did they improve — yes or no?"). Our data is often in terms of subjective severaity,  fatigue reports, etc. **We cannot compare our error to their 3 points.**
+   and are far easier to read off a post ("did they improve — yes or no?"). Our data is often in terms of subjective severity,  fatigue reports, etc. **We cannot compare our error to their 3 points.**
 2. **They report against Phase 3/4 trials.** Those are large, well-powered, and mostly test
   established drugs. Our Long-COVID set is small early-phase work — lithium's arm was n=24.
-3. **Model scale.** The method assumes a large model; we are running a 7B smoke model (see §11.5). Once we get everything else working better we should ask Nikita to run it on UofT's machines or source some more heavy duty VRAM having machines to get an 80B paramater model or larger running it.
+3. **Model scale.** The method assumes a large model; we are running a 7B smoke model (see §11.5). Once we get everything else working better we should ask Nikita to run it on UofT's machines or source some more heavy duty VRAM having machines to get an 80B parameter model or larger running it.
 4. **Label cleanliness.** Several of our endpoints report a *change from baseline* while describing an
   absolute scale, which silently mismatches the prediction target (§10.1). A response rate has no
    equivalent failure mode.
-5. **Treatment naming.** There is a LOT of variaty in how different treatments are named in the Long covid community.
+5. **Treatment naming.** There is a LOT of variety in how different treatments are named in the Long covid community.
 
 Note that Nikita's current repo is here: [github.com/nikitadhawan/naturalv2](https://github.com/nikitadhawan/naturalv2).
 I'm currently working out of a fork branch,
 [Airwhale/naturalv2 @ shaun/patientpunk-integration](https://github.com/Airwhale/naturalv2/tree/shaun/patientpunk-integration)
 
-This working branch is currently an AI vibe-coded mess,  and I will be cleaning it up.  I just wanted to get it running to figure out where things were failing in the main repo's expermental/scraping logic and be ready to talk about this if needed for thursday.  
+This working branch is currently an AI vibe-coded mess,  and I will be cleaning it up.  I just wanted to get it running to figure out where things were failing in the main repo's experimental/scraping logic and be ready to talk about this if needed for thursday.  
 (its `main` is byte-identical to hers, so the branch diff *is* the set of our changes),   
 
 I am recording things to improve upon in her repo here:  
@@ -51,7 +51,7 @@ covariates describing them, and the probability they would have met the trial's 
 
 Each simulated report becomes one row. That table is a synthetic observational dataset, and a textbook causal  
 estimator i.e. inverse propensity weighting or outcome regression runs over it unchanged to produce  
-an estimate per expermental arm. The paper's claim is that these land within **3 percentage points** of the  
+an estimate per experimental arm. The paper's claim is that these land within **3 percentage points** of the  
 randomised ground truth across six datasets, including real Phase 3/4 trials for the studies it looked at. 
 
 Note that **There is no memory between runs.** Each trial is estimated independently, from its own community  
@@ -70,7 +70,11 @@ explicit reweighting toward the trial-eligible population. It is a more exact cl
 pinned commit, with her estimators. Everything that differs is *input and context*, a different  
 patient population (Long-COVID Reddit), continuous symptom scales rather than proportion outcomes, a  
 7B model rather than a large one, and small early-phase trials rather than Phase 3/4. The [§1](#1-orientation) list is  
-the full inventory of those differences. **I generally am finding lots of errors that I think biological expermentalists would find, and poor scraping practices,  which makes sense looking at the work of a math heavy ML lab.  The math is generally impressive.**
+the full inventory of those differences. **The causal machinery is the strong part of that work, and
+we are using it unchanged.** Most of what we have run into sits at the other end — trial selection,
+endpoint semantics, corpus construction — the parts where clinical-domain context does the work
+rather than the statistics. That split is what we bring; the issues we log in
+[findings.md](findings.md) are almost all of that kind.
 
 ---
 
@@ -131,8 +135,9 @@ on; we relax the last two, and the preset name `noparallel_notbinary` records ex
 
 - A keyword classifier, not `c in tc or tc in c`. The substring test admitted 12 acute-COVID
 hospitalisation trials (because `"covid"` ⊂ `"long covid"`) and dropped 7 genuine post-COVID ones
-tagged `"post-acute covid-19 syndrome"`.  This way of doing things was causing a lot of problems, obviously,  and is something I want to document and bring to Nikita. 
-- We should probably have Eli or another expert go through these trials and make sure they are suitable for extablishing ground truth.
+tagged `"post-acute covid-19 syndrome"`.  Substring matching on free-text condition names is brittle in both directions, and this is one of
+the main things we want to raise with Nikita.
+- We should probably have Eli or another expert go through these trials and make sure they are suitable for establishing ground truth.
 - Broadened the CT.gov search scope. Upstream searched `query.cond="COVID"`; we search
 `COVID OR SARS-CoV-2 OR PASC OR Post-Acute Sequelae of SARS-CoV-2 OR Post-COVID-19 Condition OR Chronic COVID OR Long-haul COVID`. A trial tagged only `"Post-Acute Sequelae of SARS-CoV-2"`
 contains no "COVID" substring, and the registry does not expand the term for you
@@ -158,7 +163,9 @@ everything at once.
 
 **Tier 4 — Evidence coverage** (our addition)
 
-This filter actually looks at the data to see if there is enough to draw meaningful conclusions from an intervention of interest in a study. This is better than Nikita's approach which just asks an LLM is an intervention would reasonably be in the data. A trial can be perfectly designed and still be useless here if nobody on Reddit has taken the drug. We  
+This filter measures the corpus directly, asking whether there is enough real discussion of an
+intervention to draw conclusions from. It complements the upstream check, which asks a model whether
+an intervention would plausibly be discussed; here we count what is actually there. A trial can be perfectly designed and still be useless here if nobody on Reddit has taken the drug. We  
 therefore measure the evidence available per treatment and drop trials below a floor.
 
 - **≥ 50 on-target patient usage reports.**
@@ -184,7 +191,7 @@ does on them is one of the things we most want to find out — excluding them wo
 results and hide the failure mode. So both fields travel with the trial as context for interpreting
 its result, and neither affects whether the trial is included.
 
-### 4.2 Core-5 — These pass according to Nikita's orginal criteria
+### 4.2 Core-5 — the trials that pass the original upstream criteria
 
 
 | NCT                                                         | drug                           | split | readout | on-target | primary outcome                    | why it is in the clean set                                                |
@@ -198,7 +205,10 @@ its result, and neither affects whether the trial is included.
 
 Split is temporal (3 train / 2 val), ordered by readout date.
 
-### 4.3 Additional 14:  Despite being excluded in Nikita's old criteria,  we can see that people are talking about these interventions enough in the correct way just by looking in the data, and we can also use these studies to try and get at ground truth.
+### 4.3 The other 14 — recovered by measuring the corpus
+
+These fall outside the original criteria, but the corpus shows people discussing these interventions
+in the right way and in sufficient numbers, so they can serve as ground truth too.
 
 
 | NCT                                                         | drug         | on-target | access          | reliability | previously excluded for                 |
@@ -238,7 +248,7 @@ nothing about the runs changes.
 
 | NCT                                                                                                                                                                                     | trial                            | sponsor                            | target arms                                                   | corpus signal                                               | status                                                                         |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ---------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **[NCT06366724](https://clinicaltrials.gov/study/NCT06366724)**                                                                                                                         | **LIFT: Life Improvement Trial** | **Open Medicine Foundation (OMF)** | `Placebo/LDN`, `Pyridostigmine/Placebo`, `Pyridostigmine/LDN` | 5,183 raw / **3,417 effective** (LDN); 683 (pyridostigmine) | recruiting — first run stopped early, see §8.1. **Meeting OMF Thursday** |
+| **[NCT06366724](https://clinicaltrials.gov/study/NCT06366724)**                                                                                                                         | **LIFT: Life Improvement Trial** | **Open Medicine Foundation (OMF)** | `Placebo/LDN`, `Pyridostigmine/Placebo`, `Pyridostigmine/LDN` | 5,183 raw / **3,417 effective** (LDN); 683 (pyridostigmine) | recruiting — planned, see §8. **Meeting OMF Thursday** |
 | [NCT06095297](https://clinicaltrials.gov/study/NCT06095297) · [NCT06585254](https://clinicaltrials.gov/study/NCT06585254) · [NCT06968104](https://clinicaltrials.gov/study/NCT06968104) | tVNS ×3                          | —                                  | CICT / BFT (± VR); patient- vs device-controlled; Intervention A/B | 3,091                                                       | recruiting / active                                                            |
 | [NCT05852873](https://clinicaltrials.gov/study/NCT05852873) · [NCT06792214](https://clinicaltrials.gov/study/NCT06792214)                                                               | Paxlovid ×2                      | —                                  | nirmatrelvir-ritonavir                                        | 2,925                                                       | active / recruiting                                                            |
 | [NCT06082518](https://clinicaltrials.gov/study/NCT06082518)                                                                                                                             | HBOT                             | —                                  | immediate vs delayed start of hyperbaric treatment            | 1,404                                                       | recruiting                                                                     |
@@ -247,7 +257,7 @@ nothing about the runs changes.
 **LIFT is probably the most important of the above studies to predict.**
 
 1. Highest corpus signal of any Long-COVID intervention — LDN is the most-discussed treatment in
-  the corpus by a wide margin, and Eli (and I) have a history of advocating for.
+  the corpus by a wide margin, and Eli (and I) have a history of advocating for it.
 2. The 2×2 factorial isolates the **LDN main effect** (`Placebo/LDN`), which upstream's old
   arm-matching silently discarded ([bug A3](#appendix-a--bug-index)).
 3. It exercises two of our findings directly: [A3](#appendix-a--bug-index) and [A4](#appendix-a--bug-index).
@@ -266,7 +276,7 @@ nothing about the runs changes.
 **The corpus.** 147,333 submissions and 2,304,485 comments from r/covidlonghaulers, r/LongCovid and  
 r/LongHaulersRecovery, spanning 2020-07 to 2026-06. Stored in our S3.
 
-I pulled data from Arctic shift because upstream's archive source (the-eye's Pushshift mirror) is dead, and has been for the past month. Our adapter `RedditPrebuiltParquet` feeds a pre-built corpus into the pipeline in place of the download stage.
+I pulled data from Arctic Shift because upstream's archive source (the-eye's Pushshift mirror) is dead, and has been for the past month. Our adapter `RedditPrebuiltParquet` feeds a pre-built corpus into the pipeline in place of the download stage.
 
 ### What a "report" is
 
@@ -390,7 +400,7 @@ generated — the model is only ever asked to *score* text it was given, which i
 `length_norm: False`, so there is no division by token count. This yields a *distribution* over
 assignments per report rather than a hard label.
 
-It requires a **discrete option set for `Y*`*, so it fails outright on continuous endpoints — see
+It requires a **discrete option set for **`Y`**, so it fails outright on continuous endpoints — see
 §10.4. It is also the reason we need a GPU at all: `prompt_logprobs` is a vLLM extension, and no
 chat API (OpenRouter, Anthropic, OpenAI) exposes it.
 
@@ -453,10 +463,10 @@ about, and it is a plausible contributor to the wild point estimate in §9. No r
 interaction terms, no check that n exceeds the number of parameters.
 
 **Identification rests on the usual assumptions:** consistency, positivity, and **no unmeasured
-confounding given those 8 covariates**. That last one is heroic on Reddit, and §11.4 is about
-exactly how heroic.
+confounding given those 8 covariates**. That is a strong assumption anywhere, and a particularly
+demanding one on Reddit; §11.4 sets out why.
 
-I can probably find and pull more studys to use as ground truth/trial stuff.
+I can probably find and pull more studies to use as ground truth/trial stuff.
 
 ### 6.7 Uncertainty
 
@@ -578,69 +588,39 @@ does not re-spend the OpenRouter budget on retry.
 
 ---
 
-## 8. LIFT end to end — a worked trace
+## 8. LIFT — the planned prediction study
 
-Following OMF's trial through all three stages, with real numbers.
+LIFT ([NCT06366724](https://clinicaltrials.gov/study/NCT06366724), run by OMF) is the target we most
+want to predict. It is **planned, not done**: we started a run, stopped it after the first outcome,
+and will run it properly once the prerequisites below are met.
 
-**Stage 1 — enters as a `test` trial.** `status=active`, no posted results, so it produces a
-prediction with no error metric.
+**What it looks like in the pipeline.** It enters as a `test` trial — active, no posted results — so
+it yields a prediction with no error metric. Three of its four arms are kept (`Pyridostigmine/LDN`,
+`Pyridostigmine/Placebo`, `Placebo/LDN`, all typed `ACTIVE_COMPARATOR`); `Placebo/Placebo` is
+correctly dropped. All four primary outcomes are change-from-baseline (§10.1). Curation yielded
+42,617 candidate reports, against lithium's 3,136.
 
-- Four arms → **three kept**: `Pyridostigmine/LDN`, `Pyridostigmine/Placebo`, `Placebo/LDN`, all
-typed `ACTIVE_COMPARATOR`. `Placebo/Placebo` is correctly dropped as `PLACEBO_COMPARATOR`.
-- **[Bug A3](#appendix-a--bug-index) in action.** Upstream's old arm matching classified arms by *title*, so any arm whose
-label contained "Placebo" was dropped — that is the LDN main effect *and* the pyridostigmine main
-effect, silently. Now fixed upstream by classifying on the structured `ArmGroupType`.
-- **[Bug A4](#appendix-a--bug-index) in action.** The test universe filter `status:act` means "active, not recruiting", so a
-*recruiting* trial like LIFT would be excluded from prediction entirely.
-- Four primary outcomes — FUNCAP55 functional capacity, OUES, VO₂, heart-rate recovery — and **all
-four are change-from-baseline** (§10.1).
+It also exercises two findings directly: [A3](#appendix-a--bug-index), since the older title-based
+arm matching would have dropped both main-effect arms, and [A4](#appendix-a--bug-index), since
+`status:act` would exclude a recruiting trial from prediction altogether.
 
-**Stage 2 — curation yields 42,617 reports** (against lithium's 3,136).
+**Why we stopped.** Outcome 1 completed its funnel (42,456 → 5,898 → 3,127) and the pipeline was
+working, but the run had been launched before the boundary-matching fix (§10.3), so it was using
+roughly a fifth of the available LDN evidence. Finishing would have cost about $65 more for an
+answer we had already decided not to present (§12) and would supersede immediately. Spend before
+stopping: **$8.69 GPU plus roughly $12–14 of API**.
 
-- Matched on `naltrexone`, `low dose naltrexone`, `mestinon`, `pyridostigmine`.
-- **Problem §10.3 bit here.** The bare abbreviation "LDN" is three characters and was dropped by the
-alias filter, putting **79% of LDN evidence out of reach**. This has since been fixed, but *this run
-was launched before the fix* — so the LIFT numbers below rest on roughly a fifth of the available
-LDN evidence. Re-running with the fix would raise the candidate pool from ~42,600 to ~138,600
-reports, and triple the cost.
-- No date cutoff is applied, which is correct for a target that has not reported.
+**Prerequisites for the real run:**
 
-**Stage 3 — Monte Carlo path**, four outcomes over 42,617 reports, producing an average potential
-outcome per arm per outcome, with a confidence interval and **no ground truth**.
+| prerequisite | why |
+|---|---|
+| boundary-matching fix (§10.3, done) | raises the candidate pool from ~42,600 to ~138,600 reports |
+| acquire the GPU only for `inclusion_prob` | it sat idle ~90% of the run; removes ~85% of GPU cost |
+| DrugBank aliases (§11.6) | free additional synonyms before paying to scan anything |
+| decide the outcome count | four outcomes quadruples the dominant `relevance_filter` cost |
 
-### 8.1 Status — first attempt stopped deliberately, re-run planned
-
-We started this run and **stopped it after the first outcome**. Not a failure: the pipeline was
-working, and outcome 1 completed the full funnel (42,456 relevance-filtered → 5,898 with treatment
-and outcome → 3,127 sampled) before we cancelled during its `inclusion_prob` stage. Three things
-made finishing the wrong call:
-
-1. **It was running on ~21% of the available LDN evidence.** Launched before the boundary-matching
-  fix (§10.3), so the answer would have been the weak version of itself and superseded immediately.
-2. **We are not presenting a LIFT number on Thursday** (§12), so the result had no near-term use.
-3. **Cost.** Outcome 1 alone took two hours; four would have been about eight, at roughly $65 more
-  than we had already spent. Actual spend before cancelling: **$8.69 GPU plus roughly $12–14 of API**.
-
-**A real inefficiency this exposed.** For those two hours the GPU sat idle: the pipeline spends most
-of its wall-clock in the OpenRouter stages, and only touches the GPU at `inclusion_prob`. We were
-paying $4.14/hr for hardware in use maybe a tenth of the time — and paying a six-GPU node rate for a
-single-GPU job on top of that. The runner should acquire the GPU around the logprob stages only,
-which would cut a LIFT run's GPU cost from roughly $33 to roughly $5.
-
-**Planned re-run**, once these are in place:
-
-
-| prerequisite                                | why                                                                                                    |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| boundary-matching fix applied (§10.3, done) | raises the candidate pool from ~42,600 to ~138,600 reports                                             |
-| GPU acquired only for `inclusion_prob`      | removes ~85% of the GPU cost                                                                           |
-| DrugBank aliases supplied (§11.6)           | free additional synonyms before we pay to scan anything                                                |
-| a decision on outcome count                 | four outcomes quadruples the dominant `relevance_filter` cost; Functional Capacity alone may be enough |
-
-
-Sequencing matters: this is a *prediction target*, so it is not on the critical path for
-verification. The four held-out core-5 trials (§9.3) come first, since they are what tell us whether
-any LIFT number would be worth reporting.
+**Sequencing:** LIFT is a prediction target, so it is not on the critical path. The four held-out
+core-5 trials (§9.3) come first — they are what tell us whether any LIFT number is worth reporting.
 
 ---
 
