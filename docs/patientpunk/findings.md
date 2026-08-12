@@ -36,7 +36,8 @@ Everything we changed, and what each change is for. Detail for each is in the nu
 | **4. OpenRouter provider** | provider config beside the existing gemini/anthropic/openai | `conf/model/openrouter.yaml` | none — convenience | optional |
 | **5. Serving config** | `gpu_memory_utilization 0.55`, no chunked prefill, 1 seq | *ours, not her code* | **D1** | docs note only |
 | **6. Change-scale rewrite** | restate a change-from-baseline outcome's description so the sampled quantity matches the label | *ours* (`fix_change_outcomes.py`) | **A6** | **issue, not a PR** — one option among several |
-| **7. Alias seeding** | hand-seed `treatment_common_names` when `treatment_synonyms` can't run | *ours* | **A9** stopgap | stopgap only |
+| **7. Boundary-aware treatment matching** | use the match position Aho-Corasick already returns to reject matches inside words, then lower the alias floor from `>3` to `>=3` chars | `naturalv2/sources/components/helpers.py` + `sources/reddit/stages/curate.py` (~10 lines) | **A9** | **PR-ready** — recovers 4.4× the LDN evidence |
+| **8. Alias seeding** | hand-seed `treatment_common_names` when `treatment_synonyms` can't run | *ours* | works around missing web-search | stopgap only |
 
 ### Open — no fix proposed, needs your call
 
@@ -46,7 +47,7 @@ Everything we changed, and what each change is for. Detail for each is in the nu
 | **A4** | `status:act` excludes recruiting; pinned ≠ shared study | a tradeoff, not a defect — which status set is canonical? |
 | **A6** | change-from-baseline vs absolute predictions | fixing it in `Experiment`, rewriting descriptions, or excluding such trials are all defensible |
 | **A8** | bootstrap intervals implausibly tight (±1 on n=32) | you may already treat these as descriptive rather than calibrated |
-| **A9** | ≤3-char drug abbreviations dropped (79% of LDN evidence) | the durable fix is boundary-aware matching; raising the threshold alone would trade under- for over-matching |
+
 
 ---
 
@@ -62,7 +63,7 @@ Everything we changed, and what each change is for. Detail for each is in the nu
 | **A6** | change-from-baseline label vs absolute prediction | `naturalv2` `Experiment` + our sidecar | **yes** | **high** | **open** — root cause of our first run's error |
 | **A7** | `detokenize=False` kills a hosted vLLM server | `naturalv2` `conditional_extraction` | only off-repo runs | medium | **fix written** (in-process guard) |
 | **A8** | bootstrap CIs implausibly tight (±1 on n=32) | `naturalv2` `bootstrap_size` | **yes** | medium | **open** — needs her view |
-| **A9** | ≤3-char drug aliases dropped (79% of LDN evidence) | `build_treatment_automaton` + curate | **yes** | **high** | **open** — needs boundary-aware matching |
+| **A9** | ≤3-char drug aliases dropped (79% of LDN evidence) | `build_treatment_automaton` + curate | **yes** | **high** | **FIXED** — boundary-aware matching, PR-ready |
 | **B1** | `query.cond="COVID"` misses SARS-CoV-2/PASC tags | CT.gov search (our scope layer) | indirect | medium | fixed in `seed_terms` scope |
 | **C1** | `inject_one` ambiguous `None` return | our `build_augmented.py` | no | medium | **fixed** |
 | **C2** | misc implementation slips | our code | no | low | **fixed** |
@@ -267,9 +268,37 @@ threshold alone would trade silent under-matching for silent over-matching** —
 not do that.
 **Impact on her:** any treatment whose common name is a ≤3-char abbreviation is largely invisible to
 curation — LDN, VNS, and similar. The trial still runs and reports a number, so the loss is silent.
-**Fix/status:** open. The durable fix is boundary-aware matching (match on token boundaries in the
-canonicalised text), after which short abbreviations can be admitted safely. As a stopgap we seed
-`treatment_common_names` with spelled-out aliases only, and accept the reduced recall.
+
+**Fix/status: FIXED, PR-ready.** Aho-Corasick already reports the *end position* of every match and
+`extract_mentions` was discarding it (`for _, canonical_alias in ...`). We use it to check the
+characters either side and reject a match unless both are non-alphanumeric or the string edge, then
+lower the floor from `> 3` to `>= 3` in both places. 1–2 character fragments ("mg", "ml") stay
+excluded, so the original rationale is preserved.
+
+```python
+for end_idx, canonical_alias in automaton.iter(canonical_text):
+    start_idx = end_idx - len(canonical_alias) + 1
+    before = canonical_text[start_idx - 1] if start_idx > 0 else " "
+    after = canonical_text[end_idx + 1] if end_idx + 1 < len(canonical_text) else " "
+    if before.isalnum() or after.isalnum():
+        continue
+    found_mentions.add(canonical_alias)
+```
+
+About ten lines across `helpers.py` and `curate.py`. Verified on seven cases: "LDN" matches at
+sentence start, before punctuation and inside parentheses; "couldnt", "wouldnt" and "aldnamide" do
+not; multi-word aliases are unaffected.
+
+**Measured effect:** rows matching the LDN alias set on our contextualised corpus go from **31,567 to
+138,618 — 4.4×**. Note this changes matching for every trial, so it wants landing before any frozen-
+configuration evaluation run.
+
+**Still open, separately:** this fixes *matching* an alias once supplied. **Discovering** which
+aliases to supply is unsolved — upstream expands synonyms by web search, we hand-seed, and both fail
+silently on misspellings and unlisted brand names. Worth noting `naturalv2` already imports
+`get_drugbank_aliases` and exposes `Experiment.drugbank_names`, but expects a DrugBank
+`full_database.xml.gz` we have never supplied — the "DrugBank data file not found" warning in every
+run. That is an ontology-backed synonym source already wired in and unused.
 
 ---
 

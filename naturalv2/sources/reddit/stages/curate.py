@@ -273,7 +273,7 @@ class RedditCurateStage(SourceStage):
                 context.source_name, {}
             ).values():
                 for alias in aliases:
-                    if len(alias) > 3:  # ignore short common names
+                    if len(alias) >= 3:  # 3 chars is a real drug abbreviation (LDN, VNS)
                         common_names.add(alias)
             terms = list(treatment_names | common_names)
 

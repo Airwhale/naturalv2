@@ -310,7 +310,7 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     # Use the shared iterator to ensure consistency
     for alias in aliases:
         for canonical_alias in iter_canonical_variations(alias):
-            if len(canonical_alias) <= 3:  # Drop short canonical forms
+            if len(canonical_alias) < 3:  # 1-2 char fragments only ("mg", "ml")
                 continue
 
             # Map the pattern -> canonical form
@@ -469,7 +469,14 @@ def extract_mentions(text: str, automaton: ahocorasick.Automaton) -> list[str]:
 
     # .iter() returns (end_index, value).
     # In build_treatment_automaton, we set 'value' to be the canonical_alias.
-    for _, canonical_alias in automaton.iter(canonical_text):
+    for end_idx, canonical_alias in automaton.iter(canonical_text):
+        # Aho-Corasick matches substrings, so require a non-alphanumeric character (or the string
+        # edge) either side. Without this, short aliases match inside words -- "ldn" in "couldn't".
+        start_idx = end_idx - len(canonical_alias) + 1
+        before = canonical_text[start_idx - 1] if start_idx > 0 else " "
+        after = canonical_text[end_idx + 1] if end_idx + 1 < len(canonical_text) else " "
+        if before.isalnum() or after.isalnum():
+            continue
         found_mentions.add(canonical_alias)
 
     return sorted(found_mentions)
