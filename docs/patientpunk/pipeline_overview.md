@@ -526,7 +526,7 @@ rebuild**:
 | --------------- | ---------------------------------------------- | ------------------------------------------------------ |
 | `MODEL`         | `Qwen/Qwen2.5-7B-Instruct`                     | change this to change models                           |
 | `MAX_MODEL_LEN` | `8192`                                         | bounds the logits tensor                               |
-| `GPU_MEM_UTIL`  | `**0.55`**                                     | leaves headroom for `prompt_logprobs` — see §10.4      |
+| `GPU_MEM_UTIL`  | `**0.55`**                                     | leaves headroom for `prompt_logprobs` — see §7.5      |
 | `EXTRA_ARGS`    | `--max-num-seqs 1 --no-enable-chunked-prefill` | `prompt_logprobs` is incompatible with chunked prefill |
 
 
@@ -573,8 +573,16 @@ scheduler keeps assigning for a single-GPU request).
 - We have $500 of credit at dispersed right now,  and I can ask for more.  LMK if you need login credentials again. 
 - The web console and the job API disagree — an A6000 appears in the UI but not in
 `/v1/gpu-registry`, which is what job specs match against.
-- A crashed vLLM is indistinguishable from a reclaimed node (`connection refused` either way). That
-ambiguity cost five debugging cycles.
+- **`prompt_logprobs` needs a *low* `gpu_memory_utilization`** — 0.55, not the usual 0.90. Scoring a
+prompt materialises a `[prompt_tokens × vocab]` logits tensor (~3.5 GB for a realistic report)
+*outside* the pool vLLM preallocates, and because the setting is a **fraction rather than an amount,
+a bigger card does not help**: the pool grows with the card and the leftover does not. The fix is to
+make the number smaller, which is the opposite of what an out-of-memory error usually suggests. Full
+account in D1 of [findings.md](findings.md).
+- A crashed vLLM is indistinguishable from a reclaimed node (`connection refused` either way), and a
+short smoke test passes either way — a 7-token prompt needs ~4 MB of logits and never exercises the
+failure. Between them, that cost five debugging cycles, which is why the run chain now probes with a
+realistic-length prompt first.
 - **Nothing persists on the GPU box.** It serves a model and nothing else; all state lives locally or
 in S3. Losing a node costs minutes, not data.
 - Stage results are cached as CSVs under `outputs/results/<NCT>_<experiment>/`, so a failed GPU stage
@@ -725,8 +733,10 @@ only one clean shot per trial.
 
 ## 10. Problems
 
-Defects we have found and diagnosed. The full registry, with evidence, is in
-[findings.md](findings.md); this is the readable summary.
+Defects that are **still open in `naturalv2`** — including ones we route around locally, since a
+workaround in our fork does not fix the pipeline for anyone else. Things we have genuinely closed are
+not here: the serving gotchas are in §7.5, and the complete registry of open *and* closed items, with
+evidence, is [findings.md](findings.md).
 
 ### 10.1 Change-from-baseline labels versus absolute predictions — [A6](#appendix-a--bug-index)
 
@@ -792,38 +802,9 @@ null (`"Not stated"`) rather than another category.
 
 Upstream's default estimator (`natural_ipw`) cannot run a `notbinary` study: `conditional_extraction`
 enumerates multiple-choice options over the outcome, continuous endpoints have none, and it dies with
-a bare `ZeroDivisionError`. We use NATURAL-MC instead. I believe this is fixed, but it is probably
-worth talking about.
-
-### 10.4 GPU memory problems — [D1](#appendix-a--bug-index)
-
-**Fixed** — we run `gpu_memory_utilization` at **0.55**, well below vLLM's usual `0.90`. Kept here
-because the reason is not obvious and the same trap will catch anyone else serving this stage; the
-full account, including the debugging lesson, is D1 in [findings.md](findings.md).
-
-One stage, `inclusion_prob`, needs **teacher-forced token probabilities/logprobs** — given a prompt  
-*we* wrote, how likely was each token in it? That is vLLM's `prompt_logprobs`, and no hosted chat API
-exposes it: they return probabilities for tokens the model *generates*, never for tokens you supply.  
-This is why we need to run an open model on a machine we control.
-
-The trap is that scoring a prompt this way materialises a probability for **every token position
-across the whole vocabulary** at once:
-
-```
-5,700 prompt tokens  ×  152,064 vocabulary entries  ×  4 bytes  =  3.5 GB
-```
-
-and that tensor is allocated *outside* the memory pool vLLM reserves when it starts.
-`gpu_memory_utilization` controls how much of the card that pool claims, so the usual `0.90` leaves
-roughly a tenth of the card for everything else. This causes crashes.
-
-The fix is to *lower* the fraction — we run **0.55** — which is the opposite of what an out-of-memory
-error usually suggests, and is why this cost five debugging cycles. Because it is a fraction rather
-than an amount, **a bigger card does not help**: the pool grows with the card while the 3.5 GB tensor
-stays the same size.
-
-Separately: we are running a **7B** model where the method assumes ~70B. That is easy to solve, but
-we want to tighten and validate everything before paying for a bigger model.
+a bare `ZeroDivisionError`. We route around it with `conf/estimate_mc.yaml`, so it no longer blocks
+us — but the shipped default still cannot run a study like ours, and whether that default should
+change is Nikita's call. Worth raising with her.
 
 ---
 
@@ -906,9 +887,14 @@ We run Qwen2.5-**7B**; the method assumes ~70B. We do not know whether accuracy 
 evidence-limited, and that decides where all the remaining effort should go. If 70B closes the gap,
 this is an infrastructure problem; if it does not, §11.1–11.4 are the whole story.
 
-**Progress looks like:** the same trials at 7B and 70B. Cleanly testable — the serving image is
-env-driven, so it is a config change and a bigger card (§7.2). *The cheapest decisive experiment
-available, and arguably what to do first.*
+**A11 changes the ordering.** Scaling up is easy — the serving image is env-driven, so it is a config
+change and a bigger card (§7.2) — but doing it now would measure the wrong thing. A larger model does
+not resolve a referent the prompt leaves ambiguous; it reaches the same reading for the same reason,
+and states it more fluently. Tighten and validate the extraction first, then pay for the bigger
+model.
+
+**Progress looks like:** the same trials at 7B and 70B, run *after* A11 is fixed. Still the cheapest
+decisive experiment on the model-versus-evidence question — just no longer the first thing to do.
 
 ### 11.6 How treatment mentions should be found at all — the matcher probably needs replacing
 
@@ -1090,7 +1076,7 @@ in the C and D series that this document does not use.
 | **A11** | A comment inherits the outcome of the **thread it replies to**. 76–88% of our evidence rows never mention the treatment in their own text (§10.2).                                               | `curate.py` `fmt_comment` + `sample_ty` prompt | open — the largest single defect we have found                         |
 | **A12** | Extracted outcome values are never checked against the endpoint's range. LIFT produced 4,444,000 on a 0–55 scale; 14.8% of values fell outside it.                                               | `sample_ty` parsing                            | open — mechanical, and the range is already known                      |
 | **B1**  | `query.cond="COVID"` misses trials tagged `SARS-CoV-2` / `PASC`, because CT.gov does not expand the term.                                                                                        | our CT.gov scope layer                         | fixed in `seed_terms`                                                  |
-| **D1**  | `gpu_memory_utilization` starves `prompt_logprobs`. The transient logits tensor sits outside vLLM's preallocated pool, so the usual `0.90` crashes the engine — and because it is a fraction, a bigger card does not help (§10.4). | serving config (ours)                          | **fixed** — `0.55`, plus a realistic-length probe before every run     |
+| **D1**  | `gpu_memory_utilization` starves `prompt_logprobs`. The transient logits tensor sits outside vLLM's preallocated pool, so the usual `0.90` crashes the engine — and because it is a fraction, a bigger card does not help (§7.5). | serving config (ours)                          | **fixed** — `0.55`, plus a realistic-length probe before every run     |
 
 
 ---
