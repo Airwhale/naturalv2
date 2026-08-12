@@ -718,17 +718,32 @@ Defects we have found and diagnosed. The full registry, with evidence, is in
 
 ### 10.1 Change-from-baseline labels versus absolute predictions — [A6](#appendix-a--bug-index)
 
-Lithium reports **−11.3** for an outcome whose description says *"Score range 1-49"*. A value of
-−11.3 is impossible on that scale — the trial reported a *change* from baseline while describing an
-*absolute* scale. Only the `timeFrame` field ("Change from baseline to day 21") says so.
+**In one line: we were estimating how ill someone is, when the trial reported how much they
+improved.** Two different quantities, compared as though they were the same.
 
-The model is asked for a value "on the same scale as the outcome description", correctly returns an
-absolute severity, and is then scored against a change. Guaranteed large error, telling us nothing
-about estimate quality.
+In detail. The Fatigue Severity Scale is a questionnaire scored **1–49**, higher meaning worse
+fatigue. Lithium's trial did not report "patients ended up at 25 on the scale". It reported
+**−11.3** — patients *improved by* 11.3 points. A change, not a level.
 
-Our fix restates the description so the sampled quantity matches the label. Notably **our own
-detector missed this** — it regexed the outcome *title*, which says nothing about change. All four
-LIFT outcomes are change endpoints too.
+But the outcome's *description* — the text the model is shown — describes the questionnaire:
+*"Score range 1-49 with higher values signifying worse outcome"*. So when `sample_ty` asks for a
+value "on the same scale as the outcome description above", the model correctly answers with an
+absolute severity, perhaps 30, meaning "this person's fatigue is about 30 out of 49". We then scored
+that 30 against −11.3.
+
+It is the same mistake as comparing *"the patient weighs 80 kg"* with *"the patient lost 5 kg"*.
+Both are in kilograms; comparing them is meaningless. The error is guaranteed and says nothing about
+how good the estimate was.
+
+**The tell is that −11.3 is impossible on a 1–49 scale** — you cannot score negative. That is what
+the range check now looks for. It was easy to miss because the description describes the
+*questionnaire*, while only the `timeFrame` field ("Change from baseline to day 21") says what was
+actually reported.
+
+**The fix** rewrites the description so it asks for the movement rather than the level ("report the
+CHANGE, follow-up minus baseline"), which makes the model's answer and the trial's label the same
+quantity. Notably **our own detector missed this** — it read the outcome *title*, which says nothing
+about change. All four LIFT outcomes are change endpoints too, so this is not a one-off.
 
 ### 10.2 Estimate quality and interval calibration — the lithium variance — [A8](#appendix-a--bug-index)
 

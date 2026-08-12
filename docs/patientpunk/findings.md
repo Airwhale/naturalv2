@@ -1,9 +1,9 @@
-<!-- Copied from the PatientPunk repo (trial_superset/docs/bugs.md). Category A is what
-matters here: real issues in naturalv2. Category B is a ClinicalTrials.gov search gotcha, C is bugs in
-our own code (kept because C3 is the mirror image of A6), D is serving/ops. Paths under
-`trial_superset/` and `dispersed/` refer to PatientPunk and are not part of this fork. -->
+# Findings — bugs and gotchas from running NATURAL end to end
 
-# Bugs & gotchas found while building trial_superset
+<!-- Category A is what matters for review: real issues in naturalv2 itself. B is a
+ClinicalTrials.gov search gotcha, C is bugs in our own code (C3 is kept because it is the mirror
+image of A6), D is serving/ops. References to `trial_superset/` are historical: that code now lives
+in `patientpunk/analysis/`, and the serving kit in `patientpunk/serving/`. -->
 
 A single registry of every bug we hit running NATURAL end-to-end on a Long-COVID Reddit corpus.
 **Start with the fix-by-fix summary below** — it lists each change we made and what it is for. The
@@ -13,7 +13,7 @@ Category A is real issues in `naturalv2` (they affect Nikita's *own* results, no
 B is a CT.gov search gotcha; C is bugs in our own code (kept because C3 is the mirror image of A6);
 D is serving/ops. Each entry: what · where · evidence · impact · fix/status.
 
-Full detail for A1/A4/A2 also lives in the per-topic docs (linked); this file is the index.
+Full detail for A1, A2 and A4 also lives in the per-topic docs alongside this one: [condition_filter_audit.md](condition_filter_audit.md), [label_normalization.md](label_normalization.md), [test_universe_status.md](test_universe_status.md).
 
 > **Status update — we re-pinned `naturalv2` to main `7a2e006` (Nikita's 2026-08-09 push).**
 > That push **fixes A3** (arms now classified by structured `ArmGroupType`, not the title string) and
@@ -26,7 +26,7 @@ Full detail for A1/A4/A2 also lives in the per-topic docs (linked); this file is
 
 ### Closed — what is now fixed
 
-Fifteen defects found; **ten are closed**. "Upstream" means Nikita fixed it in her 2026-08-09 push
+Eighteen defects found; **ten are closed**. "Upstream" means Nikita fixed it in her 2026-08-09 push
 after we flagged it; "ours" means we wrote the fix.
 
 | # | what was wrong | fixed by | how |
@@ -82,7 +82,7 @@ after we flagged it; "ours" means we wrote the fix.
 | **A4** | `status:act` excludes recruiting; pinned ≠ shared | `naturalv2` test aggFilters | **yes** | medium | flagged; relaxed universe shipped |
 | **A5** | default estimator can't run a `notbinary` study | `naturalv2` `conditional_extraction` | **yes** | **high** | flagged; we run NATURAL-MC instead |
 | **A6** | change-from-baseline label vs absolute prediction | `naturalv2` `Experiment` + our sidecar | **yes** | **high** | **open** — root cause of our first run's error |
-| **A7** | `detokenize=False` kills a hosted vLLM server | `naturalv2` `conditional_extraction` | only off-repo runs | medium | **fix written** (in-process guard) |
+| **A7** | `detokenize=False` kills a hosted vLLM server | `naturalv2` `conditional_extraction` | only off-repo runs | medium | **FIXED** — in-process guard, PR-ready |
 | **A8** | bootstrap CIs implausibly tight (±1 on n=32) | `naturalv2` `bootstrap_size` | **yes** | medium | **open** — needs her view |
 | **A9** | ≤3-char drug aliases dropped (79% of LDN evidence) | `build_treatment_automaton` + curate | **yes** | **high** | **FIXED** — boundary-aware matching, PR-ready |
 | **B1** | `query.cond="COVID"` misses SARS-CoV-2/PASC tags | CT.gov search (our scope layer) | indirect | medium | fixed in `seed_terms` scope |
@@ -92,7 +92,7 @@ after we flagged it; "ours" means we wrote the fix.
 | **C3** | `is_change` title regex missed untitled change endpoints | our `build_labels_sidecar.py` | no | **high** | **FIXED** — now reads timeFrame + range-checks the value |
 | **C4** | analysis scripts assume a cwd and a local data mirror | our `patientpunk/analysis/` | no | low | **open** — not portable |
 | **D1** | `gpu_memory_utilization` starves `prompt_logprobs` | serving config | no | high | fixed (0.55) |
-| **D2** | stage CSV caches survive a pipeline-shape change | `naturalv2` stage resume | no | low | delete stale caches |
+| **D2** | stage CSV caches survive a pipeline-shape change | `naturalv2` stage resume | no | low | **FIXED** — 0-byte caches deleted before each run |
 | **D3** | GPU held for a whole run, used only by `inclusion_prob` | our runner | no | medium | **open** — ~85% of GPU spend is idle |
 
 ---
@@ -435,7 +435,7 @@ bought a bigger KV cache and the same ~10% headroom. We burned five GPU cycles o
 lowering the fraction. Serving config that works: `GPU_MEM_UTIL=0.55`, `--max-num-seqs 1`,
 `--max-model-len 8192`.
 **Debugging lesson:** a single-request smoke test passed throughout, because a **7-token** prompt needs
-~4 MB of logits and never exercises the failure. `dispersed/probe_long_logprobs.py`
+~4 MB of logits and never exercises the failure. `patientpunk/serving/probe_long_logprobs.py`
 now sends one **realistic-length** report before the pipeline runs, so a bad serving config costs
 seconds instead of a full pass. Size the probe like production, not like a hello-world.
 
