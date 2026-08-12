@@ -461,23 +461,33 @@ modelled.
 
 ### 6.6 The estimators
 
-The estimators come from **causallib** — an open-source causal-inference library from IBM Research
-that wraps the standard estimators as scikit-learn-style objects — with ordinary scikit-learn models
-doing the actual fitting. Checked against `naturalv2/models/causal_models.py`:
+The estimator turns the extracted table into the answer. It takes `(X, T, Y, w)` — one row per report
+— and returns `E[Y(t)]`, the average outcome under arm `t`.
+
+Three are available. Each is a **causallib** estimator (IBM Research's causal-inference library)
+wrapping an ordinary scikit-learn model, checked against `naturalv2/models/causal_models.py`:
 
 
 | name          | class                                  | the model it fits                |
 | ------------- | -------------------------------------- | -------------------------------- |
+| **OI — ours** | `causallib.estimation.Standardization` | `LinearRegression`               |
 | IPW           | `causallib.estimation.IPW`             | multinomial `LogisticRegression` |
-| **OI (ours)** | `causallib.estimation.Standardization` | `LinearRegression`               |
 | baseline      | `MarginalOutcomeEstimator`             | none — plain difference in means |
 
 
-**IPW (inverse propensity weighting)** asks *"how surprising is it that this person took this
-treatment, given who they are?"* It fits a model of the probability of receiving each treatment
-given the covariates — the **propensity** — then weights each patient by the inverse of that
-probability. People who took an unlikely-for-them treatment count for more, which rebalances the
-sample toward what a randomised trial would have produced:
+**OI — outcome imputation, also called standardisation or the g-formula — is what we run.** It fits
+one model that predicts the outcome from the covariates and the treatment, then asks that model what
+**every** patient would have scored had they all been given arm `t`, and averages those predictions:
+
+```
+E[Y(t)]  =  mean over ALL patients i of  outcome_model( X_i , t )
+```
+
+**IPW — inverse propensity weighting — is the alternative**, and asks a different question: *"how
+surprising is it that this person took this treatment, given who they are?"* It fits a model of the
+probability of receiving each treatment given the covariates — the **propensity** — then weights each
+patient by the inverse of that probability, so someone who took an unlikely-for-them treatment counts
+for more. That pulls the sample back toward what randomisation would have produced:
 
 ```
              sum over patients on arm t of  ( Y_i / propensity(t | X_i) )
@@ -485,28 +495,21 @@ E[Y(t)]  =   -----------------------------------------------------------
              sum over patients on arm t of  (   1 / propensity(t | X_i) )
 ```
 
-**OI (outcome imputation, a.k.a. standardisation or the g-formula)** — the path we use — works the
-other way round. It fits a model predicting the outcome from covariates *and* treatment, then asks
-that model to predict what **every** patient would have scored had they all been given arm `t`, and
-averages:
-
-```
-E[Y(t)]  =  mean over ALL patients i of  outcome_model( X_i , t )
-```
-
-Two things about this are worth flagging.
+Two things about the OI path are worth flagging.
 
 **The outcome model is a plain, unregularised linear regression** over the discretised covariates
-plus a treatment indicator. With 8 covariates plus treatment, it is fitting roughly 9 or more
-parameters. For lithium's Fatigue outcome we had **n = 9 patients**. That is as many parameters as
-data points: the regression is saturated, it can fit the training rows exactly, and the coefficients
-are essentially arbitrary — there is no residual variation left to estimate them from. Extrapolating
-that model to every patient, as OI does, is then unstable in a way nothing in the pipeline warns
-about, and it is a plausible contributor to the wild point estimate in §9. No regularisation, no
-interaction terms, no check that n exceeds the number of parameters.
+plus a treatment column. Eight covariates plus treatment is nine features, and with an intercept that
+is ten parameters to estimate.
+
+Lithium's Fatigue outcome had **nine reports**. Fewer rows than parameters: the regression is
+saturated, it fits those rows exactly, and the coefficients are essentially arbitrary because no
+residual variation is left to pin them down. OI then extrapolates that model to every patient, which
+is unstable in a way nothing in the pipeline warns about, and is a plausible contributor to the wild
+estimate in §9. There is no regularisation, no interaction terms, and no check that the row count
+exceeds the parameter count.
 
 **Identification rests on the usual assumptions:** consistency, positivity, and **no unmeasured
-confounding given those 8 covariates**. That is a strong assumption anywhere, and a particularly
+confounding given those eight covariates**. That is a strong assumption anywhere and a particularly
 demanding one on Reddit; §11.4 sets out why.
 
 ### 6.7 Uncertainty
