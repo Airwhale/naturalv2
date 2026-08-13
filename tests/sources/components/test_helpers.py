@@ -130,7 +130,7 @@ def test_build_treatment_automaton_matches_normalized_variants():
     text = (
         "Metformin—XR 500 mg tablets were given. "
         "Alpha tocopherol oral capsule and N acetyl-cysteine were provided. "
-        "Libexin 100 mg tablets were dispensed. "
+        "Libexin 100 mg tablets were dispensed."
         "I take mytopiramate twice a day."
     )
 
