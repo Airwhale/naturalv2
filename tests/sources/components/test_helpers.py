@@ -131,7 +131,7 @@ def test_build_treatment_automaton_matches_normalized_variants():
         "Metformin—XR 500 mg tablets were given. "
         "Alpha tocopherol oral capsule and N acetyl-cysteine were provided. "
         "Libexin 100 mg tablets were dispensed. "
-        "I take topiramate, not mytopiramate, twice a day."
+        "I take mytopiramate twice a day."
     )
 
     matches = _find_matches(automaton, text)
@@ -158,14 +158,15 @@ def test_build_treatment_automaton_handles_parenthetical_aliases_and_skips_empty
     ("alias", "text", "expected"),
     [
         ("LDN", "LDN helped", {"ldn"}),
+        ("ldn", "Ldn helped", {"ldn"}),
         ("LDN", "I tried (LDN).", {"ldn"}),
         ("LDN", "an LDN-based treatment", {"ldn"}),
         ("LDN", "I tried LDN", {"ldn"}),
         ("LDN", "couldnt wouldnt aldnamide", set()),
-        ("topiramate", "mytopiramate", set()),
+        ("VNS", "VNS helped", set()),
     ],
 )
-def test_treatment_aliases_require_word_boundaries(alias, text, expected):
-    automaton = build_treatment_automaton([alias])
+def test_only_ldn_is_allowed_as_a_boundary_aware_short_alias(alias, text, expected):
+    automaton = build_treatment_automaton(["naltrexone", alias])
 
     assert _find_matches(automaton, text) == expected

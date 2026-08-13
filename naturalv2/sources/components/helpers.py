@@ -17,6 +17,8 @@ import regex as re
 
 logger = logging.getLogger(__name__)
 
+BOUNDARY_AWARE_ALIASES = frozenset({"ldn"})
+
 _HYPHEN_RUNS = "\u2010\u2011\u2012\u2013\u2014\u2212-"
 _ZERO_WIDTH = "\u200b\u200c\u200d\u2060"
 
@@ -276,8 +278,8 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     treatment aliases in text in a single pass.
 
     Each alias is normalized and expanded into canonical variations (with and
-    without parenthetical qualifiers). One- and two-character variations are
-    filtered out to reduce false positives.
+    without parenthetical qualifiers). Variations with three characters or fewer
+    are filtered out unless explicitly allowlisted for boundary-aware matching.
 
     Parameters
     ----------
@@ -296,8 +298,9 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     The automaton maps each pattern to its canonical form, not the original alias.
     This ensures consistent representation in match results.
 
-    One- and two-character canonical forms are excluded because they generate too
-    many false positives (e.g., "mg", "ml", "a", "b").
+    Short canonical forms generate too many false positives (e.g., "mg", "ml",
+    "a", "b"). ``LDN`` is allowlisted because its matches are validated against
+    word boundaries by ``is_valid_alias_match()``.
 
     See Also
     --------
@@ -310,7 +313,10 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     # Use the shared iterator to ensure consistency
     for alias in aliases:
         for canonical_alias in iter_canonical_variations(alias):
-            if len(canonical_alias) < 3:  # Drop one- and two-character forms
+            if (
+                len(canonical_alias) <= 3
+                and canonical_alias not in BOUNDARY_AWARE_ALIASES
+            ):
                 continue
 
             # Map the pattern -> canonical form
@@ -408,28 +414,19 @@ def canonicalize_reports_for_matching(text: str) -> tuple[str, list[int]]:
     return canonical_text, canonical_to_original_indices
 
 
-def extract_canonical_mentions(
-    canonical_text: str, automaton: ahocorasick.Automaton
-) -> list[str]:
-    """Extract aliases that are not embedded in a larger alphanumeric word."""
-    found_mentions: set[str] = set()
+def is_valid_alias_match(
+    canonical_text: str, end_index: int, canonical_alias: str
+) -> bool:
+    """Return whether a match satisfies any alias-specific boundary policy."""
+    if canonical_alias not in BOUNDARY_AWARE_ALIASES:
+        return True
 
-    for end_index, canonical_alias in automaton.iter(canonical_text):
-        start_index = end_index - len(canonical_alias) + 1
-        starts_inside_word = (
-            canonical_alias[0].isalnum()
-            and start_index > 0
-            and canonical_text[start_index - 1].isalnum()
-        )
-        ends_inside_word = (
-            canonical_alias[-1].isalnum()
-            and end_index + 1 < len(canonical_text)
-            and canonical_text[end_index + 1].isalnum()
-        )
-        if not starts_inside_word and not ends_inside_word:
-            found_mentions.add(canonical_alias)
-
-    return sorted(found_mentions)
+    start_index = end_index - len(canonical_alias) + 1
+    starts_inside_word = start_index > 0 and canonical_text[start_index - 1].isalnum()
+    ends_inside_word = (
+        end_index + 1 < len(canonical_text) and canonical_text[end_index + 1].isalnum()
+    )
+    return not starts_inside_word and not ends_inside_word
 
 
 def extract_mentions(text: str, automaton: ahocorasick.Automaton) -> list[str]:
@@ -489,7 +486,15 @@ def extract_mentions(text: str, automaton: ahocorasick.Automaton) -> list[str]:
     if not canonical_text:
         return []
 
-    return extract_canonical_mentions(canonical_text, automaton)
+    found_mentions: set[str] = set()
+
+    # .iter() returns (end_index, value).
+    # In build_treatment_automaton, we set 'value' to be the canonical_alias.
+    for end_index, canonical_alias in automaton.iter(canonical_text):
+        if is_valid_alias_match(canonical_text, end_index, canonical_alias):
+            found_mentions.add(canonical_alias)
+
+    return sorted(found_mentions)
 
 
 def filter_by_date(
