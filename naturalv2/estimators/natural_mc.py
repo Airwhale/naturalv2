@@ -61,8 +61,7 @@ class NaturalMC:
         Raises
         ------
         ValueError
-            If required data is absent or IPW has fewer than two observed treatment
-            classes.
+            If required data is absent.
         Exception
             Any estimator fitting or prediction error is re-raised with trial,
             outcome, data-shape, and observed-treatment context.
@@ -101,13 +100,6 @@ class NaturalMC:
         )
 
         observed_treatments = sorted(data.T.unique().tolist())
-        if self.estimator_type == "ipw" and len(observed_treatments) < 2:
-            raise ValueError(
-                "NaturalMC IPW requires at least two observed treatment classes "
-                f"for outcome {outcome!r}; got {observed_treatments} from "
-                f"{len(observational_data)} rows."
-            )
-
         try:
             model.fit(data)
             all_ites = np.zeros((self._num_treat, len(observational_data)))

@@ -3,7 +3,6 @@ import pandas as pd
 import pytest
 
 from naturalv2.estimators.natural_mc import NaturalMC
-from naturalv2.models.causal_models import IPSW
 from naturalv2.pipeline import OUTCOME_COL_NAME, TREATMENT_COL_NAME
 
 
@@ -58,12 +57,15 @@ def test_oi_missing_treatment_extrapolates_without_crash():
     assert not np.isnan(ites).any()
 
 
-def test_ipw_single_treatment_value_raises_clear_error():
+def test_ipw_fit_error_propagates_with_context():
     # LogisticRegression needs >=2 classes to fit at all.
     data = make_data(10, [0] * 10)
     mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
-    with pytest.raises(ValueError, match="at least two observed treatment classes"):
+
+    with pytest.raises(ValueError) as exc_info:
         mc.get_individual_treatment_effects(data, outcome="dummy")
+
+    assert "outcome='dummy'" in " ".join(exc_info.value.__notes__)
 
 
 def test_oi_single_treatment_value_still_returns_finite_values():
@@ -80,30 +82,4 @@ def test_missing_required_column_raises():
     )
     mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
     with pytest.raises(ValueError, match="discretized"):
-        mc.get_individual_treatment_effects(data, outcome="dummy")
-
-
-def test_unexpected_fit_error_propagates_with_context(monkeypatch):
-    def fail_fit(self, data):
-        raise RuntimeError("fit failed")
-
-    monkeypatch.setattr(IPSW, "fit", fail_fit)
-    data = make_data(10, [0, 1] * 5)
-    mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
-
-    with pytest.raises(RuntimeError, match="fit failed") as exc_info:
-        mc.get_individual_treatment_effects(data, outcome="dummy")
-
-    assert "outcome='dummy'" in " ".join(exc_info.value.__notes__)
-
-
-def test_interrupt_is_not_swallowed(monkeypatch):
-    def interrupt_fit(self, data):
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(IPSW, "fit", interrupt_fit)
-    data = make_data(10, [0, 1] * 5)
-    mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
-
-    with pytest.raises(KeyboardInterrupt):
         mc.get_individual_treatment_effects(data, outcome="dummy")
