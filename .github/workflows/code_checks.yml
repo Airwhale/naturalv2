@@ -55,7 +55,7 @@ jobs:
         run: |
           source .venv/bin/activate
           pre-commit run --all-files
-        continue-on-error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        continue-on-error: true
 
       - name: Commit and push changes if any
         if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
