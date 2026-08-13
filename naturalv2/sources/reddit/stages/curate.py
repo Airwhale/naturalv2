@@ -31,6 +31,7 @@ from naturalv2.sources.components.helpers import (
     POST_NFKC_TRANSLATION_TABLE,
     PRE_NFKC_TRANSLATION_TABLE,
     build_treatment_automaton,
+    extract_canonical_mentions,
     iter_canonical_variations,
 )
 from naturalv2.sources.core import SourceStage
@@ -272,9 +273,7 @@ class RedditCurateStage(SourceStage):
             for aliases in experiment.treatment_common_names.get(
                 context.source_name, {}
             ).values():
-                for alias in aliases:
-                    if len(alias) > 3:  # ignore short common names
-                        common_names.add(alias)
+                common_names.update(aliases)
             terms = list(treatment_names | common_names)
 
             experiments_data.append(
@@ -607,11 +606,7 @@ def _process_chunk(
                 results.append([])
                 continue
 
-            found = set()
-
-            for _, canonical_alias in ctx.automaton.iter(text):
-                found.add(canonical_alias)
-            results.append(sorted(found))
+            results.append(extract_canonical_mentions(text, ctx.automaton))
 
         return pl.Series(results, dtype=pl.List(pl.String))
 

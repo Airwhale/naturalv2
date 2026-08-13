@@ -3,6 +3,7 @@ import pytest
 from naturalv2.sources.components.helpers import (
     build_treatment_automaton,
     canonicalize_reports_for_matching,
+    extract_mentions,
     normalize_text_for_matching,
 )
 
@@ -111,8 +112,7 @@ def test_canonicalize_for_matching_handles_empty_input():
 
 def _find_matches(automaton, raw_text):
     normalized = normalize_text_for_matching(raw_text)
-    canonical_text, _ = canonicalize_reports_for_matching(normalized)
-    return {match for _, match in automaton.iter(canonical_text)}
+    return set(extract_mentions(normalized, automaton))
 
 
 def test_build_treatment_automaton_matches_normalized_variants():
@@ -130,8 +130,8 @@ def test_build_treatment_automaton_matches_normalized_variants():
     text = (
         "Metformin—XR 500 mg tablets were given. "
         "Alpha tocopherol oral capsule and N acetyl-cysteine were provided. "
-        "Libexin 100 mg tablets were dispensed."
-        "I take mytopiramate twice a day."
+        "Libexin 100 mg tablets were dispensed. "
+        "I take topiramate, not mytopiramate, twice a day."
     )
 
     matches = _find_matches(automaton, text)
@@ -152,3 +152,20 @@ def test_build_treatment_automaton_handles_parenthetical_aliases_and_skips_empty
 
     matches = _find_matches(automaton, text)
     assert matches == {"aspirin", "aspirin (oral tablet)"}
+
+
+@pytest.mark.parametrize(
+    ("alias", "text", "expected"),
+    [
+        ("LDN", "LDN helped", {"ldn"}),
+        ("LDN", "I tried (LDN).", {"ldn"}),
+        ("LDN", "an LDN-based treatment", {"ldn"}),
+        ("LDN", "I tried LDN", {"ldn"}),
+        ("LDN", "couldnt wouldnt aldnamide", set()),
+        ("topiramate", "mytopiramate", set()),
+    ],
+)
+def test_treatment_aliases_require_word_boundaries(alias, text, expected):
+    automaton = build_treatment_automaton([alias])
+
+    assert _find_matches(automaton, text) == expected

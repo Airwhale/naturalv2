@@ -276,7 +276,7 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     treatment aliases in text in a single pass.
 
     Each alias is normalized and expanded into canonical variations (with and
-    without parenthetical qualifiers). Short variations (≤3 characters) are
+    without parenthetical qualifiers). One- and two-character variations are
     filtered out to reduce false positives.
 
     Parameters
@@ -296,8 +296,8 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     The automaton maps each pattern to its canonical form, not the original alias.
     This ensures consistent representation in match results.
 
-    Very short canonical forms (3 characters or less) are excluded because they
-    generate too many false positives (e.g., "mg", "ml", "a", "b").
+    One- and two-character canonical forms are excluded because they generate too
+    many false positives (e.g., "mg", "ml", "a", "b").
 
     See Also
     --------
@@ -310,7 +310,7 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     # Use the shared iterator to ensure consistency
     for alias in aliases:
         for canonical_alias in iter_canonical_variations(alias):
-            if len(canonical_alias) <= 3:  # Drop short canonical forms
+            if len(canonical_alias) < 3:  # Drop one- and two-character forms
                 continue
 
             # Map the pattern -> canonical form
@@ -408,6 +408,30 @@ def canonicalize_reports_for_matching(text: str) -> tuple[str, list[int]]:
     return canonical_text, canonical_to_original_indices
 
 
+def extract_canonical_mentions(
+    canonical_text: str, automaton: ahocorasick.Automaton
+) -> list[str]:
+    """Extract aliases that are not embedded in a larger alphanumeric word."""
+    found_mentions: set[str] = set()
+
+    for end_index, canonical_alias in automaton.iter(canonical_text):
+        start_index = end_index - len(canonical_alias) + 1
+        starts_inside_word = (
+            canonical_alias[0].isalnum()
+            and start_index > 0
+            and canonical_text[start_index - 1].isalnum()
+        )
+        ends_inside_word = (
+            canonical_alias[-1].isalnum()
+            and end_index + 1 < len(canonical_text)
+            and canonical_text[end_index + 1].isalnum()
+        )
+        if not starts_inside_word and not ends_inside_word:
+            found_mentions.add(canonical_alias)
+
+    return sorted(found_mentions)
+
+
 def extract_mentions(text: str, automaton: ahocorasick.Automaton) -> list[str]:
     """
     Extract all treatment mentions from text using an Aho-Corasick automaton.
@@ -465,14 +489,7 @@ def extract_mentions(text: str, automaton: ahocorasick.Automaton) -> list[str]:
     if not canonical_text:
         return []
 
-    found_mentions: set[str] = set()
-
-    # .iter() returns (end_index, value).
-    # In build_treatment_automaton, we set 'value' to be the canonical_alias.
-    for _, canonical_alias in automaton.iter(canonical_text):
-        found_mentions.add(canonical_alias)
-
-    return sorted(found_mentions)
+    return extract_canonical_mentions(canonical_text, automaton)
 
 
 def filter_by_date(
