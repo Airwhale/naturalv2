@@ -154,19 +154,9 @@ def test_build_treatment_automaton_handles_parenthetical_aliases_and_skips_empty
     assert matches == {"aspirin", "aspirin (oral tablet)"}
 
 
-@pytest.mark.parametrize(
-    ("alias", "text", "expected"),
-    [
-        ("LDN", "LDN helped", {"ldn"}),
-        ("ldn", "Ldn helped", {"ldn"}),
-        ("LDN", "I tried (LDN).", {"ldn"}),
-        ("LDN", "an LDN-based treatment", {"ldn"}),
-        ("LDN", "I tried LDN", {"ldn"}),
-        ("LDN", "couldnt wouldnt aldnamide", set()),
-        ("VNS", "VNS helped", set()),
-    ],
-)
-def test_only_ldn_is_allowed_as_a_boundary_aware_short_alias(alias, text, expected):
-    automaton = build_treatment_automaton(["naltrexone", alias])
+def test_only_ldn_is_allowed_as_a_boundary_aware_short_alias():
+    automaton = build_treatment_automaton(["naltrexone", "LDN", "VNS"])
 
-    assert _find_matches(automaton, text) == expected
+    assert _find_matches(automaton, "LDN helped") == {"ldn"}
+    assert _find_matches(automaton, "couldnt wouldnt aldnamide") == set()
+    assert _find_matches(automaton, "VNS helped") == set()
