@@ -792,8 +792,7 @@ async def extract_covariates(  # noqa: PLR0912
         return pd.read_csv(file_path, index_col=0)
     except (FileNotFoundError, pd.errors.EmptyDataError):
         logger.warning(
-            f"No results were written to {file_path}; "
-            "returning an empty DataFrame."
+            f"No results were written to {file_path}; returning an empty DataFrame."
         )
         return pd.DataFrame()
 
