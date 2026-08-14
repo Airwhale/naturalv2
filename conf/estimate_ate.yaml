@@ -4,7 +4,7 @@ defaults:
   - model@sample_model: gemini
   - model@imputations_model: gemini
   - model@probs_model: vllm_offline
-  - estimator: natural_mc
+  - estimator: natural_mc_ipw
   - _self_
 
 nct_id: null # NCT03828539 to test
