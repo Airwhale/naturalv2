@@ -11,7 +11,8 @@ conditions:
 train_ratio: 0.6
 save_path: ${oc.env:SAVE_PATH,./outputs}
 
-# Optional inclusive bounds keyed by trial ID and exact outcome name:
+# Optional inclusive bounds keyed by trial ID and exact outcome name.
+# Applied when create_study builds the persisted experiment YAMLs:
 # outcome_bounds:
 #   NCT00000000:
 #     Exact Outcome Title:

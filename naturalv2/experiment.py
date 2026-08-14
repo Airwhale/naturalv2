@@ -29,9 +29,11 @@ from naturalv2.clinical_trial import (
     Reference,
 )
 from naturalv2.outcome_metadata import (
+    ConfiguredOutcomeBounds,
+    ConfiguredOutcomeBoundsMap,
     OutcomeBounds,
     OutcomeBoundsMap,
-    parse_outcome_bounds,
+    infer_outcome_bounds,
 )
 from naturalv2.pipeline.constants import (
     INCLUSION_COL_NAME,
@@ -188,7 +190,9 @@ class Experiment:
         status: Literal["completed", "active"] = "completed",
         require_binary_endpoint: bool = True,
         *,
-        outcome_bounds: Mapping[str, OutcomeBounds | Mapping[str, float] | None]
+        outcome_bounds: Mapping[
+            str, ConfiguredOutcomeBounds | Mapping[str, float] | None
+        ]
         | None = None,
     ) -> None:
         self.data_path = data_path
@@ -500,7 +504,10 @@ class Experiment:
 
         exp = cls.__new__(cls)
         exp.__dict__.update(data)
-        exp._set_outcome_bounds(data.get("_outcome_bounds"))
+        exp._set_outcome_bounds()
+        persisted_bounds = data.get("_outcome_bounds")
+        if persisted_bounds is not None:
+            exp._restore_outcome_bounds(persisted_bounds)
         return exp
 
     def to_yaml(self, filename: str) -> None:
@@ -702,6 +709,19 @@ class Experiment:
             n_sampled,
             n_rejected,
             rejection_rate,
+            extra={
+                "phase": "outcome_range_validation",
+                "schema_id": "outcome_bounds.v1",
+                "status": "rejected" if n_rejected else "accepted",
+                "nct_id": self.nct_id,
+                "outcome": outcome,
+                "minimum": bounds.minimum,
+                "maximum": bounds.maximum,
+                "bounds_source": bounds.source,
+                "n_sampled": n_sampled,
+                "n_rejected": n_rejected,
+                "rejection_rate": rejection_rate,
+            },
         )
         return extractions.loc[valid].copy()
 
@@ -1068,29 +1088,64 @@ class Experiment:
 
     def _set_outcome_bounds(
         self,
-        configured_bounds: Mapping[str, OutcomeBounds | Mapping[str, float] | None]
+        configured_bounds: Mapping[
+            str, ConfiguredOutcomeBounds | Mapping[str, float] | None
+        ]
         | None = None,
     ) -> None:
         """Infer explicit scale ranges, then apply validated configuration overrides."""
-        timeframes = dict(zip(self.outcome_names, self.outcome_timeframes))
-        self._outcome_bounds = {
-            outcome: parse_outcome_bounds(
-                outcome, self.outcome_desc.get(outcome), timeframes.get(outcome)
+        inferred_bounds = {
+            outcome: infer_outcome_bounds(
+                outcome, self.outcome_desc.get(outcome), timeframe
             )
-            for outcome in self.outcome_names
+            for outcome, timeframe in zip(
+                self.outcome_names, self.outcome_timeframes, strict=True
+            )
         }
+        validated_bounds = ConfiguredOutcomeBoundsMap.model_validate(
+            dict(configured_bounds or {})
+        ).root
+        self._validate_outcome_bound_names(validated_bounds)
 
-        if configured_bounds is None:
-            return
+        binary_outcomes = [
+            outcome
+            for outcome, bounds in validated_bounds.items()
+            if bounds is not None and self.is_binary_outcome(outcome)
+        ]
+        if binary_outcomes:
+            raise ValueError(
+                "Outcome bounds cannot be configured for binary outcomes: "
+                f"{binary_outcomes}."
+            )
 
-        validated_bounds = OutcomeBoundsMap.model_validate(dict(configured_bounds)).root
-        for outcome, bounds in validated_bounds.items():
-            if outcome not in self._outcome_bounds:
-                raise ValueError(
-                    f"Outcome bounds configured for unknown outcome {outcome!r}. "
-                    f"Expected one of {self.outcome_names}."
+        configured = {
+            outcome: (
+                None
+                if bounds is None
+                else OutcomeBounds(
+                    minimum=bounds.minimum,
+                    maximum=bounds.maximum,
+                    source="configured",
                 )
-            self._outcome_bounds[outcome] = bounds
+            )
+            for outcome, bounds in validated_bounds.items()
+        }
+        self._outcome_bounds = inferred_bounds | configured
+
+    def _restore_outcome_bounds(self, persisted_bounds: Mapping[str, object]) -> None:
+        """Restore validated bounds and provenance from an experiment artifact."""
+        validated_bounds = OutcomeBoundsMap.model_validate(dict(persisted_bounds)).root
+        self._validate_outcome_bound_names(validated_bounds)
+        self._outcome_bounds |= validated_bounds
+
+    def _validate_outcome_bound_names(self, bounds: Mapping[str, object]) -> None:
+        """Reject bounds that do not identify an outcome in this experiment."""
+        unknown = bounds.keys() - set(self.outcome_names)
+        if unknown:
+            raise ValueError(
+                f"Outcome bounds reference unknown outcomes {sorted(unknown)}. "
+                f"Expected one of {self.outcome_names}."
+            )
 
     def _get_active_outcomes_treatments(
         self, trial: ClinicalTrial

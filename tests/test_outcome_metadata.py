@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from naturalv2.outcome_metadata import OutcomeBounds, parse_outcome_bounds
+from naturalv2.outcome_metadata import OutcomeBounds, infer_outcome_bounds
 
 
 @pytest.mark.parametrize(
@@ -15,8 +15,8 @@ from naturalv2.outcome_metadata import OutcomeBounds, parse_outcome_bounds
         ("Scale ranges from \u221210 to 10", (-10, 10)),
     ],
 )
-def test_parse_explicit_outcome_bounds(description, expected):
-    bounds = parse_outcome_bounds(description)
+def test_infer_explicit_outcome_bounds(description, expected):
+    bounds = infer_outcome_bounds(description)
 
     assert bounds is not None
     assert (bounds.minimum, bounds.maximum) == expected
@@ -29,10 +29,12 @@ def test_parse_explicit_outcome_bounds(description, expected):
         "Each question is answered on a 6-point scale.",
         "Change from baseline to day 21",
         "Scores range from 1 to 7 per item and 7 to 49 for the total score",
+        "Baseline scores ranged from 12 to 42 in enrolled patients.",
+        "Observed scores ranged from 25 to 75 during screening.",
     ],
 )
 def test_ambiguous_or_non_range_text_is_not_parsed(description):
-    assert parse_outcome_bounds(description) is None
+    assert infer_outcome_bounds(description) is None
 
 
 @pytest.mark.parametrize(
@@ -46,4 +48,4 @@ def test_ambiguous_or_non_range_text_is_not_parsed(description):
 )
 def test_outcome_bounds_require_a_finite_nonempty_interval(values):
     with pytest.raises(ValidationError):
-        OutcomeBounds.model_validate(values)
+        OutcomeBounds.model_validate({**values, "source": "configured"})

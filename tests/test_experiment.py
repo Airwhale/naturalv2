@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from naturalv2.experiment import Experiment
 from naturalv2.pipeline import OUTCOME_COL_NAME, TREATMENT_COL_NAME
@@ -12,6 +13,26 @@ from tests.factories import (
     make_completed_trial,
     make_outcome_measure,
 )
+
+
+def _build_continuous_experiment(
+    tmp_path,
+    *,
+    nct_id="NCT012",
+    outcome_name="Functional Capacity",
+    description=None,
+    outcome_bounds=None,
+):
+    arms = [make_arm("Drug A", "EXPERIMENTAL")]
+    outcome = make_outcome_measure(outcome_name, "MEAN", "points", [("Drug A", 40, 50)])
+    if description is not None:
+        outcome["description"] = description
+    return build_experiment(
+        tmp_path,
+        make_completed_trial(nct_id, arms, [outcome]),
+        require_binary_endpoint=False,
+        outcome_bounds=outcome_bounds,
+    )
 
 
 # -- Arm-type filtering (completed trials) -----------------------------------
@@ -147,20 +168,24 @@ def test_active_trial_outcome_falls_back_to_title_heuristic(tmp_path):
 
 
 def test_configured_continuous_outcome_range_is_enforced(tmp_path):
-    arms = [make_arm("Drug A", "EXPERIMENTAL")]
-    outcome = make_outcome_measure(
-        "Functional Capacity", "MEAN", "points", [("Drug A", 40, 50)]
-    )
-    exp = build_experiment(
+    exp = _build_continuous_experiment(
         tmp_path,
-        make_completed_trial("NCT012", arms, [outcome]),
-        require_binary_endpoint=False,
         outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}},
     )
     samples = pd.DataFrame(
         {
-            TREATMENT_COL_NAME: ["Drug A"] * 5,
-            OUTCOME_COL_NAME: [-1, 0, 55, 56, 4_444_000],
+            TREATMENT_COL_NAME: ["Drug A"] * 9,
+            OUTCOME_COL_NAME: [
+                -1,
+                0,
+                55,
+                56,
+                4_444_000,
+                "not-a-number",
+                float("nan"),
+                float("inf"),
+                -float("inf"),
+            ],
         }
     )
 
@@ -169,23 +194,32 @@ def test_configured_continuous_outcome_range_is_enforced(tmp_path):
 
     assert filtered[OUTCOME_COL_NAME].tolist() == [0, 55]
     assert filtered[f"{OUTCOME_COL_NAME}_discretized"].tolist() == [0, 55]
-    assert log_warning.call_args.args[-4:] == ("configured", 5, 3, 0.6)
+    assert log_warning.call_args.args[-4:-1] == ("configured", 9, 7)
+    assert log_warning.call_args.args[-1] == pytest.approx(7 / 9)
+    assert log_warning.call_args.kwargs["extra"] == {
+        "phase": "outcome_range_validation",
+        "schema_id": "outcome_bounds.v1",
+        "status": "rejected",
+        "nct_id": "NCT012",
+        "outcome": "Functional Capacity",
+        "minimum": 0,
+        "maximum": 55,
+        "bounds_source": "configured",
+        "n_sampled": 9,
+        "n_rejected": 7,
+        "rejection_rate": pytest.approx(7 / 9),
+    }
 
 
 def test_continuous_outcome_range_is_inferred_from_description(tmp_path):
-    arms = [make_arm("Drug A", "EXPERIMENTAL")]
-    outcome = make_outcome_measure(
-        "Fatigue Severity Scale", "MEAN", "points", [("Drug A", 20, 50)]
-    )
-    outcome["description"] = (
-        "7-item questionnaire assessing fatigue severity. Score range 1-49 with "
-        "higher values signifying worse outcome"
-    )
-
-    exp = build_experiment(
+    exp = _build_continuous_experiment(
         tmp_path,
-        make_completed_trial("NCT015", arms, [outcome]),
-        require_binary_endpoint=False,
+        nct_id="NCT015",
+        outcome_name="Fatigue Severity Scale",
+        description=(
+            "7-item questionnaire assessing fatigue severity. Score range 1-49 "
+            "with higher values signifying worse outcome"
+        ),
     )
 
     bounds = exp.outcome_bounds["Fatigue Severity Scale"]
@@ -194,14 +228,9 @@ def test_continuous_outcome_range_is_inferred_from_description(tmp_path):
 
 
 def test_configured_outcome_bounds_round_trip_through_yaml(tmp_path):
-    arms = [make_arm("Drug A", "EXPERIMENTAL")]
-    outcome = make_outcome_measure(
-        "Functional Capacity", "MEAN", "points", [("Drug A", 40, 50)]
-    )
-    exp = build_experiment(
+    exp = _build_continuous_experiment(
         tmp_path,
-        make_completed_trial("NCT013", arms, [outcome]),
-        require_binary_endpoint=False,
+        nct_id="NCT013",
         outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}},
     )
     exp._drugbank_names = {"Drug A": []}
@@ -217,17 +246,58 @@ def test_configured_outcome_bounds_round_trip_through_yaml(tmp_path):
 
 
 def test_configured_bounds_reject_unknown_outcome(tmp_path):
-    arms = [make_arm("Drug A", "EXPERIMENTAL")]
-    outcome = make_outcome_measure(
-        "Functional Capacity", "MEAN", "points", [("Drug A", 40, 50)]
+    with pytest.raises(ValueError, match="unknown outcome"):
+        _build_continuous_experiment(
+            tmp_path,
+            nct_id="NCT014",
+            outcome_bounds={"Typo": {"minimum": 0, "maximum": 55}},
+        )
+
+
+def test_configured_bounds_cannot_override_provenance(tmp_path):
+    with pytest.raises(ValidationError, match="source"):
+        _build_continuous_experiment(
+            tmp_path,
+            outcome_bounds={
+                "Functional Capacity": {
+                    "minimum": 0,
+                    "maximum": 55,
+                    "source": "description",
+                }
+            },
+        )
+
+
+def test_null_configured_bounds_disable_inference(tmp_path):
+    exp = _build_continuous_experiment(
+        tmp_path,
+        outcome_name="Fatigue Severity Scale",
+        description="The total score ranges from 1 to 49.",
+        outcome_bounds={"Fatigue Severity Scale": None},
     )
 
-    with pytest.raises(ValueError, match="unknown outcome"):
+    assert exp.outcome_bounds["Fatigue Severity Scale"] is None
+
+
+def test_configured_bounds_reject_binary_outcome(tmp_path):
+    arms = [make_arm("Drug A", "EXPERIMENTAL")]
+    outcome = make_outcome_measure(
+        "Number of Participants with Response",
+        "COUNT_OF_PARTICIPANTS",
+        "Participants",
+        [("Drug A", 10, 50)],
+    )
+
+    with pytest.raises(ValueError, match="binary outcomes"):
         build_experiment(
             tmp_path,
-            make_completed_trial("NCT014", arms, [outcome]),
-            require_binary_endpoint=False,
-            outcome_bounds={"Typo": {"minimum": 0, "maximum": 55}},
+            make_completed_trial("NCT016", arms, [outcome]),
+            outcome_bounds={
+                "Number of Participants with Response": {
+                    "minimum": 0,
+                    "maximum": 1,
+                }
+            },
         )
 
 
