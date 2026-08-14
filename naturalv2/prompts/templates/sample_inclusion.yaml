@@ -5,7 +5,7 @@ system_prompt: |-
   Your final answer must always be a single, well-formed JSON object with no additional text, explanations, or formatting.
 user_prompt_template: |-
   I will give you a report about an individual's experience with a treatment and a set of inclusion and exclusion criteria.
-  Guess whether this patient is likely to satify the given criteria.
+  Guess whether this patient is likely to satisfy the given criteria.
 
   **Report found on {{ source }}:**
 
