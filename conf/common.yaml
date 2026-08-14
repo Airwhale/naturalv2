@@ -11,5 +11,13 @@ conditions:
 train_ratio: 0.6
 save_path: ${oc.env:SAVE_PATH,./outputs}
 
+# Optional inclusive bounds keyed by trial ID and exact outcome name:
+# outcome_bounds:
+#   NCT00000000:
+#     Exact Outcome Title:
+#       minimum: 0
+#       maximum: 100
+outcome_bounds: {}
+
 # Metadata
 date_time: ${now:%Y-%m-%d}_${now:%H-%M-%S}

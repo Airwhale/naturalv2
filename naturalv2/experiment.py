@@ -5,6 +5,7 @@ import logging
 import os
 import re
 from ast import literal_eval
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -26,6 +27,11 @@ from naturalv2.clinical_trial import (
     OutcomeMeasure,
     OutcomeMeasureType,
     Reference,
+)
+from naturalv2.outcome_metadata import (
+    OutcomeBounds,
+    OutcomeBoundsMap,
+    parse_outcome_bounds,
 )
 from naturalv2.pipeline.constants import (
     INCLUSION_COL_NAME,
@@ -92,6 +98,9 @@ class Experiment:
         the trial is expected to be in progress, and the relevant JSON file will be
         loaded from the `nct_reports_test` directory. If "completed", it will be
         loaded from the `nct_reports` directory.
+    outcome_bounds : Mapping, optional
+        Inclusive bounds keyed by exact outcome name. Explicit values override ranges
+        inferred from unambiguous score or scale descriptions.
 
     Attributes
     ----------
@@ -178,6 +187,9 @@ class Experiment:
         experiment_name: str,
         status: Literal["completed", "active"] = "completed",
         require_binary_endpoint: bool = True,
+        *,
+        outcome_bounds: Mapping[str, OutcomeBounds | Mapping[str, float] | None]
+        | None = None,
     ) -> None:
         self.data_path = data_path
         self.experiment_name = experiment_name
@@ -283,6 +295,7 @@ class Experiment:
         #  "Topiramate": [Topamax]
         # }}
         self._set_outcome_treatment_effects(trial)
+        self._set_outcome_bounds(outcome_bounds)
         self.treatment_common_names: dict[str, dict[str, list[str]]] = {}
         self.outcome_common_names: dict[str, dict[str, list[str]]] = {}
 
@@ -424,6 +437,11 @@ class Experiment:
         return self._outcome_desc
 
     @property
+    def outcome_bounds(self) -> dict[str, OutcomeBounds | None]:
+        """Validated inclusive bounds for continuous outcomes, when known."""
+        return self._outcome_bounds
+
+    @property
     def effect_sizes(self) -> list[float]:
         """List of effect sizes for each outcome and binary-treatment pair."""
         return self._effect_sizes
@@ -482,6 +500,7 @@ class Experiment:
 
         exp = cls.__new__(cls)
         exp.__dict__.update(data)
+        exp._set_outcome_bounds(data.get("_outcome_bounds"))
         return exp
 
     def to_yaml(self, filename: str) -> None:
@@ -499,8 +518,13 @@ class Experiment:
         # Make sure parent folders exist first
         Path(os.path.dirname(filename)).mkdir(parents=True, exist_ok=True)
 
+        data = self.__dict__.copy()
+        data["_outcome_bounds"] = {
+            outcome: bounds.model_dump(mode="json") if bounds is not None else None
+            for outcome, bounds in self.outcome_bounds.items()
+        }
         with open(filename, "w") as file:
-            yaml.safe_dump(self.__dict__, file)
+            yaml.safe_dump(data, file)
 
     def get_all_treatment_names_for_source(self, source: str) -> list[str]:
         """Get all treatment names for a given data source.
@@ -642,9 +666,44 @@ class Experiment:
         return check_binary_endpoint(outcome_name)
 
     def discretize_ty(self, extractions: pd.DataFrame, outcome: str) -> pd.DataFrame:
+        extractions = self.filter_sampled_outcomes_to_range(extractions, outcome)
         self._discretize_outcome_column(extractions, outcome)
         self._discretize_treatment_column(extractions)
         return extractions
+
+    def filter_sampled_outcomes_to_range(
+        self, extractions: pd.DataFrame, outcome: str
+    ) -> pd.DataFrame:
+        """Reject sampled continuous outcomes outside known inclusive bounds."""
+        bounds = self.outcome_bounds.get(outcome)
+        if bounds is None or self.is_binary_outcome(outcome):
+            return extractions
+        if OUTCOME_COL_NAME not in extractions.columns:
+            raise ValueError(
+                f"`{OUTCOME_COL_NAME}` column is missing from extractions."
+            )
+
+        numeric_outcomes = pd.to_numeric(extractions[OUTCOME_COL_NAME], errors="coerce")
+        valid = numeric_outcomes.between(
+            bounds.minimum, bounds.maximum, inclusive="both"
+        )
+        n_sampled = len(extractions)
+        n_rejected = int((~valid).sum())
+        rejection_rate = n_rejected / n_sampled if n_sampled else 0.0
+        log = logger.warning if n_rejected else logger.info
+        log(
+            "Outcome range validation: nct_id=%s outcome=%r minimum=%s maximum=%s "
+            "bounds_source=%s n_sampled=%d n_rejected=%d rejection_rate=%.6f",
+            self.nct_id,
+            outcome,
+            bounds.minimum,
+            bounds.maximum,
+            bounds.source,
+            n_sampled,
+            n_rejected,
+            rejection_rate,
+        )
+        return extractions.loc[valid].copy()
 
     def apply_transform(
         self,
@@ -1006,6 +1065,32 @@ class Experiment:
             )
             for outcome in outcomes
         }
+
+    def _set_outcome_bounds(
+        self,
+        configured_bounds: Mapping[str, OutcomeBounds | Mapping[str, float] | None]
+        | None = None,
+    ) -> None:
+        """Infer explicit scale ranges, then apply validated configuration overrides."""
+        timeframes = dict(zip(self.outcome_names, self.outcome_timeframes))
+        self._outcome_bounds = {
+            outcome: parse_outcome_bounds(
+                outcome, self.outcome_desc.get(outcome), timeframes.get(outcome)
+            )
+            for outcome in self.outcome_names
+        }
+
+        if configured_bounds is None:
+            return
+
+        validated_bounds = OutcomeBoundsMap.model_validate(dict(configured_bounds)).root
+        for outcome, bounds in validated_bounds.items():
+            if outcome not in self._outcome_bounds:
+                raise ValueError(
+                    f"Outcome bounds configured for unknown outcome {outcome!r}. "
+                    f"Expected one of {self.outcome_names}."
+                )
+            self._outcome_bounds[outcome] = bounds
 
     def _get_active_outcomes_treatments(
         self, trial: ClinicalTrial

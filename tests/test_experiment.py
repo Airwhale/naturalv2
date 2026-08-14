@@ -1,3 +1,10 @@
+from unittest.mock import patch
+
+import pandas as pd
+import pytest
+
+from naturalv2.experiment import Experiment
+from naturalv2.pipeline import OUTCOME_COL_NAME, TREATMENT_COL_NAME
 from tests.factories import (
     build_experiment,
     make_active_trial,
@@ -137,6 +144,91 @@ def test_active_trial_outcome_falls_back_to_title_heuristic(tmp_path):
     )
     exp = build_experiment(tmp_path, trial, status="active")
     assert exp.is_binary_outcome(exp.outcome_names[0])
+
+
+def test_configured_continuous_outcome_range_is_enforced(tmp_path):
+    arms = [make_arm("Drug A", "EXPERIMENTAL")]
+    outcome = make_outcome_measure(
+        "Functional Capacity", "MEAN", "points", [("Drug A", 40, 50)]
+    )
+    exp = build_experiment(
+        tmp_path,
+        make_completed_trial("NCT012", arms, [outcome]),
+        require_binary_endpoint=False,
+        outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}},
+    )
+    samples = pd.DataFrame(
+        {
+            TREATMENT_COL_NAME: ["Drug A"] * 5,
+            OUTCOME_COL_NAME: [-1, 0, 55, 56, 4_444_000],
+        }
+    )
+
+    with patch("naturalv2.experiment.logger.warning") as log_warning:
+        filtered = exp.discretize_ty(samples, "Functional Capacity")
+
+    assert filtered[OUTCOME_COL_NAME].tolist() == [0, 55]
+    assert filtered[f"{OUTCOME_COL_NAME}_discretized"].tolist() == [0, 55]
+    assert log_warning.call_args.args[-4:] == ("configured", 5, 3, 0.6)
+
+
+def test_continuous_outcome_range_is_inferred_from_description(tmp_path):
+    arms = [make_arm("Drug A", "EXPERIMENTAL")]
+    outcome = make_outcome_measure(
+        "Fatigue Severity Scale", "MEAN", "points", [("Drug A", 20, 50)]
+    )
+    outcome["description"] = (
+        "7-item questionnaire assessing fatigue severity. Score range 1-49 with "
+        "higher values signifying worse outcome"
+    )
+
+    exp = build_experiment(
+        tmp_path,
+        make_completed_trial("NCT015", arms, [outcome]),
+        require_binary_endpoint=False,
+    )
+
+    bounds = exp.outcome_bounds["Fatigue Severity Scale"]
+    assert bounds is not None
+    assert (bounds.minimum, bounds.maximum, bounds.source) == (1, 49, "description")
+
+
+def test_configured_outcome_bounds_round_trip_through_yaml(tmp_path):
+    arms = [make_arm("Drug A", "EXPERIMENTAL")]
+    outcome = make_outcome_measure(
+        "Functional Capacity", "MEAN", "points", [("Drug A", 40, 50)]
+    )
+    exp = build_experiment(
+        tmp_path,
+        make_completed_trial("NCT013", arms, [outcome]),
+        require_binary_endpoint=False,
+        outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}},
+    )
+    exp._drugbank_names = {"Drug A": []}
+    experiment_path = tmp_path / "experiment.yaml"
+
+    exp.to_yaml(str(experiment_path))
+    loaded = Experiment.from_yaml(str(experiment_path))
+
+    assert loaded.outcome_bounds["Functional Capacity"] is not None
+    assert loaded.outcome_bounds["Functional Capacity"].minimum == 0
+    assert loaded.outcome_bounds["Functional Capacity"].maximum == 55
+    assert loaded.outcome_bounds["Functional Capacity"].source == "configured"
+
+
+def test_configured_bounds_reject_unknown_outcome(tmp_path):
+    arms = [make_arm("Drug A", "EXPERIMENTAL")]
+    outcome = make_outcome_measure(
+        "Functional Capacity", "MEAN", "points", [("Drug A", 40, 50)]
+    )
+
+    with pytest.raises(ValueError, match="unknown outcome"):
+        build_experiment(
+            tmp_path,
+            make_completed_trial("NCT014", arms, [outcome]),
+            require_binary_endpoint=False,
+            outcome_bounds={"Typo": {"minimum": 0, "maximum": 55}},
+        )
 
 
 # -- APO / ATE ground-truth wiring --------------------------------------------
