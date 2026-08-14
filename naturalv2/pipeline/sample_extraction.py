@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pandas as pd
 import yaml
 from omegaconf import DictConfig
-from pydantic import BaseModel
+from pydantic import BaseModel, FiniteFloat
 from tqdm.asyncio import tqdm
 
 from naturalv2.models.utils import TokenTracker
@@ -432,6 +432,24 @@ class ImputationsStage(SampleExtractionStage):
         return self.data
 
 
+def _create_sample_ty_response_format(
+    experiment: "Experiment", outcome: str
+) -> type[BaseModel]:
+    """Create the validated response schema for sampled treatment and outcome."""
+    treatment_options = experiment.options[TREATMENT_COL_NAME]
+    outcome_type = (
+        Literal["No", "Yes"] if experiment.is_binary_outcome(outcome) else FiniteFloat
+    )
+    return create_response_format(
+        "SampleTYResponse",
+        [TREATMENT_COL_NAME, OUTCOME_COL_NAME],
+        types={
+            TREATMENT_COL_NAME: Literal[*treatment_options],
+            OUTCOME_COL_NAME: outcome_type,
+        },
+    )
+
+
 class SampleTYStage(SampleExtractionStage):
     """Stage for sampling treatment and outcome given covariates.
 
@@ -470,19 +488,8 @@ class SampleTYStage(SampleExtractionStage):
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
     ) -> pd.DataFrame:
-        treatment_options = context.experiment.options[TREATMENT_COL_NAME]
-        outcome_type = (
-            Literal["No", "Yes"]
-            if context.experiment.is_binary_outcome(context.outcome)
-            else float
-        )
-        response_format = create_response_format(
-            "SampleTYResponse",
-            [TREATMENT_COL_NAME, OUTCOME_COL_NAME],
-            types={
-                TREATMENT_COL_NAME: Literal[*treatment_options],
-                OUTCOME_COL_NAME: outcome_type,
-            },
+        response_format = _create_sample_ty_response_format(
+            context.experiment, context.outcome
         )
         self.data = await extract_covariates(
             input_df=data,
