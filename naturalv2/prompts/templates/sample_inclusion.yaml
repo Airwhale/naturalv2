@@ -1,0 +1,23 @@
+system_prompt: |-
+  You are a medical assistant aiding a physician.
+  I am going to ask you a question about a report on a patient's experience with a treatment.
+  Please, answer accordingly.
+  Your final answer must always be a single, well-formed JSON object with no additional text, explanations, or formatting.
+user_prompt_template: |-
+  I will give you a report about an individual's experience with a treatment and a set of inclusion and exclusion criteria.
+  Guess whether this patient is likely to satify the given criteria.
+
+  **Report found on {{ source }}:**
+
+  {{ report }}
+
+  **Inclusion and exclusion criteria:**
+
+  {{ inclusion_criteria }}
+
+  Does the patient described in the report satisfy these criteria?
+  Options: a) No b) Yes
+
+  **Response Format:**
+  Return only a valid JSON object with exactly this key: {"meets_inclusion_criteria": "Yes" or "No"}.
+  No additional text, code blocks, or explanations.
