@@ -566,11 +566,17 @@ class SampledInclusionProbStage(SampleExtractionStage):
             {INCLUSION_COL_NAME: Literal["No", "Yes"]},
         )
 
-        # Replicate each report once per vote, with a stable unique index so
-        # extract_covariates can save/resume per vote.
+        # Replicate each report once per vote. The vote key is
+        # "<report index>:<vote number>" rather than a running position, because
+        # extract_covariates resumes on the index -- a positional key silently
+        # remaps cached votes onto different reports when num_samples or the
+        # input set changes between runs.
         replicated = data.loc[data.index.repeat(self.num_samples)].copy()
         replicated["source_index"] = replicated.index
-        replicated.index = pd.RangeIndex(len(replicated))
+        vote_number = replicated.groupby(level=0, sort=False).cumcount()
+        replicated.index = pd.Index(
+            [f"{src}:{k}" for src, k in zip(replicated["source_index"], vote_number)]
+        )
 
         extracted = await extract_covariates(
             input_df=replicated,
