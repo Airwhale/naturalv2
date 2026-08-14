@@ -26,9 +26,9 @@ from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from naturalv2.sources.components.helpers import (
-    BOUNDARY_AWARE_ALIASES,
     CONNECTOR_CHAR_SET,
     CONNECTOR_SPLIT,
+    LDN_ALIAS,
     POST_NFKC_TRANSLATION_TABLE,
     PRE_NFKC_TRANSLATION_TABLE,
     build_treatment_automaton,
@@ -275,7 +275,7 @@ class RedditCurateStage(SourceStage):
                 context.source_name, {}
             ).values():
                 for alias in aliases:
-                    if len(alias) > 3 or alias.casefold() in BOUNDARY_AWARE_ALIASES:
+                    if len(alias) > 3 or alias.casefold() == LDN_ALIAS:
                         common_names.add(alias)
             terms = list(treatment_names | common_names)
 
