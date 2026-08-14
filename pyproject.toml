@@ -107,6 +107,8 @@ create_study = "naturalv2.cli.create_study:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["integration_test: marks tests as integration tests"]
+# Integration tests hit real APIs; run them explicitly with -m integration_test
+addopts = "-m 'not integration_test'"
 asyncio_default_fixture_loop_scope = "function"
 
 [build-system]
