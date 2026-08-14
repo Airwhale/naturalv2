@@ -7,6 +7,7 @@ import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
+import numpy as np
 import pandas as pd
 import yaml
 from omegaconf import DictConfig
@@ -40,6 +41,7 @@ class ExtractType(str, Enum):
     KNOWNS = "knowns"
     IMPUTATIONS = "imputations"
     SAMPLE_TY = "sample_ty"
+    SAMPLE_INCLUSION = "sample_inclusion"
 
 
 class SampleExtractionStage(PipelineStage):
@@ -500,6 +502,121 @@ class SampleTYStage(SampleExtractionStage):
         return self.data
 
 
+class SampledInclusionProbStage(SampleExtractionStage):
+    """API-model alternative to ``InclusionProbStage``.
+
+    API models cannot return prompt log probabilities, so instead of scoring
+    "A: No" / "A: Yes" prompt variants, this stage asks the same inclusion
+    question ``num_samples`` times and uses the Yes-vote fraction as
+    P(X ∈ Inclusion | report). It emits the same ``inclusion_probs``
+    ([P(No), P(Yes)]) and ``meets_inclusion_criteria_sampled`` columns.
+
+    Each report is replicated ``num_samples`` times before the standard
+    ``extract_covariates`` pass, so per-vote extractions are saved (and
+    resumed) like any other stage; votes are aggregated afterwards.
+
+    Parameters
+    ----------
+    model_cfg : DictConfig
+        Configuration for the (API) language model used in this stage.
+    name : str, optional, default=None
+        Optional name for the stage. If not provided, the class name will be used.
+    num_samples : int, optional, default=25
+        Number of Yes/No samples per report.
+    call_kwargs : dict | None, optional, default=None
+        Sampling kwargs sent with every LLM call (e.g. temperature); set as
+        defaults in the stage config.
+    seed : int | None, optional, default=None
+        Seed for drawing the ``meets_inclusion_criteria_sampled`` label.
+    max_concurrent_workers : int | None, optional
+        Maximum number of concurrent LLM requests. If None, defaults to 10.
+    """
+
+    def __init__(
+        self,
+        model_cfg: DictConfig,
+        name: str | None = None,
+        num_samples: int = 25,
+        call_kwargs: dict[str, Any] | DictConfig | None = None,
+        seed: int | None = None,
+        max_concurrent_workers: int | None = None,
+    ) -> None:
+        super().__init__(model_cfg, name, max_concurrent_workers)
+        self.extract_type = ExtractType.SAMPLE_INCLUSION.value
+        self.num_samples = num_samples
+        self.call_kwargs = dict(call_kwargs) if call_kwargs else {}
+        self.seed = seed
+
+    def get_language_model(self) -> "APIModel":
+        """Instantiate the model with the configured sampling kwargs.
+
+        ``Model.kwargs`` are merged into every request by ``LiteLLMModel``.
+        """
+        lm = super().get_language_model()
+        lm.kwargs = {**lm.kwargs, **self.call_kwargs}
+        return lm
+
+    async def process(
+        self, data: pd.DataFrame, context: PipelineContext
+    ) -> pd.DataFrame:
+        """Estimate inclusion probabilities by sampling Yes/No votes."""
+        response_format = create_response_format(
+            "SampledInclusionResponse",
+            [INCLUSION_COL_NAME],
+            {INCLUSION_COL_NAME: Literal["No", "Yes"]},
+        )
+
+        # Replicate each report once per vote, with a stable unique index so
+        # extract_covariates can save/resume per vote.
+        replicated = data.loc[data.index.repeat(self.num_samples)].copy()
+        replicated["source_index"] = replicated.index
+        replicated.index = pd.RangeIndex(len(replicated))
+
+        extracted = await extract_covariates(
+            input_df=replicated,
+            pipeline_context=context,
+            pipeline_stage_name=self.stage_name,
+            extract_type=ExtractType.SAMPLE_INCLUSION,
+            llm=self.llm,
+            model_name=self._model_name,
+            response_format=response_format,
+            max_concurrent_requests=self.max_concurrent_workers,
+        )
+
+        self.data = self._aggregate(
+            extracted, data, context.experiment.options[INCLUSION_COL_NAME]
+        )
+        logger.info(f"Sampled inclusion probabilities for {len(self.data)} reports.")
+        return self.data
+
+    def _aggregate(
+        self, extracted: pd.DataFrame, data: pd.DataFrame, options: list[str]
+    ) -> pd.DataFrame:
+        """Collapse per-vote extractions into one row per report."""
+        rng = np.random.default_rng(self.seed)
+        records = []
+        for idx, row in data.iterrows():
+            votes = extracted.loc[extracted["source_index"] == idx, INCLUSION_COL_NAME]
+            if votes.empty:
+                logger.warning(
+                    f"Dropping report at index {idx}: all {self.num_samples} "
+                    "inclusion votes failed."
+                )
+                continue
+            p_yes = float((votes.astype(str).str.lower() == "yes").mean())
+            probs = [1.0 - p_yes, p_yes]
+
+            record = row.to_dict()
+            record[f"{INCLUSION_COL_NAME}_sampled"] = str(rng.choice(options, p=probs))
+            record["inclusion_probs"] = str(probs)
+            record["num_valid_votes"] = len(votes)
+            records.append((idx, record))
+
+        return pd.DataFrame(
+            [record for _, record in records], index=[idx for idx, _ in records]
+        )
+
+
 async def extract_covariates(  # noqa: PLR0912
     input_df: pd.DataFrame,
     pipeline_context: PipelineContext,
@@ -671,10 +788,14 @@ async def extract_covariates(  # noqa: PLR0912
             if not pbar.disable:
                 pbar.close()
 
-    if os.path.exists(file_path):
+    try:
         return pd.read_csv(file_path, index_col=0)
-
-    return pd.DataFrame()  # Return empty DataFrame if file not found
+    except (FileNotFoundError, pd.errors.EmptyDataError):
+        logger.warning(
+            f"No results were written to {file_path}; "
+            "returning an empty DataFrame."
+        )
+        return pd.DataFrame()
 
 
 def _prompt_formatter(
