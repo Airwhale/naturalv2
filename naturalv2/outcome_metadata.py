@@ -37,6 +37,16 @@ _ANY_NUMERIC_RANGE = re.compile(
     rf"(?P<maximum>{_NUMBER})",
     flags=re.IGNORECASE,
 )
+# Endpoints reported as a difference between two timepoints rather than as a
+# level. Matched against the outcome title, description and timeframe, since
+# CT.gov states it in whichever of the three the sponsor chose.
+_CHANGE_PATTERNS = (
+    re.compile(r"\bchange\s+(?:from|in|of)\b", flags=re.IGNORECASE),
+    re.compile(r"\bchange\s+from\s+baseline\b", flags=re.IGNORECASE),
+    re.compile(r"\b(?:mean|median|absolute|percent(?:age)?)\s+change\b", flags=re.IGNORECASE),
+    re.compile(r"\bbaseline\s+to\s+(?:week|day|month|year|end)\b", flags=re.IGNORECASE),
+    re.compile(r"\bdelta\b", flags=re.IGNORECASE),
+)
 
 
 class ConfiguredOutcomeBounds(BaseModel):
@@ -94,8 +104,28 @@ def _find_ranges(
     return ranges
 
 
+def is_change_from_baseline(*texts: str | None) -> bool:
+    """Whether the endpoint is scored as a change rather than as a level."""
+    return any(
+        pattern.search(text)
+        for text in texts
+        if text
+        for pattern in _CHANGE_PATTERNS
+    )
+
+
 def infer_outcome_bounds(*texts: str | None) -> OutcomeBounds | None:
     """Infer one unambiguous, explicitly described score or scale range."""
+    # A stated range describes the instrument's scale, i.e. the range of a
+    # LEVEL. An endpoint scored as change-from-baseline spans
+    # [-(max-min), +(max-min)] instead, so applying the scale range to it would
+    # reject every improvement -- for a 1-49 instrument, the whole negative half.
+    # Deriving the change span from the level range is only valid when both
+    # measurements use the full scale, which the text does not tell us, so
+    # refuse and let `outcome_bounds` configuration supply them explicitly.
+    if is_change_from_baseline(*texts):
+        return None
+
     candidates = _find_ranges(texts, _RANGE_PATTERNS)
     numeric_ranges = _find_ranges(texts, (_ANY_NUMERIC_RANGE,))
 

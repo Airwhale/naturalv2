@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from naturalv2.outcome_metadata import OutcomeBounds, infer_outcome_bounds
+from naturalv2.outcome_metadata import (
+    OutcomeBounds,
+    infer_outcome_bounds,
+    is_change_from_baseline,
+)
 
 
 @pytest.mark.parametrize(
@@ -49,3 +53,54 @@ def test_ambiguous_or_non_range_text_is_not_parsed(description):
 def test_outcome_bounds_require_a_finite_nonempty_interval(values):
     with pytest.raises(ValidationError):
         OutcomeBounds.model_validate({**values, "source": "configured"})
+
+
+@pytest.mark.parametrize(
+    "name,description",
+    [
+        (
+            "Change from Baseline in Fatigue Severity Scale",
+            "Change from baseline to week 12. Score range 1-49, higher is worse.",
+        ),
+        (
+            "Mean change in FSS",
+            "Mean change in the Fatigue Severity Scale. The scale ranges from 1 to 49.",
+        ),
+        (
+            "Change in FUNCAP55 total score",
+            "Change in total score. Possible scores range from 0 to 55.",
+        ),
+    ],
+)
+def test_change_endpoints_do_not_inherit_the_instrument_level_range(name, description):
+    """A stated range describes the scale, not the span of a difference.
+
+    Lithium reports -11.3 and -9.0 against a 1-49 instrument. Inferring [1, 49]
+    for those endpoints would reject every improvement and keep every worsening.
+    """
+    assert infer_outcome_bounds(name, description) is None
+
+
+def test_level_endpoints_still_infer_their_range():
+    """The guard must not suppress inference for ordinary level endpoints."""
+    bounds = infer_outcome_bounds(
+        "Fatigue Severity Scale", "Total score at week 12. Score range 1-49, higher is worse."
+    )
+    assert bounds is not None
+    assert (bounds.minimum, bounds.maximum) == (1.0, 49.0)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Change from baseline in total score", True),
+        ("Mean change in FSS at week 12", True),
+        ("Percentage change from baseline", True),
+        ("Delta FSS", True),
+        ("Baseline to week 24 difference", True),
+        ("Total score at week 12", False),
+        ("Fatigue Severity Scale", False),
+    ],
+)
+def test_change_from_baseline_detection(text, expected):
+    assert is_change_from_baseline(text) is expected

@@ -1,3 +1,5 @@
+import logging
+from naturalv2.outcome_metadata import OutcomeBounds
 from unittest.mock import patch
 
 import pandas as pd
@@ -189,7 +191,8 @@ def test_configured_continuous_outcome_range_is_enforced(tmp_path):
         }
     )
 
-    with patch("naturalv2.experiment.logger.warning") as log_warning:
+    # 7 of 9 rejected is 78%, which now escalates past warning to error.
+    with patch("naturalv2.experiment.logger.error") as log_warning:
         filtered = exp.discretize_ty(samples, "Functional Capacity")
 
     assert filtered[OUTCOME_COL_NAME].tolist() == [0, 55]
@@ -338,3 +341,34 @@ def test_single_arm_trial_has_no_ate_ground_truth(tmp_path):
     exp = build_experiment(tmp_path, make_completed_trial("NCT011", arms, outcomes))
     assert exp.outcome_treatment == []
     assert exp.apo_outcome_treatment == [[exp.outcome_names[0], "Drug A"]]
+
+
+def test_all_values_rejected_raises_instead_of_returning_empty(tmp_path):
+    """An empty frame here surfaces much later as an unrelated error."""
+    exp = _build_continuous_experiment(
+        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 1, "maximum": 49}}
+    )
+    # Lithium's own published answers: a change endpoint against a level range.
+    samples = pd.DataFrame(
+        {TREATMENT_COL_NAME: ["Drug A"] * 3, OUTCOME_COL_NAME: [-11.3, -9.0, -20.0]}
+    )
+    with pytest.raises(ValueError, match="fell outside"):
+        exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
+
+
+def test_low_rejection_rate_stays_a_warning(tmp_path):
+    exp = _build_continuous_experiment(
+        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}}
+    )
+    # 1 of 50 outside -> 2%, below the escalation threshold
+    samples = pd.DataFrame(
+        {
+            TREATMENT_COL_NAME: ["Drug A"] * 50,
+            OUTCOME_COL_NAME: [10.0] * 49 + [4_444_000.0],
+        }
+    )
+    with patch("naturalv2.experiment.logger.error") as log_error:
+        with patch("naturalv2.experiment.logger.warning") as log_warning:
+            exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
+    assert log_warning.called
+    assert not log_error.called

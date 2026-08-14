@@ -53,6 +53,9 @@ from naturalv2.utils import (
 
 logger = logging.getLogger(__name__)
 
+# Rejection at or above this share is logged as an error rather than a warning.
+HIGH_REJECTION_RATE = 0.10
+
 pd.set_option("future.no_silent_downcasting", True)
 
 DRUG_NAME_SANITIZER = re.compile(
@@ -697,7 +700,15 @@ class Experiment:
         n_sampled = len(extractions)
         n_rejected = int((~valid).sum())
         rejection_rate = n_rejected / n_sampled if n_sampled else 0.0
-        log = logger.warning if n_rejected else logger.info
+        # Severity tracks the rate, not the count: one bad parse in a thousand is
+        # routine, a tenth of the sample means the bounds or the extraction are
+        # wrong and the estimate that follows is built on what survived.
+        if rejection_rate >= HIGH_REJECTION_RATE:
+            log = logger.error
+        elif n_rejected:
+            log = logger.warning
+        else:
+            log = logger.info
         log(
             "Outcome range validation: nct_id=%s outcome=%r minimum=%s maximum=%s "
             "bounds_source=%s n_sampled=%d n_rejected=%d rejection_rate=%.6f",
@@ -723,6 +734,17 @@ class Experiment:
                 "rejection_rate": rejection_rate,
             },
         )
+        if n_sampled and n_rejected == n_sampled:
+            raise ValueError(
+                f"Every sampled outcome for {self.nct_id!r} / {outcome!r} fell outside "
+                f"[{bounds.minimum}, {bounds.maximum}] (source: {bounds.source}). "
+                "Returning an empty frame here surfaces much later as an unrelated "
+                "error, so failing now: either the bounds are wrong for this endpoint "
+                "-- a change-from-baseline outcome scored against its instrument's "
+                "level range is the usual cause -- or extraction is not producing "
+                "values on this scale."
+            )
+
         return extractions.loc[valid].copy()
 
     def apply_transform(
