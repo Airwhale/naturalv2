@@ -57,12 +57,15 @@ def test_oi_missing_treatment_extrapolates_without_crash():
     assert not np.isnan(ites).any()
 
 
-def test_ipw_single_treatment_value_returns_all_nan():
+def test_ipw_fit_error_propagates_with_context():
     # LogisticRegression needs >=2 classes to fit at all.
     data = make_data(10, [0] * 10)
     mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
-    ites = mc.get_individual_treatment_effects(data, outcome="dummy")
-    assert np.isnan(ites).all()
+
+    with pytest.raises(ValueError) as exc_info:
+        mc.get_individual_treatment_effects(data, outcome="dummy")
+
+    assert "outcome='dummy'" in " ".join(exc_info.value.__notes__)
 
 
 def test_oi_single_treatment_value_still_returns_finite_values():
