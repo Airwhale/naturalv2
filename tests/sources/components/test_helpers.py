@@ -3,6 +3,7 @@ import pytest
 from naturalv2.sources.components.helpers import (
     build_treatment_automaton,
     canonicalize_reports_for_matching,
+    extract_mentions,
     normalize_text_for_matching,
 )
 
@@ -111,8 +112,7 @@ def test_canonicalize_for_matching_handles_empty_input():
 
 def _find_matches(automaton, raw_text):
     normalized = normalize_text_for_matching(raw_text)
-    canonical_text, _ = canonicalize_reports_for_matching(normalized)
-    return {match for _, match in automaton.iter(canonical_text)}
+    return set(extract_mentions(normalized, automaton))
 
 
 def test_build_treatment_automaton_matches_normalized_variants():
@@ -152,3 +152,11 @@ def test_build_treatment_automaton_handles_parenthetical_aliases_and_skips_empty
 
     matches = _find_matches(automaton, text)
     assert matches == {"aspirin", "aspirin (oral tablet)"}
+
+
+def test_only_ldn_is_allowed_as_a_boundary_aware_short_alias():
+    automaton = build_treatment_automaton(["naltrexone", "LDN", "VNS"])
+
+    assert _find_matches(automaton, "LDN helped") == {"ldn"}
+    assert _find_matches(automaton, "couldnt wouldnt aldnamide") == set()
+    assert _find_matches(automaton, "VNS helped") == set()

@@ -17,6 +17,8 @@ import regex as re
 
 logger = logging.getLogger(__name__)
 
+LDN_ALIAS = "ldn"
+
 _HYPHEN_RUNS = "\u2010\u2011\u2012\u2013\u2014\u2212-"
 _ZERO_WIDTH = "\u200b\u200c\u200d\u2060"
 
@@ -276,8 +278,8 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     treatment aliases in text in a single pass.
 
     Each alias is normalized and expanded into canonical variations (with and
-    without parenthetical qualifiers). Short variations (≤3 characters) are
-    filtered out to reduce false positives.
+    without parenthetical qualifiers). Variations with three characters or fewer
+    are filtered out except ``LDN``, whose matches require word boundaries.
 
     Parameters
     ----------
@@ -296,8 +298,9 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     The automaton maps each pattern to its canonical form, not the original alias.
     This ensures consistent representation in match results.
 
-    Very short canonical forms (3 characters or less) are excluded because they
-    generate too many false positives (e.g., "mg", "ml", "a", "b").
+    Short canonical forms generate too many false positives (e.g., "mg", "ml",
+    "a", "b"). ``LDN`` is the sole exception because its matches are validated
+    against word boundaries by ``is_valid_alias_match()``.
 
     See Also
     --------
@@ -310,7 +313,7 @@ def build_treatment_automaton(aliases: Sequence[str]) -> ahocorasick.Automaton:
     # Use the shared iterator to ensure consistency
     for alias in aliases:
         for canonical_alias in iter_canonical_variations(alias):
-            if len(canonical_alias) <= 3:  # Drop short canonical forms
+            if len(canonical_alias) <= 3 and canonical_alias != LDN_ALIAS:
                 continue
 
             # Map the pattern -> canonical form
@@ -408,6 +411,20 @@ def canonicalize_reports_for_matching(text: str) -> tuple[str, list[int]]:
     return canonical_text, canonical_to_original_indices
 
 
+def is_valid_alias_match(
+    canonical_text: str, end_index: int, canonical_alias: str
+) -> bool:
+    """Return whether a match satisfies the LDN boundary rule."""
+    if canonical_alias != LDN_ALIAS:
+        return True
+
+    start_index = end_index - len(canonical_alias) + 1
+    return (start_index == 0 or not canonical_text[start_index - 1].isalnum()) and (
+        end_index == len(canonical_text) - 1
+        or not canonical_text[end_index + 1].isalnum()
+    )
+
+
 def extract_mentions(text: str, automaton: ahocorasick.Automaton) -> list[str]:
     """
     Extract all treatment mentions from text using an Aho-Corasick automaton.
@@ -469,8 +486,9 @@ def extract_mentions(text: str, automaton: ahocorasick.Automaton) -> list[str]:
 
     # .iter() returns (end_index, value).
     # In build_treatment_automaton, we set 'value' to be the canonical_alias.
-    for _, canonical_alias in automaton.iter(canonical_text):
-        found_mentions.add(canonical_alias)
+    for end_index, canonical_alias in automaton.iter(canonical_text):
+        if is_valid_alias_match(canonical_text, end_index, canonical_alias):
+            found_mentions.add(canonical_alias)
 
     return sorted(found_mentions)
 

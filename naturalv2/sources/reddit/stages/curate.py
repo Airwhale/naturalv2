@@ -28,9 +28,11 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from naturalv2.sources.components.helpers import (
     CONNECTOR_CHAR_SET,
     CONNECTOR_SPLIT,
+    LDN_ALIAS,
     POST_NFKC_TRANSLATION_TABLE,
     PRE_NFKC_TRANSLATION_TABLE,
     build_treatment_automaton,
+    is_valid_alias_match,
     iter_canonical_variations,
 )
 from naturalv2.sources.core import SourceStage
@@ -273,7 +275,7 @@ class RedditCurateStage(SourceStage):
                 context.source_name, {}
             ).values():
                 for alias in aliases:
-                    if len(alias) > 3:  # ignore short common names
+                    if len(alias) > 3 or alias.casefold() == LDN_ALIAS:
                         common_names.add(alias)
             terms = list(treatment_names | common_names)
 
@@ -609,8 +611,9 @@ def _process_chunk(
 
             found = set()
 
-            for _, canonical_alias in ctx.automaton.iter(text):
-                found.add(canonical_alias)
+            for end_index, canonical_alias in ctx.automaton.iter(text):
+                if is_valid_alias_match(text, end_index, canonical_alias):
+                    found.add(canonical_alias)
             results.append(sorted(found))
 
         return pl.Series(results, dtype=pl.List(pl.String))
