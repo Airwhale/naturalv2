@@ -61,7 +61,10 @@ class NaturalMC:
         Raises
         ------
         ValueError
-            If the treatment column or covariates are not present in the data.
+            If required data is absent.
+        Exception
+            Any estimator fitting or prediction error is re-raised with trial,
+            outcome, data-shape, and observed-treatment context.
 
         """
         sampled_treatment_col = f"{TREATMENT_COL_NAME}_discretized"
@@ -96,6 +99,7 @@ class NaturalMC:
             Y=observational_data[sampled_outcome_col].copy(),  # outcome
         )
 
+        observed_treatments = sorted(data.T.unique().tolist())
         try:
             model.fit(data)
             all_ites = np.zeros((self._num_treat, len(observational_data)))
@@ -115,6 +119,13 @@ class NaturalMC:
                 raise NotImplementedError(
                     f"Estimator type '{self.estimator_type}' not implemented."
                 )
-        except:
-            all_ites = np.full((self._num_treat, len(observational_data)), np.nan)
+        except Exception as exc:
+            trial_id = getattr(self.experiment, "nct_id", "unknown")
+            exc.add_note(
+                f"NaturalMC estimator_type={self.estimator_type!r} failed for "
+                f"trial={trial_id!r}, outcome={outcome!r}, "
+                f"data_shape={observational_data.shape}, "
+                f"observed_treatments={observed_treatments}."
+            )
+            raise
         return all_ites
