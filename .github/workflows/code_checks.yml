@@ -76,8 +76,10 @@ jobs:
         uses: pypa/gh-action-pip-audit@v1.1.0
         with:
           virtual-environment: .venv/
-          # GHSA-w8v5-vhqr-4h9v: no fix available for diskcache
-          # CVE-2025-3000: no fix for torch v2.11.0
+          # PYSEC-2026-3447: setuptools — vllm requires setuptools<81 on Python >=3.12, fix requires 83.0.0
+          # PYSEC-2026-3552/3553/3554: cryptography — presidio-anonymizer requires cryptography<49
           ignore-vulns: |
-            GHSA-w8v5-vhqr-4h9v
-            CVE-2025-3000
+            PYSEC-2026-3447
+            PYSEC-2026-3552
+            PYSEC-2026-3553
+            PYSEC-2026-3554
