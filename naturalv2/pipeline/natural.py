@@ -4,7 +4,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import pandas as pd
@@ -52,9 +52,7 @@ class PipelineContext:
     exp_name: str
 
     #: Policy controlling when rejected samples must stop estimation.
-    sample_validation: SampleValidationConfig = field(
-        default_factory=SampleValidationConfig
-    )
+    sample_validation: SampleValidationConfig
 
     #: Token tracker to monitor token usage across stages.
     _token_tracker: TokenTracker = TokenTracker()

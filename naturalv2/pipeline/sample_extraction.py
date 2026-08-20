@@ -461,10 +461,10 @@ def _validate_sample_ty_extractions(
     *,
     nct_id: str,
     outcome: str,
-    sample_validation: SampleValidationConfig | None = None,
+    sample_validation: SampleValidationConfig,
 ) -> pd.DataFrame:
     """Validate combined cached and newly sampled treatment/outcome records."""
-    validation_config = sample_validation or SampleValidationConfig()
+    validation_config = sample_validation
     required_columns = {TREATMENT_COL_NAME, OUTCOME_COL_NAME}
     missing_columns = required_columns.difference(extractions.columns)
     if missing_columns:

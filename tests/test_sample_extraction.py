@@ -15,6 +15,9 @@ from naturalv2.pipeline.sample_extraction import (
 )
 
 
+DEFAULT_SAMPLE_VALIDATION = SampleValidationConfig(high_rejection_rate=0.10)
+
+
 class ContinuousExperiment:
     options = {TREATMENT_COL_NAME: ["Treatment A"]}
 
@@ -67,7 +70,10 @@ def test_artifact_validation_rejects_cached_non_finite_outcomes():
             response_format,
             nct_id="NCT012",
             outcome="Outcome A",
-            sample_validation=SampleValidationConfig(allow_high_rejection_rate=True),
+            sample_validation=SampleValidationConfig(
+                high_rejection_rate=0.10,
+                allow_high_rejection_rate=True,
+            ),
         )
 
     assert validated.index.tolist() == [10]
@@ -114,7 +120,10 @@ def test_artifact_validation_raises_when_every_record_is_invalid():
             response_format,
             nct_id="NCT012",
             outcome="Outcome A",
-            sample_validation=SampleValidationConfig(allow_high_rejection_rate=True),
+            sample_validation=SampleValidationConfig(
+                high_rejection_rate=0.10,
+                allow_high_rejection_rate=True,
+            ),
         )
 
 
@@ -138,6 +147,7 @@ def test_high_rejection_rate_stops_estimation_by_default():
             response_format,
             nct_id="NCT012",
             outcome="Outcome A",
+            sample_validation=DEFAULT_SAMPLE_VALIDATION,
         )
 
     assert log_error.call_args.kwargs["extra"]["status"] == "blocked"
@@ -166,7 +176,7 @@ def test_configured_high_rejection_threshold_is_enforced():
 
 
 def test_low_rejection_rate_stays_a_warning():
-    """Below HIGH_REJECTION_RATE the gate warns rather than errors."""
+    """Below the configured rejection threshold the gate warns."""
     response_format = _create_sample_ty_response_format(
         ContinuousExperiment(), "Outcome A"
     )
@@ -182,7 +192,11 @@ def test_low_rejection_rate_stays_a_warning():
         patch("naturalv2.pipeline.sample_extraction.logger.warning") as log_warning,
     ):
         _validate_sample_ty_extractions(
-            extractions, response_format, nct_id="NCT012", outcome="Outcome A"
+            extractions,
+            response_format,
+            nct_id="NCT012",
+            outcome="Outcome A",
+            sample_validation=DEFAULT_SAMPLE_VALIDATION,
         )
     assert log_warning.called
     assert not log_error.called
@@ -210,7 +224,10 @@ def test_rejection_reasons_are_counted_per_field():
             response_format,
             nct_id="NCT012",
             outcome="Outcome A",
-            sample_validation=SampleValidationConfig(allow_high_rejection_rate=True),
+            sample_validation=SampleValidationConfig(
+                high_rejection_rate=0.10,
+                allow_high_rejection_rate=True,
+            ),
         )
     by_field = log.call_args.kwargs["extra"]["rejected_by_field"]
     assert by_field == {TREATMENT_COL_NAME: 1, OUTCOME_COL_NAME: 1}
@@ -229,7 +246,11 @@ def test_a_record_failing_both_fields_counts_against_both():
         pytest.raises(ValueError, match="failed artifact validation"),
     ):
         _validate_sample_ty_extractions(
-            extractions, response_format, nct_id="NCT012", outcome="Outcome A"
+            extractions,
+            response_format,
+            nct_id="NCT012",
+            outcome="Outcome A",
+            sample_validation=DEFAULT_SAMPLE_VALIDATION,
         )
     by_field = log.call_args.kwargs["extra"]["rejected_by_field"]
     assert by_field == {TREATMENT_COL_NAME: 1, OUTCOME_COL_NAME: 1}

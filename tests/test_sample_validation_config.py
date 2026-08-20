@@ -4,6 +4,11 @@ from pydantic import ValidationError
 from naturalv2.pipeline import SampleValidationConfig
 
 
+def test_sample_validation_requires_configured_threshold():
+    with pytest.raises(ValidationError):
+        SampleValidationConfig()
+
+
 @pytest.mark.parametrize(
     "high_rejection_rate",
     [0.0, -0.1, 1.01, float("nan"), float("inf")],
