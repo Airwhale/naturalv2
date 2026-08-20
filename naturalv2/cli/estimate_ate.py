@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from hydra.utils import instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from scipy.stats import norm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
@@ -23,6 +23,7 @@ from naturalv2.pipeline import (
     NATURALPipeline,
     PipelineContext,
     PipelineStage,
+    SampleValidationConfig,
 )
 from naturalv2.study import Study, get_study_filepaths
 from naturalv2.utils import get_experiment_filepath
@@ -367,6 +368,9 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:  # noqa: PLR0912
         experiment._avg_potential_outcomes = []
         experiment._set_outcome_treatment_effects(trial)
         experiment.to_yaml(exp_file)
+    sample_validation = SampleValidationConfig.model_validate(
+        OmegaConf.to_container(cfg.sample_validation, resolve=True)
+    )
     os.makedirs(
         os.path.join(
             cfg.save_path, "results", f"{experiment.nct_id}_{cfg.experiment_name}"
@@ -390,6 +394,7 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:  # noqa: PLR0912
                 outcome=outcome,
                 save_path=cfg.save_path,
                 exp_name=cfg.experiment_name,
+                sample_validation=sample_validation,
             )
 
             pipeline_stages: list[PipelineStage] = []
