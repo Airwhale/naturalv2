@@ -10,9 +10,7 @@ TREATMENT_COL_NAME = "treatment_taken"
 INCLUSION_COL_NAME = "meets_inclusion_criteria"
 OUTCOME_COL_NAME = "outcome_category"
 
-# Default share of records a validation gate may reject before the event stops
-# being routine. One bad parse in a thousand is noise; a tenth of the sample
-# means the bounds or the extraction are wrong.
+# Fail before estimation at or above the rejection threshold.
 HIGH_REJECTION_RATE = 0.10
 
 
