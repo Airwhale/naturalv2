@@ -117,11 +117,13 @@ def test_low_rejection_rate_stays_a_warning():
             OUTCOME_COL_NAME: [1.0] * 49 + [float("inf")],
         }
     )
-    with patch("naturalv2.pipeline.sample_extraction.logger.error") as log_error:
-        with patch("naturalv2.pipeline.sample_extraction.logger.warning") as log_warning:
-            _validate_sample_ty_extractions(
-                extractions, response_format, nct_id="NCT012", outcome="Outcome A"
-            )
+    with (
+        patch("naturalv2.pipeline.sample_extraction.logger.error") as log_error,
+        patch("naturalv2.pipeline.sample_extraction.logger.warning") as log_warning,
+    ):
+        _validate_sample_ty_extractions(
+            extractions, response_format, nct_id="NCT012", outcome="Outcome A"
+        )
     assert log_warning.called
     assert not log_error.called
 
@@ -133,7 +135,12 @@ def test_rejection_reasons_are_counted_per_field():
     )
     extractions = pd.DataFrame(
         {
-            TREATMENT_COL_NAME: ["Treatment A", "Not A Treatment", "Treatment A", "Treatment A"],
+            TREATMENT_COL_NAME: [
+                "Treatment A",
+                "Not A Treatment",
+                "Treatment A",
+                "Treatment A",
+            ],
             OUTCOME_COL_NAME: [1.0, 2.0, float("inf"), 4.0],
         }
     )
@@ -153,10 +160,12 @@ def test_a_record_failing_both_fields_counts_against_both():
     extractions = pd.DataFrame(
         {TREATMENT_COL_NAME: ["Not A Treatment"], OUTCOME_COL_NAME: [float("nan")]}
     )
-    with patch("naturalv2.pipeline.sample_extraction.logger.error") as log:
-        with pytest.raises(ValueError, match="failed artifact validation"):
-            _validate_sample_ty_extractions(
-                extractions, response_format, nct_id="NCT012", outcome="Outcome A"
-            )
+    with (
+        patch("naturalv2.pipeline.sample_extraction.logger.error") as log,
+        pytest.raises(ValueError, match="failed artifact validation"),
+    ):
+        _validate_sample_ty_extractions(
+            extractions, response_format, nct_id="NCT012", outcome="Outcome A"
+        )
     by_field = log.call_args.kwargs["extra"]["rejected_by_field"]
     assert by_field == {TREATMENT_COL_NAME: 1, OUTCOME_COL_NAME: 1}
