@@ -20,6 +20,7 @@ from naturalv2.pipeline.constants import (
     INCLUSION_COL_NAME,
     OUTCOME_COL_NAME,
     TREATMENT_COL_NAME,
+    SampleValidationConfig,
     rejection_log_level,
 )
 from naturalv2.pipeline.natural import PipelineContext, PipelineStage
@@ -460,8 +461,10 @@ def _validate_sample_ty_extractions(
     *,
     nct_id: str,
     outcome: str,
+    sample_validation: SampleValidationConfig | None = None,
 ) -> pd.DataFrame:
     """Validate combined cached and newly sampled treatment/outcome records."""
+    validation_config = sample_validation or SampleValidationConfig()
     required_columns = {TREATMENT_COL_NAME, OUTCOME_COL_NAME}
     missing_columns = required_columns.difference(extractions.columns)
     if missing_columns:
@@ -497,25 +500,50 @@ def _validate_sample_ty_extractions(
     n_sampled = len(extractions)
     n_rejected = n_sampled - len(validated_payloads)
     rejection_rate = n_rejected / n_sampled if n_sampled else 0.0
-    log = rejection_log_level(logger, n_rejected, rejection_rate)
+    high_rejection_rate = (
+        n_rejected > 0 and rejection_rate >= validation_config.high_rejection_rate
+    )
+    blocks_estimation = n_sampled > 0 and (
+        n_rejected == n_sampled
+        or (high_rejection_rate and not validation_config.allow_high_rejection_rate)
+    )
+    log = rejection_log_level(
+        logger,
+        n_rejected,
+        rejection_rate,
+        high_rejection_rate=validation_config.high_rejection_rate,
+    )
     log(
         "Sampled extraction artifact validation: nct_id=%s outcome=%r "
-        "n_sampled=%d n_rejected=%d rejection_rate=%.6f rejected_by_field=%s",
+        "n_sampled=%d n_rejected=%d rejection_rate=%.6f "
+        "high_rejection_rate_threshold=%.6f allow_high_rejection_rate=%s "
+        "rejected_by_field=%s",
         nct_id,
         outcome,
         n_sampled,
         n_rejected,
         rejection_rate,
+        validation_config.high_rejection_rate,
+        validation_config.allow_high_rejection_rate,
         dict(rejected_by_field),
         extra={
             "phase": "sample_ty_artifact_validation",
-            "schema_id": "sample_ty_response.v2",
-            "status": "rejected" if n_rejected else "accepted",
+            "schema_id": "sample_ty_response.v3",
+            "status": (
+                "blocked"
+                if blocks_estimation
+                else "rejected"
+                if n_rejected
+                else "accepted"
+            ),
             "nct_id": nct_id,
             "outcome": outcome,
             "n_sampled": n_sampled,
             "n_rejected": n_rejected,
             "rejection_rate": rejection_rate,
+            "high_rejection_rate_threshold": (validation_config.high_rejection_rate),
+            "allow_high_rejection_rate": (validation_config.allow_high_rejection_rate),
+            "blocks_estimation": blocks_estimation,
             "rejected_by_field": dict(rejected_by_field),
         },
     )
@@ -524,6 +552,17 @@ def _validate_sample_ty_extractions(
         raise ValueError(
             f"Every sampled treatment/outcome record for {nct_id!r} / "
             f"{outcome!r} failed artifact validation."
+        )
+
+    if high_rejection_rate and not validation_config.allow_high_rejection_rate:
+        raise ValueError(
+            f"Rejected {n_rejected} of {n_sampled} sampled treatment/outcome "
+            f"records for {nct_id!r} / {outcome!r} ({rejection_rate:.2%}), "
+            "meeting the configured high-rejection threshold "
+            f"({validation_config.high_rejection_rate:.2%}). Estimation stopped "
+            "to avoid bias from selected survivors. Set "
+            "`sample_validation.allow_high_rejection_rate=true` to continue "
+            "explicitly."
         )
 
     validated_extractions = extractions.loc[valid_mask].copy()
@@ -591,6 +630,7 @@ class SampleTYStage(SampleExtractionStage):
             response_format,
             nct_id=context.experiment.nct_id,
             outcome=context.outcome,
+            sample_validation=context.sample_validation,
         )
         self.data = context.experiment.discretize_ty(self.data, context.outcome)
         logger.info(f"Final: {len(self.data)} reports after sampling TY.")
