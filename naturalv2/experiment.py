@@ -696,10 +696,15 @@ class Experiment:
         sample_validation: SampleValidationConfig | None = None,
     ) -> pd.DataFrame:
         """Reject sampled continuous outcomes outside known inclusive bounds."""
-        validation_config = sample_validation or SampleValidationConfig()
         bounds = self.outcome_bounds.get(outcome)
         if bounds is None or self.is_binary_outcome(outcome):
             return extractions
+        if sample_validation is None:
+            raise ValueError(
+                "Sample validation policy is required when outcome bounds are "
+                "configured."
+            )
+        validation_config = sample_validation
         if OUTCOME_COL_NAME not in extractions.columns:
             raise ValueError(
                 f"`{OUTCOME_COL_NAME}` column is missing from extractions."

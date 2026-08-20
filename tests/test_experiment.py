@@ -19,6 +19,9 @@ from tests.factories import (
 )
 
 
+DEFAULT_SAMPLE_VALIDATION = SampleValidationConfig(high_rejection_rate=0.10)
+
+
 def _build_continuous_experiment(
     tmp_path,
     *,
@@ -198,7 +201,10 @@ def test_configured_continuous_outcome_range_is_enforced(tmp_path):
         filtered = exp.discretize_ty(
             samples,
             "Functional Capacity",
-            sample_validation=SampleValidationConfig(allow_high_rejection_rate=True),
+            sample_validation=SampleValidationConfig(
+                high_rejection_rate=0.10,
+                allow_high_rejection_rate=True,
+            ),
         )
 
     assert filtered[OUTCOME_COL_NAME].tolist() == [0, 55]
@@ -257,7 +263,11 @@ def test_high_rejection_rate_stops_estimation_by_default(tmp_path):
         patch("naturalv2.experiment.logger.error") as log_error,
         pytest.raises(ValueError, match="high-rejection threshold"),
     ):
-        exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
+        exp.filter_sampled_outcomes_to_range(
+            samples,
+            "Functional Capacity",
+            sample_validation=DEFAULT_SAMPLE_VALIDATION,
+        )
 
     assert log_error.call_args.kwargs["extra"]["status"] == "blocked"
     assert log_error.call_args.kwargs["extra"]["blocks_estimation"] is True
@@ -424,7 +434,10 @@ def test_all_values_rejected_raises_instead_of_returning_empty(tmp_path):
         exp.filter_sampled_outcomes_to_range(
             samples,
             "Functional Capacity",
-            sample_validation=SampleValidationConfig(allow_high_rejection_rate=True),
+            sample_validation=SampleValidationConfig(
+                high_rejection_rate=0.10,
+                allow_high_rejection_rate=True,
+            ),
         )
 
 
@@ -443,7 +456,11 @@ def test_nullable_missing_outcome_counts_as_rejected_and_raises(tmp_path):
         patch("naturalv2.experiment.logger.error") as log_error,
         pytest.raises(ValueError, match="fell outside"),
     ):
-        exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
+        exp.filter_sampled_outcomes_to_range(
+            samples,
+            "Functional Capacity",
+            sample_validation=DEFAULT_SAMPLE_VALIDATION,
+        )
 
     assert log_error.call_args.kwargs["extra"]["n_rejected"] == 1
     assert log_error.call_args.kwargs["extra"]["rejected_by_side"] == {
@@ -468,6 +485,10 @@ def test_low_rejection_rate_stays_a_warning(tmp_path):
         patch("naturalv2.experiment.logger.error") as log_error,
         patch("naturalv2.experiment.logger.warning") as log_warning,
     ):
-        exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
+        exp.filter_sampled_outcomes_to_range(
+            samples,
+            "Functional Capacity",
+            sample_validation=DEFAULT_SAMPLE_VALIDATION,
+        )
     assert log_warning.called
     assert not log_error.called
