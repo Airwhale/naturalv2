@@ -197,11 +197,21 @@ def test_configured_continuous_outcome_range_is_enforced(tmp_path):
 
     assert filtered[OUTCOME_COL_NAME].tolist() == [0, 55]
     assert filtered[f"{OUTCOME_COL_NAME}_discretized"].tolist() == [0, 55]
-    assert log_warning.call_args.args[-4:-1] == ("configured", 9, 7)
-    assert log_warning.call_args.args[-1] == pytest.approx(7 / 9)
+    # rejected_by_side is now the final positional argument
+    assert log_warning.call_args.args[-5:-2] == ("configured", 9, 7)
+    assert log_warning.call_args.args[-2] == pytest.approx(7 / 9)
+    # to_numeric leaves the infinities as infinities, so they compare against the
+    # bounds like any other number: -inf joins -1 below, +inf joins 56 and
+    # 4_444_000 above. Only "not-a-number" and nan become NaN. With #50 merged
+    # the infinities never reach here, so this is the defensive path.
+    assert log_warning.call_args.args[-1] == {
+        "below_minimum": 2,
+        "above_maximum": 3,
+        "not_numeric": 2,
+    }
     assert log_warning.call_args.kwargs["extra"] == {
         "phase": "outcome_range_validation",
-        "schema_id": "outcome_bounds.v1",
+        "schema_id": "outcome_bounds.v2",
         "status": "rejected",
         "nct_id": "NCT012",
         "outcome": "Functional Capacity",
@@ -211,6 +221,11 @@ def test_configured_continuous_outcome_range_is_enforced(tmp_path):
         "n_sampled": 9,
         "n_rejected": 7,
         "rejection_rate": pytest.approx(7 / 9),
+        "rejected_by_side": {
+            "below_minimum": 2,
+            "above_maximum": 3,
+            "not_numeric": 2,
+        },
     }
 
 

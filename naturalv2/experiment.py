@@ -39,6 +39,7 @@ from naturalv2.pipeline.constants import (
     INCLUSION_COL_NAME,
     OUTCOME_COL_NAME,
     TREATMENT_COL_NAME,
+    rejection_log_level,
 )
 from naturalv2.prompts import load_prompt
 from naturalv2.sources.drugbank_cache import get_drugbank_aliases
@@ -52,9 +53,6 @@ from naturalv2.utils import (
 
 
 logger = logging.getLogger(__name__)
-
-# Rejection at or above this share is logged as an error rather than a warning.
-HIGH_REJECTION_RATE = 0.10
 
 pd.set_option("future.no_silent_downcasting", True)
 
@@ -700,18 +698,21 @@ class Experiment:
         n_sampled = len(extractions)
         n_rejected = int((~valid).sum())
         rejection_rate = n_rejected / n_sampled if n_sampled else 0.0
-        # Severity tracks the rate, not the count: one bad parse in a thousand is
-        # routine, a tenth of the sample means the bounds or the extraction are
-        # wrong and the estimate that follows is built on what survived.
-        if rejection_rate >= HIGH_REJECTION_RATE:
-            log = logger.error
-        elif n_rejected:
-            log = logger.warning
-        else:
-            log = logger.info
+        # Which side of the interval a value fell on says what went wrong.
+        # Everything below the minimum usually means the bounds are shifted
+        # rather than the values being wrong -- a change-from-baseline endpoint
+        # measured against its instrument's level range is the standard case.
+        # A mix of both sides is noise.
+        rejected_by_side = {
+            "below_minimum": int((numeric_outcomes < bounds.minimum).sum()),
+            "above_maximum": int((numeric_outcomes > bounds.maximum).sum()),
+            "not_numeric": int(numeric_outcomes.isna().sum()),
+        }
+        log = rejection_log_level(logger, n_rejected, rejection_rate)
         log(
             "Outcome range validation: nct_id=%s outcome=%r minimum=%s maximum=%s "
-            "bounds_source=%s n_sampled=%d n_rejected=%d rejection_rate=%.6f",
+            "bounds_source=%s n_sampled=%d n_rejected=%d rejection_rate=%.6f "
+            "rejected_by_side=%s",
             self.nct_id,
             outcome,
             bounds.minimum,
@@ -720,9 +721,10 @@ class Experiment:
             n_sampled,
             n_rejected,
             rejection_rate,
+            rejected_by_side,
             extra={
                 "phase": "outcome_range_validation",
-                "schema_id": "outcome_bounds.v1",
+                "schema_id": "outcome_bounds.v2",
                 "status": "rejected" if n_rejected else "accepted",
                 "nct_id": self.nct_id,
                 "outcome": outcome,
@@ -732,6 +734,7 @@ class Experiment:
                 "n_sampled": n_sampled,
                 "n_rejected": n_rejected,
                 "rejection_rate": rejection_rate,
+                "rejected_by_side": rejected_by_side,
             },
         )
         if n_sampled and n_rejected == n_sampled:
