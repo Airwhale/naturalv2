@@ -3,6 +3,7 @@
 import asyncio
 import importlib.resources
 import logging
+from collections import Counter
 import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
@@ -19,6 +20,7 @@ from naturalv2.pipeline.constants import (
     INCLUSION_COL_NAME,
     OUTCOME_COL_NAME,
     TREATMENT_COL_NAME,
+    rejection_log_level,
 )
 from naturalv2.pipeline.natural import PipelineContext, PipelineStage
 from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
@@ -468,6 +470,11 @@ def _validate_sample_ty_extractions(
 
     valid_mask: list[bool] = []
     validated_payloads: list[dict[str, Any]] = []
+    # Which field a record failed on says what went wrong. A rejected outcome
+    # means the model emitted something unusable; a rejected treatment usually
+    # means `treatment_names` changed and the cached artifact predates it. One
+    # counter cannot distinguish "the model misbehaved" from "rebuild the cache".
+    rejected_by_field: Counter[str] = Counter()
     for _, row in extractions.iterrows():
         payload = {
             TREATMENT_COL_NAME: row[TREATMENT_COL_NAME],
@@ -475,7 +482,12 @@ def _validate_sample_ty_extractions(
         }
         try:
             validated = response_format.model_validate(payload)
-        except ValidationError:
+        except ValidationError as exc:
+            # Count every failing field, not just the first -- a record can fail
+            # on both -- and fall back to a sentinel for model-level errors,
+            # whose `loc` is empty.
+            fields = {str(err["loc"][0]) for err in exc.errors() if err["loc"]}
+            rejected_by_field.update(fields or {"<record>"})
             valid_mask.append(False)
             continue
 
@@ -485,24 +497,26 @@ def _validate_sample_ty_extractions(
     n_sampled = len(extractions)
     n_rejected = n_sampled - len(validated_payloads)
     rejection_rate = n_rejected / n_sampled if n_sampled else 0.0
-    log = logger.warning if n_rejected else logger.info
+    log = rejection_log_level(logger, n_rejected, rejection_rate)
     log(
         "Sampled extraction artifact validation: nct_id=%s outcome=%r "
-        "n_sampled=%d n_rejected=%d rejection_rate=%.6f",
+        "n_sampled=%d n_rejected=%d rejection_rate=%.6f rejected_by_field=%s",
         nct_id,
         outcome,
         n_sampled,
         n_rejected,
         rejection_rate,
+        dict(rejected_by_field),
         extra={
             "phase": "sample_ty_artifact_validation",
-            "schema_id": "sample_ty_response.v1",
+            "schema_id": "sample_ty_response.v2",
             "status": "rejected" if n_rejected else "accepted",
             "nct_id": nct_id,
             "outcome": outcome,
             "n_sampled": n_sampled,
             "n_rejected": n_rejected,
             "rejection_rate": rejection_rate,
+            "rejected_by_field": dict(rejected_by_field),
         },
     )
 
