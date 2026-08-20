@@ -43,7 +43,13 @@ _ANY_NUMERIC_RANGE = re.compile(
 _CHANGE_PATTERNS = (
     re.compile(r"\bchange\s+(?:from|in|of)\b", flags=re.IGNORECASE),
     re.compile(r"\bchange\s+from\s+baseline\b", flags=re.IGNORECASE),
-    re.compile(r"\b(?:mean|median|absolute|percent(?:age)?)\s+change\b", flags=re.IGNORECASE),
+    re.compile(
+        r"\b(?:mean|median|absolute|percent(?:age)?)\s+change\b", flags=re.IGNORECASE
+    ),
+    re.compile(
+        r"\b(?:difference|reduction|improvement)\s+from\s+baseline\b",
+        flags=re.IGNORECASE,
+    ),
     re.compile(r"\bbaseline\s+to\s+(?:week|day|month|year|end)\b", flags=re.IGNORECASE),
     re.compile(r"\bdelta\b", flags=re.IGNORECASE),
 )
@@ -107,10 +113,7 @@ def _find_ranges(
 def is_change_from_baseline(*texts: str | None) -> bool:
     """Whether the endpoint is scored as a change rather than as a level."""
     return any(
-        pattern.search(text)
-        for text in texts
-        if text
-        for pattern in _CHANGE_PATTERNS
+        pattern.search(text) for text in texts if text for pattern in _CHANGE_PATTERNS
     )
 
 

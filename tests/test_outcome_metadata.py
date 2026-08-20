@@ -70,6 +70,14 @@ def test_outcome_bounds_require_a_finite_nonempty_interval(values):
             "Change in FUNCAP55 total score",
             "Change in total score. Possible scores range from 0 to 55.",
         ),
+        (
+            "Difference from Baseline in Fatigue Severity Scale",
+            "Score range 1-49, higher is worse.",
+        ),
+        (
+            "Reduction from baseline in fatigue score",
+            "Score range 1-49, higher is worse.",
+        ),
     ],
 )
 def test_change_endpoints_do_not_inherit_the_instrument_level_range(name, description):
@@ -84,7 +92,8 @@ def test_change_endpoints_do_not_inherit_the_instrument_level_range(name, descri
 def test_level_endpoints_still_infer_their_range():
     """The guard must not suppress inference for ordinary level endpoints."""
     bounds = infer_outcome_bounds(
-        "Fatigue Severity Scale", "Total score at week 12. Score range 1-49, higher is worse."
+        "Fatigue Severity Scale",
+        "Total score at week 12. Score range 1-49, higher is worse.",
     )
     assert bounds is not None
     assert (bounds.minimum, bounds.maximum) == (1.0, 49.0)
@@ -96,6 +105,8 @@ def test_level_endpoints_still_infer_their_range():
         ("Change from baseline in total score", True),
         ("Mean change in FSS at week 12", True),
         ("Percentage change from baseline", True),
+        ("Difference from Baseline in FSS", True),
+        ("Reduction from baseline in fatigue score", True),
         ("Delta FSS", True),
         ("Baseline to week 24 difference", True),
         ("Total score at week 12", False),

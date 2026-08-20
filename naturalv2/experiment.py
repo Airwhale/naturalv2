@@ -694,7 +694,7 @@ class Experiment:
         numeric_outcomes = pd.to_numeric(extractions[OUTCOME_COL_NAME], errors="coerce")
         valid = numeric_outcomes.between(
             bounds.minimum, bounds.maximum, inclusive="both"
-        )
+        ).fillna(False)
         n_sampled = len(extractions)
         n_rejected = int((~valid).sum())
         rejection_rate = n_rejected / n_sampled if n_sampled else 0.0

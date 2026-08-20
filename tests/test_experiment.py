@@ -1,5 +1,3 @@
-import logging
-from naturalv2.outcome_metadata import OutcomeBounds
 from unittest.mock import patch
 
 import pandas as pd
@@ -371,6 +369,31 @@ def test_all_values_rejected_raises_instead_of_returning_empty(tmp_path):
         exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
 
 
+def test_nullable_missing_outcome_counts_as_rejected_and_raises(tmp_path):
+    exp = _build_continuous_experiment(
+        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}}
+    )
+    samples = pd.DataFrame(
+        {
+            TREATMENT_COL_NAME: ["Drug A"],
+            OUTCOME_COL_NAME: pd.Series([pd.NA], dtype="Float64"),
+        }
+    )
+
+    with (
+        patch("naturalv2.experiment.logger.error") as log_error,
+        pytest.raises(ValueError, match="fell outside"),
+    ):
+        exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
+
+    assert log_error.call_args.kwargs["extra"]["n_rejected"] == 1
+    assert log_error.call_args.kwargs["extra"]["rejected_by_side"] == {
+        "below_minimum": 0,
+        "above_maximum": 0,
+        "not_numeric": 1,
+    }
+
+
 def test_low_rejection_rate_stays_a_warning(tmp_path):
     exp = _build_continuous_experiment(
         tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}}
@@ -382,8 +405,10 @@ def test_low_rejection_rate_stays_a_warning(tmp_path):
             OUTCOME_COL_NAME: [10.0] * 49 + [4_444_000.0],
         }
     )
-    with patch("naturalv2.experiment.logger.error") as log_error:
-        with patch("naturalv2.experiment.logger.warning") as log_warning:
-            exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
+    with (
+        patch("naturalv2.experiment.logger.error") as log_error,
+        patch("naturalv2.experiment.logger.warning") as log_warning,
+    ):
+        exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
     assert log_warning.called
     assert not log_error.called
