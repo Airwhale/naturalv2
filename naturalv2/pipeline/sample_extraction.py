@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pandas as pd
 import yaml
 from omegaconf import DictConfig
-from pydantic import BaseModel, FiniteFloat
+from pydantic import BaseModel, FiniteFloat, ValidationError
 from tqdm.asyncio import tqdm
 
 from naturalv2.models.utils import TokenTracker
@@ -450,6 +450,74 @@ def _create_sample_ty_response_format(
     )
 
 
+def _validate_sample_ty_extractions(
+    extractions: pd.DataFrame,
+    response_format: type[BaseModel],
+    *,
+    nct_id: str,
+    outcome: str,
+) -> pd.DataFrame:
+    """Validate combined cached and newly sampled treatment/outcome records."""
+    required_columns = {TREATMENT_COL_NAME, OUTCOME_COL_NAME}
+    missing_columns = required_columns.difference(extractions.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Sampled extraction artifact is missing columns: {missing}")
+
+    valid_mask: list[bool] = []
+    validated_payloads: list[dict[str, Any]] = []
+    for _, row in extractions.iterrows():
+        payload = {
+            TREATMENT_COL_NAME: row[TREATMENT_COL_NAME],
+            OUTCOME_COL_NAME: row[OUTCOME_COL_NAME],
+        }
+        try:
+            validated = response_format.model_validate(payload)
+        except ValidationError:
+            valid_mask.append(False)
+            continue
+
+        valid_mask.append(True)
+        validated_payloads.append(validated.model_dump(mode="python"))
+
+    n_sampled = len(extractions)
+    n_rejected = n_sampled - len(validated_payloads)
+    rejection_rate = n_rejected / n_sampled if n_sampled else 0.0
+    log = logger.warning if n_rejected else logger.info
+    log(
+        "Sampled extraction artifact validation: nct_id=%s outcome=%r "
+        "n_sampled=%d n_rejected=%d rejection_rate=%.6f",
+        nct_id,
+        outcome,
+        n_sampled,
+        n_rejected,
+        rejection_rate,
+        extra={
+            "phase": "sample_ty_artifact_validation",
+            "schema_id": "sample_ty_response.v1",
+            "status": "rejected" if n_rejected else "accepted",
+            "nct_id": nct_id,
+            "outcome": outcome,
+            "n_sampled": n_sampled,
+            "n_rejected": n_rejected,
+            "rejection_rate": rejection_rate,
+        },
+    )
+
+    if n_sampled and n_rejected == n_sampled:
+        raise ValueError(
+            f"Every sampled treatment/outcome record for {nct_id!r} / "
+            f"{outcome!r} failed artifact validation."
+        )
+
+    validated_extractions = extractions.loc[valid_mask].copy()
+    for column in required_columns:
+        validated_extractions[column] = [
+            payload[column] for payload in validated_payloads
+        ]
+    return validated_extractions
+
+
 class SampleTYStage(SampleExtractionStage):
     """Stage for sampling treatment and outcome given covariates.
 
@@ -502,6 +570,12 @@ class SampleTYStage(SampleExtractionStage):
             max_concurrent_requests=self.max_concurrent_workers,
         )
 
+        self.data = _validate_sample_ty_extractions(
+            self.data,
+            response_format,
+            nct_id=context.experiment.nct_id,
+            outcome=context.outcome,
+        )
         self.data = context.experiment.discretize_ty(self.data, context.outcome)
         logger.info(f"Final: {len(self.data)} reports after sampling TY.")
         return self.data
