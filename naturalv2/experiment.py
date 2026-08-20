@@ -39,6 +39,7 @@ from naturalv2.pipeline.constants import (
     INCLUSION_COL_NAME,
     OUTCOME_COL_NAME,
     TREATMENT_COL_NAME,
+    SampleValidationConfig,
     rejection_log_level,
 )
 from naturalv2.prompts import load_prompt
@@ -673,16 +674,29 @@ class Experiment:
             return param_type in _COUNT_PARAM_TYPES
         return check_binary_endpoint(outcome_name)
 
-    def discretize_ty(self, extractions: pd.DataFrame, outcome: str) -> pd.DataFrame:
-        extractions = self.filter_sampled_outcomes_to_range(extractions, outcome)
+    def discretize_ty(
+        self,
+        extractions: pd.DataFrame,
+        outcome: str,
+        *,
+        sample_validation: SampleValidationConfig | None = None,
+    ) -> pd.DataFrame:
+        extractions = self.filter_sampled_outcomes_to_range(
+            extractions, outcome, sample_validation=sample_validation
+        )
         self._discretize_outcome_column(extractions, outcome)
         self._discretize_treatment_column(extractions)
         return extractions
 
     def filter_sampled_outcomes_to_range(
-        self, extractions: pd.DataFrame, outcome: str
+        self,
+        extractions: pd.DataFrame,
+        outcome: str,
+        *,
+        sample_validation: SampleValidationConfig | None = None,
     ) -> pd.DataFrame:
         """Reject sampled continuous outcomes outside known inclusive bounds."""
+        validation_config = sample_validation or SampleValidationConfig()
         bounds = self.outcome_bounds.get(outcome)
         if bounds is None or self.is_binary_outcome(outcome):
             return extractions
@@ -698,6 +712,13 @@ class Experiment:
         n_sampled = len(extractions)
         n_rejected = int((~valid).sum())
         rejection_rate = n_rejected / n_sampled if n_sampled else 0.0
+        high_rejection_rate = (
+            n_rejected > 0 and rejection_rate >= validation_config.high_rejection_rate
+        )
+        blocks_estimation = n_sampled > 0 and (
+            n_rejected == n_sampled
+            or (high_rejection_rate and not validation_config.allow_high_rejection_rate)
+        )
         # Which side of the interval a value fell on says what went wrong.
         # Everything below the minimum usually means the bounds are shifted
         # rather than the values being wrong -- a change-from-baseline endpoint
@@ -708,10 +729,16 @@ class Experiment:
             "above_maximum": int((numeric_outcomes > bounds.maximum).sum()),
             "not_numeric": int(numeric_outcomes.isna().sum()),
         }
-        log = rejection_log_level(logger, n_rejected, rejection_rate)
+        log = rejection_log_level(
+            logger,
+            n_rejected,
+            rejection_rate,
+            high_rejection_rate=validation_config.high_rejection_rate,
+        )
         log(
             "Outcome range validation: nct_id=%s outcome=%r minimum=%s maximum=%s "
             "bounds_source=%s n_sampled=%d n_rejected=%d rejection_rate=%.6f "
+            "high_rejection_rate_threshold=%.6f allow_high_rejection_rate=%s "
             "rejected_by_side=%s",
             self.nct_id,
             outcome,
@@ -721,11 +748,19 @@ class Experiment:
             n_sampled,
             n_rejected,
             rejection_rate,
+            validation_config.high_rejection_rate,
+            validation_config.allow_high_rejection_rate,
             rejected_by_side,
             extra={
                 "phase": "outcome_range_validation",
-                "schema_id": "outcome_bounds.v2",
-                "status": "rejected" if n_rejected else "accepted",
+                "schema_id": "outcome_bounds.v3",
+                "status": (
+                    "blocked"
+                    if blocks_estimation
+                    else "rejected"
+                    if n_rejected
+                    else "accepted"
+                ),
                 "nct_id": self.nct_id,
                 "outcome": outcome,
                 "minimum": bounds.minimum,
@@ -734,6 +769,13 @@ class Experiment:
                 "n_sampled": n_sampled,
                 "n_rejected": n_rejected,
                 "rejection_rate": rejection_rate,
+                "high_rejection_rate_threshold": (
+                    validation_config.high_rejection_rate
+                ),
+                "allow_high_rejection_rate": (
+                    validation_config.allow_high_rejection_rate
+                ),
+                "blocks_estimation": blocks_estimation,
                 "rejected_by_side": rejected_by_side,
             },
         )
@@ -746,6 +788,17 @@ class Experiment:
                 "-- a change-from-baseline outcome scored against its instrument's "
                 "level range is the usual cause -- or extraction is not producing "
                 "values on this scale."
+            )
+
+        if high_rejection_rate and not validation_config.allow_high_rejection_rate:
+            raise ValueError(
+                f"Rejected {n_rejected} of {n_sampled} sampled outcomes for "
+                f"{self.nct_id!r} / {outcome!r} ({rejection_rate:.2%}), meeting "
+                "the configured high-rejection threshold "
+                f"({validation_config.high_rejection_rate:.2%}). Estimation stopped "
+                "to avoid bias from selected survivors. Set "
+                "`sample_validation.allow_high_rejection_rate=true` to continue "
+                "explicitly."
             )
 
         return extractions.loc[valid].copy()

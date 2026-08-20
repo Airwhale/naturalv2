@@ -495,7 +495,11 @@ class SampleTYStage(SampleExtractionStage):
             max_concurrent_requests=self.max_concurrent_workers,
         )
 
-        self.data = context.experiment.discretize_ty(self.data, context.outcome)
+        self.data = context.experiment.discretize_ty(
+            self.data,
+            context.outcome,
+            sample_validation=context.sample_validation,
+        )
         logger.info(f"Final: {len(self.data)} reports after sampling TY.")
         return self.data
 

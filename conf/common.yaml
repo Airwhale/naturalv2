@@ -11,6 +11,13 @@ conditions:
 train_ratio: 0.6
 save_path: ${oc.env:SAVE_PATH,./outputs}
 
+# Stop before estimation when validation rejects too much of a sample. The
+# override is intended for explicit exploratory runs; an all-rejected sample
+# still fails because there are no surviving records to estimate from.
+sample_validation:
+  high_rejection_rate: 0.10
+  allow_high_rejection_rate: false
+
 # Optional inclusive bounds keyed by trial ID and exact outcome name.
 # Applied when create_study builds the persisted experiment YAMLs:
 # outcome_bounds:

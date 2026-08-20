@@ -5,7 +5,11 @@ import pytest
 from pydantic import ValidationError
 
 from naturalv2.experiment import Experiment
-from naturalv2.pipeline import OUTCOME_COL_NAME, TREATMENT_COL_NAME
+from naturalv2.pipeline import (
+    OUTCOME_COL_NAME,
+    TREATMENT_COL_NAME,
+    SampleValidationConfig,
+)
 from tests.factories import (
     build_experiment,
     make_active_trial,
@@ -189,27 +193,35 @@ def test_configured_continuous_outcome_range_is_enforced(tmp_path):
         }
     )
 
-    # 7 of 9 rejected is 78%, which now escalates past warning to error.
-    with patch("naturalv2.experiment.logger.error") as log_warning:
-        filtered = exp.discretize_ty(samples, "Functional Capacity")
+    # The explicit override keeps the surviving records available for auditing.
+    with patch("naturalv2.experiment.logger.error") as log_error:
+        filtered = exp.discretize_ty(
+            samples,
+            "Functional Capacity",
+            sample_validation=SampleValidationConfig(allow_high_rejection_rate=True),
+        )
 
     assert filtered[OUTCOME_COL_NAME].tolist() == [0, 55]
     assert filtered[f"{OUTCOME_COL_NAME}_discretized"].tolist() == [0, 55]
-    # rejected_by_side is now the final positional argument
-    assert log_warning.call_args.args[-5:-2] == ("configured", 9, 7)
-    assert log_warning.call_args.args[-2] == pytest.approx(7 / 9)
+    assert log_error.call_args.args[-6:] == (
+        9,
+        7,
+        pytest.approx(7 / 9),
+        pytest.approx(0.10),
+        True,
+        {
+            "below_minimum": 2,
+            "above_maximum": 3,
+            "not_numeric": 2,
+        },
+    )
     # to_numeric leaves the infinities as infinities, so they compare against the
     # bounds like any other number: -inf joins -1 below, +inf joins 56 and
     # 4_444_000 above. Only "not-a-number" and nan become NaN. With #50 merged
     # the infinities never reach here, so this is the defensive path.
-    assert log_warning.call_args.args[-1] == {
-        "below_minimum": 2,
-        "above_maximum": 3,
-        "not_numeric": 2,
-    }
-    assert log_warning.call_args.kwargs["extra"] == {
+    assert log_error.call_args.kwargs["extra"] == {
         "phase": "outcome_range_validation",
-        "schema_id": "outcome_bounds.v2",
+        "schema_id": "outcome_bounds.v3",
         "status": "rejected",
         "nct_id": "NCT012",
         "outcome": "Functional Capacity",
@@ -219,12 +231,55 @@ def test_configured_continuous_outcome_range_is_enforced(tmp_path):
         "n_sampled": 9,
         "n_rejected": 7,
         "rejection_rate": pytest.approx(7 / 9),
+        "high_rejection_rate_threshold": pytest.approx(0.10),
+        "allow_high_rejection_rate": True,
+        "blocks_estimation": False,
         "rejected_by_side": {
             "below_minimum": 2,
             "above_maximum": 3,
             "not_numeric": 2,
         },
     }
+
+
+def test_high_rejection_rate_stops_estimation_by_default(tmp_path):
+    exp = _build_continuous_experiment(
+        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}}
+    )
+    samples = pd.DataFrame(
+        {
+            TREATMENT_COL_NAME: ["Drug A"] * 10,
+            OUTCOME_COL_NAME: [10.0] * 9 + [56.0],
+        }
+    )
+
+    with (
+        patch("naturalv2.experiment.logger.error") as log_error,
+        pytest.raises(ValueError, match="high-rejection threshold"),
+    ):
+        exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
+
+    assert log_error.call_args.kwargs["extra"]["status"] == "blocked"
+    assert log_error.call_args.kwargs["extra"]["blocks_estimation"] is True
+
+
+def test_configured_high_rejection_threshold_is_enforced(tmp_path):
+    exp = _build_continuous_experiment(
+        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}}
+    )
+    samples = pd.DataFrame(
+        {
+            TREATMENT_COL_NAME: ["Drug A"] * 50,
+            OUTCOME_COL_NAME: [10.0] * 49 + [56.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="high-rejection threshold"):
+        exp.filter_sampled_outcomes_to_range(
+            samples,
+            "Functional Capacity",
+            sample_validation=SampleValidationConfig(high_rejection_rate=0.02),
+        )
 
 
 def test_continuous_outcome_range_is_inferred_from_description(tmp_path):
@@ -366,7 +421,11 @@ def test_all_values_rejected_raises_instead_of_returning_empty(tmp_path):
         {TREATMENT_COL_NAME: ["Drug A"] * 3, OUTCOME_COL_NAME: [-11.3, -9.0, -20.0]}
     )
     with pytest.raises(ValueError, match="fell outside"):
-        exp.filter_sampled_outcomes_to_range(samples, "Functional Capacity")
+        exp.filter_sampled_outcomes_to_range(
+            samples,
+            "Functional Capacity",
+            sample_validation=SampleValidationConfig(allow_high_rejection_rate=True),
+        )
 
 
 def test_nullable_missing_outcome_counts_as_rejected_and_raises(tmp_path):
