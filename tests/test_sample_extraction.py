@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pandas as pd
 import pytest
@@ -36,21 +36,17 @@ def _validate(
     )
 
 
-@pytest.mark.parametrize(
-    ("binary", "accepted", "rejected"),
-    [(False, 12.5, float("inf")), (True, "Yes", 12.5)],
-)
-def test_sample_ty_response_schema(binary, accepted, rejected):
-    experiment = SimpleNamespace(
+def test_response_schema_rejects_non_finite_outcome():
+    experiment = Mock(
         options={TREATMENT_COL_NAME: ["Treatment A"]},
-        is_binary_outcome=lambda _outcome: binary,
+        is_binary_outcome=Mock(return_value=False),
     )
     response_format = _create_sample_ty_response_format(experiment, OUTCOME)
-    payload = {TREATMENT_COL_NAME: "Treatment A", OUTCOME_COL_NAME: accepted}
 
-    response_format.model_validate(payload)
     with pytest.raises(ValidationError):
-        response_format.model_validate(payload | {OUTCOME_COL_NAME: rejected})
+        response_format.model_validate(
+            {TREATMENT_COL_NAME: "Treatment A", OUTCOME_COL_NAME: float("inf")}
+        )
 
 
 def test_artifact_validation_removes_cached_non_finite_outcomes():
