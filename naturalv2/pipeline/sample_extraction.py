@@ -440,18 +440,16 @@ class ImputationsStage(SampleExtractionStage):
 def _create_sample_ty_response_format(
     experiment: "Experiment", outcome: str
 ) -> type[BaseModel]:
-    """Create the validated response schema for sampled treatment and outcome."""
-    treatment_options = experiment.options[TREATMENT_COL_NAME]
-    outcome_type = (
-        Literal["No", "Yes"] if experiment.is_binary_outcome(outcome) else FiniteFloat
-    )
+    field_types = {
+        TREATMENT_COL_NAME: Literal[*experiment.options[TREATMENT_COL_NAME]],
+        OUTCOME_COL_NAME: (
+            Literal["No", "Yes"]
+            if experiment.is_binary_outcome(outcome)
+            else FiniteFloat
+        ),
+    }
     return create_response_format(
-        "SampleTYResponse",
-        [TREATMENT_COL_NAME, OUTCOME_COL_NAME],
-        types={
-            TREATMENT_COL_NAME: Literal[*treatment_options],
-            OUTCOME_COL_NAME: outcome_type,
-        },
+        "SampleTYResponse", list(field_types), types=field_types
     )
 
 
