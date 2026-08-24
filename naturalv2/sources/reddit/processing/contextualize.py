@@ -63,6 +63,15 @@ def _pseudonymize_author(author: str | None) -> str | None:
     return hashlib.sha256(value).hexdigest()
 
 
+def _author_key_expr() -> pl.Expr:
+    """Build the pseudonymous author-key column."""
+    return (
+        pl.col("author")
+        .map_elements(_pseudonymize_author, return_dtype=pl.String)
+        .alias("author_key")
+    )
+
+
 def write_to_parquet_partitions(
     data_stream: Iterable[pa.RecordBatch],
     output_dir: str,
@@ -502,9 +511,7 @@ def _process_bucket(
                 + pl.col("title").str.to_lowercase().str.replace_all(r"[^a-z0-9]+", "_")
                 + pl.lit("/")
             ).alias("permalink"),
-            pl.col("author")
-            .map_elements(_pseudonymize_author, return_dtype=pl.String)
-            .alias("author_key"),
+            _author_key_expr(),
             pl.col("replies").fill_null([]).alias("author_replies"),
             pl.lit("submissions").alias("content_type"),
             pl.col("bucket"),
@@ -542,9 +549,7 @@ def _process_bucket(
                 + pl.lit("/_/")
                 + pl.col("id")
             ).alias("permalink"),
-            pl.col("author")
-            .map_elements(_pseudonymize_author, return_dtype=pl.String)
-            .alias("author_key"),
+            _author_key_expr(),
             pl.lit([]).cast(pl.List(pl.String)).alias("author_replies"),
             pl.lit("comments").alias("content_type"),
             pl.col("bucket"),
