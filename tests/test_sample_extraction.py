@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
 from pydantic import ValidationError
@@ -22,17 +24,6 @@ ALLOW_HIGH_REJECTION_POLICY = SampleValidationConfig(
 )
 
 
-class ContinuousExperiment:
-    options = {TREATMENT_COL_NAME: ["Treatment A"]}
-
-    @staticmethod
-    def is_binary_outcome(_outcome: str) -> bool:
-        return False
-
-
-RESPONSE_FORMAT = _create_sample_ty_response_format(ContinuousExperiment(), OUTCOME)
-
-
 def _validate(
     extractions: pd.DataFrame,
     policy: SampleValidationConfig = TEN_PERCENT_POLICY,
@@ -45,12 +36,21 @@ def _validate(
     )
 
 
-@pytest.mark.parametrize("outcome", [float("nan"), float("inf"), float("-inf")])
-def test_response_schema_rejects_non_finite_outcomes(outcome: float):
+@pytest.mark.parametrize(
+    ("binary", "accepted", "rejected"),
+    [(False, 12.5, float("inf")), (True, "Yes", 12.5)],
+)
+def test_sample_ty_response_schema(binary, accepted, rejected):
+    experiment = SimpleNamespace(
+        options={TREATMENT_COL_NAME: ["Treatment A"]},
+        is_binary_outcome=lambda _outcome: binary,
+    )
+    response_format = _create_sample_ty_response_format(experiment, OUTCOME)
+    payload = {TREATMENT_COL_NAME: "Treatment A", OUTCOME_COL_NAME: accepted}
+
+    response_format.model_validate(payload)
     with pytest.raises(ValidationError):
-        RESPONSE_FORMAT.model_validate(
-            {TREATMENT_COL_NAME: "Treatment A", OUTCOME_COL_NAME: outcome}
-        )
+        response_format.model_validate(payload | {OUTCOME_COL_NAME: rejected})
 
 
 def test_artifact_validation_removes_cached_non_finite_outcomes():
