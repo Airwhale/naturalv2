@@ -332,14 +332,14 @@ def _warn_on_stale_bounds(
     for outcome, wanted in configured_bounds.items():
         persisted = experiment.outcome_bounds.get(outcome)
         in_use = persisted.model_dump(mode="json") if persisted else None
-        if in_use != dict(wanted):
+        if in_use != wanted:
             logger.warning(
                 "Configured bounds for %s / %r differ from the experiment YAML "
                 "(config %s, in use %s). Bounds are persisted by create_study, so "
                 "rebuild the experiment to apply the change.",
                 nct_id,
                 outcome,
-                dict(wanted),
+                wanted,
                 in_use,
             )
 
