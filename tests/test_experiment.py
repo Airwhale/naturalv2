@@ -1,15 +1,6 @@
-from unittest.mock import patch
-
-import pandas as pd
 import pytest
-from pydantic import ValidationError
 
 from naturalv2.experiment import Experiment
-from naturalv2.pipeline import (
-    OUTCOME_COL_NAME,
-    TREATMENT_COL_NAME,
-    SampleValidationConfig,
-)
 from tests.factories import (
     build_experiment,
     make_active_trial,
@@ -19,21 +10,15 @@ from tests.factories import (
 )
 
 
-DEFAULT_SAMPLE_VALIDATION = SampleValidationConfig(high_rejection_rate=0.10)
-
-
 def _build_continuous_experiment(
     tmp_path,
     *,
     nct_id="NCT012",
     outcome_name="Functional Capacity",
-    description=None,
     outcome_bounds=None,
 ):
     arms = [make_arm("Drug A", "EXPERIMENTAL")]
     outcome = make_outcome_measure(outcome_name, "MEAN", "points", [("Drug A", 40, 50)])
-    if description is not None:
-        outcome["description"] = description
     return build_experiment(
         tmp_path,
         make_completed_trial(nct_id, arms, [outcome]),
@@ -174,140 +159,6 @@ def test_active_trial_outcome_falls_back_to_title_heuristic(tmp_path):
     assert exp.is_binary_outcome(exp.outcome_names[0])
 
 
-def test_configured_continuous_outcome_range_is_enforced(tmp_path):
-    exp = _build_continuous_experiment(
-        tmp_path,
-        outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}},
-    )
-    samples = pd.DataFrame(
-        {
-            TREATMENT_COL_NAME: ["Drug A"] * 9,
-            OUTCOME_COL_NAME: [
-                -1,
-                0,
-                55,
-                56,
-                4_444_000,
-                "not-a-number",
-                float("nan"),
-                float("inf"),
-                -float("inf"),
-            ],
-        }
-    )
-
-    # The explicit override keeps the surviving records available for auditing.
-    with patch("naturalv2.experiment.logger.error") as log_error:
-        filtered = exp.discretize_ty(
-            samples,
-            "Functional Capacity",
-            sample_validation=SampleValidationConfig(
-                high_rejection_rate=0.10,
-                allow_high_rejection_rate=True,
-            ),
-        )
-
-    assert filtered[OUTCOME_COL_NAME].tolist() == [0, 55]
-    assert filtered[f"{OUTCOME_COL_NAME}_discretized"].tolist() == [0, 55]
-    assert log_error.call_args.args[-6:] == (
-        9,
-        7,
-        pytest.approx(7 / 9),
-        pytest.approx(0.10),
-        True,
-        {
-            "below_minimum": 2,
-            "above_maximum": 3,
-            "not_numeric": 2,
-        },
-    )
-    # to_numeric leaves the infinities as infinities, so they compare against the
-    # bounds like any other number: -inf joins -1 below, +inf joins 56 and
-    # 4_444_000 above. Only "not-a-number" and nan become NaN. With #50 merged
-    # the infinities never reach here, so this is the defensive path.
-    assert log_error.call_args.kwargs["extra"] == {
-        "phase": "outcome_range_validation",
-        "schema_id": "outcome_bounds.v3",
-        "status": "rejected",
-        "nct_id": "NCT012",
-        "outcome": "Functional Capacity",
-        "minimum": 0,
-        "maximum": 55,
-        "bounds_source": "configured",
-        "n_sampled": 9,
-        "n_rejected": 7,
-        "rejection_rate": pytest.approx(7 / 9),
-        "high_rejection_rate_threshold": pytest.approx(0.10),
-        "allow_high_rejection_rate": True,
-        "blocks_estimation": False,
-        "rejected_by_side": {
-            "below_minimum": 2,
-            "above_maximum": 3,
-            "not_numeric": 2,
-        },
-    }
-
-
-def test_high_rejection_rate_stops_estimation_by_default(tmp_path):
-    exp = _build_continuous_experiment(
-        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}}
-    )
-    samples = pd.DataFrame(
-        {
-            TREATMENT_COL_NAME: ["Drug A"] * 10,
-            OUTCOME_COL_NAME: [10.0] * 9 + [56.0],
-        }
-    )
-
-    with (
-        patch("naturalv2.experiment.logger.error") as log_error,
-        pytest.raises(ValueError, match="high-rejection threshold"),
-    ):
-        exp.filter_sampled_outcomes_to_range(
-            samples,
-            "Functional Capacity",
-            sample_validation=DEFAULT_SAMPLE_VALIDATION,
-        )
-
-    assert log_error.call_args.kwargs["extra"]["status"] == "blocked"
-    assert log_error.call_args.kwargs["extra"]["blocks_estimation"] is True
-
-
-def test_configured_high_rejection_threshold_is_enforced(tmp_path):
-    exp = _build_continuous_experiment(
-        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}}
-    )
-    samples = pd.DataFrame(
-        {
-            TREATMENT_COL_NAME: ["Drug A"] * 50,
-            OUTCOME_COL_NAME: [10.0] * 49 + [56.0],
-        }
-    )
-
-    with pytest.raises(ValueError, match="high-rejection threshold"):
-        exp.filter_sampled_outcomes_to_range(
-            samples,
-            "Functional Capacity",
-            sample_validation=SampleValidationConfig(high_rejection_rate=0.02),
-        )
-
-
-def test_continuous_outcome_range_is_inferred_from_description(tmp_path):
-    exp = _build_continuous_experiment(
-        tmp_path,
-        nct_id="NCT015",
-        outcome_name="Fatigue Severity Scale",
-        description=(
-            "7-item questionnaire assessing fatigue severity. Score range 1-49 "
-            "with higher values signifying worse outcome"
-        ),
-    )
-
-    bounds = exp.outcome_bounds["Fatigue Severity Scale"]
-    assert bounds is not None
-    assert (bounds.minimum, bounds.maximum, bounds.source) == (1, 49, "description")
-
-
 def test_configured_outcome_bounds_round_trip_through_yaml(tmp_path):
     exp = _build_continuous_experiment(
         tmp_path,
@@ -320,10 +171,8 @@ def test_configured_outcome_bounds_round_trip_through_yaml(tmp_path):
     exp.to_yaml(str(experiment_path))
     loaded = Experiment.from_yaml(str(experiment_path))
 
-    assert loaded.outcome_bounds["Functional Capacity"] is not None
-    assert loaded.outcome_bounds["Functional Capacity"].minimum == 0
-    assert loaded.outcome_bounds["Functional Capacity"].maximum == 55
-    assert loaded.outcome_bounds["Functional Capacity"].source == "configured"
+    bounds = loaded.outcome_bounds["Functional Capacity"]
+    assert (bounds.minimum, bounds.maximum) == (0, 55)
 
 
 def test_configured_bounds_reject_unknown_outcome(tmp_path):
@@ -333,31 +182,6 @@ def test_configured_bounds_reject_unknown_outcome(tmp_path):
             nct_id="NCT014",
             outcome_bounds={"Typo": {"minimum": 0, "maximum": 55}},
         )
-
-
-def test_configured_bounds_cannot_override_provenance(tmp_path):
-    with pytest.raises(ValidationError, match="source"):
-        _build_continuous_experiment(
-            tmp_path,
-            outcome_bounds={
-                "Functional Capacity": {
-                    "minimum": 0,
-                    "maximum": 55,
-                    "source": "description",
-                }
-            },
-        )
-
-
-def test_null_configured_bounds_disable_inference(tmp_path):
-    exp = _build_continuous_experiment(
-        tmp_path,
-        outcome_name="Fatigue Severity Scale",
-        description="The total score ranges from 1 to 49.",
-        outcome_bounds={"Fatigue Severity Scale": None},
-    )
-
-    assert exp.outcome_bounds["Fatigue Severity Scale"] is None
 
 
 def test_configured_bounds_reject_binary_outcome(tmp_path):
@@ -419,76 +243,3 @@ def test_single_arm_trial_has_no_ate_ground_truth(tmp_path):
     exp = build_experiment(tmp_path, make_completed_trial("NCT011", arms, outcomes))
     assert exp.outcome_treatment == []
     assert exp.apo_outcome_treatment == [[exp.outcome_names[0], "Drug A"]]
-
-
-def test_all_values_rejected_raises_instead_of_returning_empty(tmp_path):
-    """An empty frame here surfaces much later as an unrelated error."""
-    exp = _build_continuous_experiment(
-        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 1, "maximum": 49}}
-    )
-    # Lithium's own published answers: a change endpoint against a level range.
-    samples = pd.DataFrame(
-        {TREATMENT_COL_NAME: ["Drug A"] * 3, OUTCOME_COL_NAME: [-11.3, -9.0, -20.0]}
-    )
-    with pytest.raises(ValueError, match="fell outside"):
-        exp.filter_sampled_outcomes_to_range(
-            samples,
-            "Functional Capacity",
-            sample_validation=SampleValidationConfig(
-                high_rejection_rate=0.10,
-                allow_high_rejection_rate=True,
-            ),
-        )
-
-
-def test_nullable_missing_outcome_counts_as_rejected_and_raises(tmp_path):
-    exp = _build_continuous_experiment(
-        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}}
-    )
-    samples = pd.DataFrame(
-        {
-            TREATMENT_COL_NAME: ["Drug A"],
-            OUTCOME_COL_NAME: pd.Series([pd.NA], dtype="Float64"),
-        }
-    )
-
-    with (
-        patch("naturalv2.experiment.logger.error") as log_error,
-        pytest.raises(ValueError, match="fell outside"),
-    ):
-        exp.filter_sampled_outcomes_to_range(
-            samples,
-            "Functional Capacity",
-            sample_validation=DEFAULT_SAMPLE_VALIDATION,
-        )
-
-    assert log_error.call_args.kwargs["extra"]["n_rejected"] == 1
-    assert log_error.call_args.kwargs["extra"]["rejected_by_side"] == {
-        "below_minimum": 0,
-        "above_maximum": 0,
-        "not_numeric": 1,
-    }
-
-
-def test_low_rejection_rate_stays_a_warning(tmp_path):
-    exp = _build_continuous_experiment(
-        tmp_path, outcome_bounds={"Functional Capacity": {"minimum": 0, "maximum": 55}}
-    )
-    # 1 of 50 outside -> 2%, below the escalation threshold
-    samples = pd.DataFrame(
-        {
-            TREATMENT_COL_NAME: ["Drug A"] * 50,
-            OUTCOME_COL_NAME: [10.0] * 49 + [4_444_000.0],
-        }
-    )
-    with (
-        patch("naturalv2.experiment.logger.error") as log_error,
-        patch("naturalv2.experiment.logger.warning") as log_warning,
-    ):
-        exp.filter_sampled_outcomes_to_range(
-            samples,
-            "Functional Capacity",
-            sample_validation=DEFAULT_SAMPLE_VALIDATION,
-        )
-    assert log_warning.called
-    assert not log_error.called

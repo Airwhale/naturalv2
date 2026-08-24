@@ -28,19 +28,11 @@ from naturalv2.clinical_trial import (
     OutcomeMeasureType,
     Reference,
 )
-from naturalv2.outcome_metadata import (
-    ConfiguredOutcomeBounds,
-    ConfiguredOutcomeBoundsMap,
-    OutcomeBounds,
-    OutcomeBoundsMap,
-    infer_outcome_bounds,
-)
+from naturalv2.outcome_metadata import OutcomeBounds, OutcomeBoundsMap
 from naturalv2.pipeline.constants import (
     INCLUSION_COL_NAME,
     OUTCOME_COL_NAME,
     TREATMENT_COL_NAME,
-    SampleValidationConfig,
-    rejection_log_level,
 )
 from naturalv2.prompts import load_prompt
 from naturalv2.sources.drugbank_cache import get_drugbank_aliases
@@ -103,8 +95,7 @@ class Experiment:
         loaded from the `nct_reports_test` directory. If "completed", it will be
         loaded from the `nct_reports` directory.
     outcome_bounds : Mapping, optional
-        Inclusive bounds keyed by exact outcome name. Explicit values override ranges
-        inferred from unambiguous score or scale descriptions.
+        Inclusive bounds keyed by exact outcome name.
 
     Attributes
     ----------
@@ -192,10 +183,7 @@ class Experiment:
         status: Literal["completed", "active"] = "completed",
         require_binary_endpoint: bool = True,
         *,
-        outcome_bounds: Mapping[
-            str, ConfiguredOutcomeBounds | Mapping[str, float] | None
-        ]
-        | None = None,
+        outcome_bounds: Mapping[str, object] | None = None,
     ) -> None:
         self.data_path = data_path
         self.experiment_name = experiment_name
@@ -443,7 +431,7 @@ class Experiment:
         return self._outcome_desc
 
     @property
-    def outcome_bounds(self) -> dict[str, OutcomeBounds | None]:
+    def outcome_bounds(self) -> dict[str, OutcomeBounds]:
         """Validated inclusive bounds for continuous outcomes, when known."""
         return self._outcome_bounds
 
@@ -506,10 +494,7 @@ class Experiment:
 
         exp = cls.__new__(cls)
         exp.__dict__.update(data)
-        exp._set_outcome_bounds()
-        persisted_bounds = data.get("_outcome_bounds")
-        if persisted_bounds is not None:
-            exp._restore_outcome_bounds(persisted_bounds)
+        exp._set_outcome_bounds(data.get("_outcome_bounds"))
         return exp
 
     def to_yaml(self, filename: str) -> None:
@@ -529,7 +514,7 @@ class Experiment:
 
         data = self.__dict__.copy()
         data["_outcome_bounds"] = {
-            outcome: bounds.model_dump(mode="json") if bounds is not None else None
+            outcome: bounds.model_dump(mode="json")
             for outcome, bounds in self.outcome_bounds.items()
         }
         with open(filename, "w") as file:
@@ -674,139 +659,10 @@ class Experiment:
             return param_type in _COUNT_PARAM_TYPES
         return check_binary_endpoint(outcome_name)
 
-    def discretize_ty(
-        self,
-        extractions: pd.DataFrame,
-        outcome: str,
-        *,
-        sample_validation: SampleValidationConfig | None = None,
-    ) -> pd.DataFrame:
-        extractions = self.filter_sampled_outcomes_to_range(
-            extractions, outcome, sample_validation=sample_validation
-        )
+    def discretize_ty(self, extractions: pd.DataFrame, outcome: str) -> pd.DataFrame:
         self._discretize_outcome_column(extractions, outcome)
         self._discretize_treatment_column(extractions)
         return extractions
-
-    def filter_sampled_outcomes_to_range(
-        self,
-        extractions: pd.DataFrame,
-        outcome: str,
-        *,
-        sample_validation: SampleValidationConfig | None = None,
-    ) -> pd.DataFrame:
-        """Reject sampled continuous outcomes outside known inclusive bounds."""
-        bounds = self.outcome_bounds.get(outcome)
-        if bounds is None or self.is_binary_outcome(outcome):
-            return extractions
-        if sample_validation is None:
-            raise ValueError(
-                "Sample validation policy is required when outcome bounds are "
-                "configured."
-            )
-        validation_config = sample_validation
-        if OUTCOME_COL_NAME not in extractions.columns:
-            raise ValueError(
-                f"`{OUTCOME_COL_NAME}` column is missing from extractions."
-            )
-
-        numeric_outcomes = pd.to_numeric(extractions[OUTCOME_COL_NAME], errors="coerce")
-        valid = numeric_outcomes.between(
-            bounds.minimum, bounds.maximum, inclusive="both"
-        ).fillna(False)
-        n_sampled = len(extractions)
-        n_rejected = int((~valid).sum())
-        rejection_rate = n_rejected / n_sampled if n_sampled else 0.0
-        high_rejection_rate = (
-            n_rejected > 0 and rejection_rate >= validation_config.high_rejection_rate
-        )
-        blocks_estimation = n_sampled > 0 and (
-            n_rejected == n_sampled
-            or (high_rejection_rate and not validation_config.allow_high_rejection_rate)
-        )
-        # Which side of the interval a value fell on says what went wrong.
-        # Everything below the minimum usually means the bounds are shifted
-        # rather than the values being wrong -- a change-from-baseline endpoint
-        # measured against its instrument's level range is the standard case.
-        # A mix of both sides is noise.
-        rejected_by_side = {
-            "below_minimum": int((numeric_outcomes < bounds.minimum).sum()),
-            "above_maximum": int((numeric_outcomes > bounds.maximum).sum()),
-            "not_numeric": int(numeric_outcomes.isna().sum()),
-        }
-        log = rejection_log_level(
-            logger,
-            n_rejected,
-            rejection_rate,
-            high_rejection_rate=validation_config.high_rejection_rate,
-        )
-        log(
-            "Outcome range validation: nct_id=%s outcome=%r minimum=%s maximum=%s "
-            "bounds_source=%s n_sampled=%d n_rejected=%d rejection_rate=%.6f "
-            "high_rejection_rate_threshold=%.6f allow_high_rejection_rate=%s "
-            "rejected_by_side=%s",
-            self.nct_id,
-            outcome,
-            bounds.minimum,
-            bounds.maximum,
-            bounds.source,
-            n_sampled,
-            n_rejected,
-            rejection_rate,
-            validation_config.high_rejection_rate,
-            validation_config.allow_high_rejection_rate,
-            rejected_by_side,
-            extra={
-                "phase": "outcome_range_validation",
-                "schema_id": "outcome_bounds.v3",
-                "status": (
-                    "blocked"
-                    if blocks_estimation
-                    else "rejected"
-                    if n_rejected
-                    else "accepted"
-                ),
-                "nct_id": self.nct_id,
-                "outcome": outcome,
-                "minimum": bounds.minimum,
-                "maximum": bounds.maximum,
-                "bounds_source": bounds.source,
-                "n_sampled": n_sampled,
-                "n_rejected": n_rejected,
-                "rejection_rate": rejection_rate,
-                "high_rejection_rate_threshold": (
-                    validation_config.high_rejection_rate
-                ),
-                "allow_high_rejection_rate": (
-                    validation_config.allow_high_rejection_rate
-                ),
-                "blocks_estimation": blocks_estimation,
-                "rejected_by_side": rejected_by_side,
-            },
-        )
-        if n_sampled and n_rejected == n_sampled:
-            raise ValueError(
-                f"Every sampled outcome for {self.nct_id!r} / {outcome!r} fell outside "
-                f"[{bounds.minimum}, {bounds.maximum}] (source: {bounds.source}). "
-                "Returning an empty frame here surfaces much later as an unrelated "
-                "error, so failing now: either the bounds are wrong for this endpoint "
-                "-- a change-from-baseline outcome scored against its instrument's "
-                "level range is the usual cause -- or extraction is not producing "
-                "values on this scale."
-            )
-
-        if high_rejection_rate and not validation_config.allow_high_rejection_rate:
-            raise ValueError(
-                f"Rejected {n_rejected} of {n_sampled} sampled outcomes for "
-                f"{self.nct_id!r} / {outcome!r} ({rejection_rate:.2%}), meeting "
-                "the configured high-rejection threshold "
-                f"({validation_config.high_rejection_rate:.2%}). Estimation stopped "
-                "to avoid bias from selected survivors. Set "
-                "`sample_validation.allow_high_rejection_rate=true` to continue "
-                "explicitly."
-            )
-
-        return extractions.loc[valid].copy()
 
     def apply_transform(
         self,
@@ -1171,55 +1027,23 @@ class Experiment:
 
     def _set_outcome_bounds(
         self,
-        configured_bounds: Mapping[
-            str, ConfiguredOutcomeBounds | Mapping[str, float] | None
-        ]
-        | None = None,
+        configured_bounds: Mapping[str, object] | None = None,
     ) -> None:
-        """Infer explicit scale ranges, then apply validated configuration overrides."""
-        inferred_bounds = {
-            outcome: infer_outcome_bounds(
-                outcome, self.outcome_desc.get(outcome), timeframe
-            )
-            for outcome, timeframe in zip(
-                self.outcome_names, self.outcome_timeframes, strict=True
-            )
-        }
-        validated_bounds = ConfiguredOutcomeBoundsMap.model_validate(
+        """Validate configured bounds against this experiment's outcomes."""
+        validated_bounds = OutcomeBoundsMap.model_validate(
             dict(configured_bounds or {})
         ).root
         self._validate_outcome_bound_names(validated_bounds)
 
         binary_outcomes = [
-            outcome
-            for outcome, bounds in validated_bounds.items()
-            if bounds is not None and self.is_binary_outcome(outcome)
+            outcome for outcome in validated_bounds if self.is_binary_outcome(outcome)
         ]
         if binary_outcomes:
             raise ValueError(
                 "Outcome bounds cannot be configured for binary outcomes: "
                 f"{binary_outcomes}."
             )
-
-        configured = {
-            outcome: (
-                None
-                if bounds is None
-                else OutcomeBounds(
-                    minimum=bounds.minimum,
-                    maximum=bounds.maximum,
-                    source="configured",
-                )
-            )
-            for outcome, bounds in validated_bounds.items()
-        }
-        self._outcome_bounds = inferred_bounds | configured
-
-    def _restore_outcome_bounds(self, persisted_bounds: Mapping[str, object]) -> None:
-        """Restore validated bounds and provenance from an experiment artifact."""
-        validated_bounds = OutcomeBoundsMap.model_validate(dict(persisted_bounds)).root
-        self._validate_outcome_bound_names(validated_bounds)
-        self._outcome_bounds |= validated_bounds
+        self._outcome_bounds = validated_bounds
 
     def _validate_outcome_bound_names(self, bounds: Mapping[str, object]) -> None:
         """Reject bounds that do not identify an outcome in this experiment."""
