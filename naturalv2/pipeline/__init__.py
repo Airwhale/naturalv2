@@ -15,5 +15,6 @@ from naturalv2.pipeline.sample_extraction import (
     ImputationsStage,
     KnownsStage,
     RelevanceFilterStage,
+    SampledInclusionProbStage,
     TreatmentOutcomeFilterStage,
 )

@@ -30,6 +30,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _detokenize_kwargs(llm: object) -> dict[str, bool]:
+    """Disable detokenization only when vLLM runs in-process."""
+    return {"detokenize": False} if isinstance(llm, VLLMModel) else {}
+
+
 class ConditionalsExtractType(str, Enum):
     """Enumeration for types of conditional probabilities to extract."""
 
@@ -386,7 +391,13 @@ async def extract_conditionals(  # noqa: PLR0912
             queue_size,
         )
 
-    return pd.read_csv(file_path, index_col=0), example_prompt
+    try:
+        return pd.read_csv(file_path, index_col=0), example_prompt
+    except (FileNotFoundError, pd.errors.EmptyDataError):
+        logger.warning(
+            f"No results were written to {file_path}; returning an empty DataFrame."
+        )
+        return pd.DataFrame(), example_prompt
 
 
 def _prepare_for_conditional_extraction(
@@ -506,7 +517,7 @@ async def _offline_inference(  # noqa: PLR0912
         endpoint="text_completion",
         max_tokens=1,
         prompt_logprobs=0,
-        detokenize=False,
+        **_detokenize_kwargs(llm),
         use_tqdm=functools.partial(tqdm, leave=False),
     )
 
@@ -806,7 +817,7 @@ async def _prompt_processor(
                                 endpoint="text_completion",
                                 max_tokens=1,
                                 prompt_logprobs=0,
-                                detokenize=False,
+                                **_detokenize_kwargs(llm),
                             ),
                             name="LLM-Call",
                         )
