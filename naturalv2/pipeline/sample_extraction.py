@@ -558,6 +558,9 @@ class SampleTYStage(SampleExtractionStage):
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
     ) -> pd.DataFrame:
+        if context.sample_validation is None:
+            raise ValueError("SampleTYStage requires a sample-validation policy.")
+
         response_format = _create_sample_ty_response_format(
             context.experiment, context.outcome
         )
@@ -578,9 +581,6 @@ class SampleTYStage(SampleExtractionStage):
                 nct_id=context.experiment.nct_id,
                 outcome=context.outcome,
                 sample_validation=context.sample_validation,
-            )
-            logger.info(
-                f"After non-finite outcome filter: {len(self.data)} reports."
             )
 
         self.data = context.experiment.discretize_ty(self.data, context.outcome)

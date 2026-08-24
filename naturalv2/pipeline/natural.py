@@ -52,7 +52,7 @@ class PipelineContext:
     exp_name: str
 
     #: Policy controlling when rejected samples must stop estimation.
-    sample_validation: SampleValidationConfig
+    sample_validation: SampleValidationConfig | None = None
 
     #: Token tracker to monitor token usage across stages.
     _token_tracker: TokenTracker = TokenTracker()
