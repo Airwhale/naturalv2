@@ -493,6 +493,9 @@ def _filter_invalid_sampled_outcomes(
         rejection_rate = n_rejected / n_sampled
         all_rejected = n_rejected == n_sampled
         high_rejection_rate = rejection_rate >= sample_validation.high_rejection_rate
+        # all_rejected raises below before this flag is read as a branch, so its
+        # presence here looks redundant. It is not: the flag is what the log
+        # records, and a run stopped for either reason should read as blocked.
         blocks_estimation = all_rejected or (
             high_rejection_rate and not sample_validation.allow_high_rejection_rate
         )

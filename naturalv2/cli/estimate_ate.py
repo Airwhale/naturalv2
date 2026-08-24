@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 from ast import literal_eval
+from collections.abc import Mapping
 
 import hydra
 import numpy as np
@@ -316,8 +317,11 @@ def _calculate_treatment_effects(
     return result_dicts
 
 
-
-def _warn_on_stale_bounds(experiment: "Experiment", nct_id: str, cfg: DictConfig) -> None:
+def _warn_on_stale_bounds(
+    experiment: Experiment,
+    nct_id: str,
+    configured_bounds: Mapping[str, Mapping[str, float]],
+) -> None:
     """Warn when configured bounds differ from the ones the experiment carries.
 
     Bounds reach an experiment through ``create_study``, which persists them into
@@ -325,10 +329,7 @@ def _warn_on_stale_bounds(experiment: "Experiment", nct_id: str, cfg: DictConfig
     therefore changes nothing here, and the run would quietly use the stale
     interval -- a corrected bound would look applied when it is not.
     """
-    configured = (
-        OmegaConf.to_container(cfg.get("outcome_bounds", {}) or {}, resolve=True) or {}
-    ).get(nct_id, {})
-    for outcome, wanted in configured.items():
+    for outcome, wanted in configured_bounds.items():
         persisted = experiment.outcome_bounds.get(outcome)
         in_use = persisted.model_dump(mode="json") if persisted else None
         if in_use != dict(wanted):
@@ -341,6 +342,7 @@ def _warn_on_stale_bounds(experiment: "Experiment", nct_id: str, cfg: DictConfig
                 dict(wanted),
                 in_use,
             )
+
 
 def _save_results(
     results: list[dict], save_path: str, nct_id: str, exp_name: str, eval_type: str
@@ -406,7 +408,14 @@ async def _process_trial(  # noqa: PLR0912, PLR0915
             exc_info=True,
         )
         return
-    _warn_on_stale_bounds(experiment, nct_id, cfg)
+    _warn_on_stale_bounds(
+        experiment,
+        nct_id,
+        (
+            OmegaConf.to_container(cfg.get("outcome_bounds", {}) or {}, resolve=True)
+            or {}
+        ).get(nct_id, {}),
+    )
 
     # If the experiment has no _avg_potential_outcomes or it is an empty list, calculate them from the trial.
     # Note: we can remove this once all our experiment yamls are updated to include APOs.

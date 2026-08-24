@@ -1,4 +1,3 @@
-import logging
 from unittest.mock import Mock, patch
 
 import pandas as pd
@@ -96,24 +95,26 @@ def test_rejection_reasons_separate_every_cause():
     extractions = pd.DataFrame(
         {
             OUTCOME_COL_NAME: [
-                10.0,             # kept
-                "not-a-number",   # unparsed
-                float("nan"),     # unparsed
-                float("inf"),     # infinite
-                -1.0,             # below minimum
-                4_444_000.0,      # above maximum
+                10.0,  # kept
+                "not-a-number",  # unparsed
+                float("nan"),  # unparsed
+                float("inf"),  # infinite
+                -1.0,  # below minimum
+                4_444_000.0,  # above maximum
             ]
         }
     )
-    with patch("naturalv2.pipeline.sample_extraction.logger.error") as log:
-        with pytest.raises(ValueError, match="high-rejection threshold"):
-            _filter_invalid_sampled_outcomes(
-                extractions,
-                nct_id="NCT012",
-                outcome="Outcome A",
-                bounds=BOUNDS,
-                sample_validation=TEN_PERCENT_POLICY,
-            )
+    with (
+        patch("naturalv2.pipeline.sample_extraction.logger.error") as log,
+        pytest.raises(ValueError, match="high-rejection threshold"),
+    ):
+        _filter_invalid_sampled_outcomes(
+            extractions,
+            nct_id="NCT012",
+            outcome="Outcome A",
+            bounds=BOUNDS,
+            sample_validation=TEN_PERCENT_POLICY,
+        )
     assert log.call_args.kwargs["extra"]["rejection_reasons"] == {
         "unparsed": 2,
         "infinite": 1,
