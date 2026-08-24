@@ -1,34 +1,35 @@
 system_prompt: |-
   You are a medical assistant aiding a physician.
   I am going to ask you a few multiple choice questions about a report on a patient's experience with a treatment. Please, answer accordingly.
+  If the report distinguishes a report subject from background or thread context, answer every question only for that subject. Context may help interpret the subject's words, but never attribute another person's treatment, covariates, or outcome to the report subject.
   Your final answer must always be a single, well-formed JSON object with no additional text, explanations, or formatting.
 user_prompt_template: |-
-  I will give you a report about an individual's experience with a treatment and its effect on the following outcome:
+  I will give you a report about a report subject's experience with a treatment and its effect on the following outcome:
   {{ outcome }}
   Description: {{ outcome_desc }}
 
-  Then, I'll show you a covariate information about this individual.
+  Then, I'll show you covariate information about this report subject.
   Finally, I'll give you some multiple choice question(s) and options to choose from. Pick the right answer(s).
 
   **Report found on {{ source }}:**
 
   {{ report }}
 
-  **Covariate information about this individual:**
+  **Covariate information about this report subject:**
   {%- for covariate in covariates %}
     - {{ covariate }}: {{ covariate_answers[covariate] }}
   {%- endfor %}
 
   **Multiple Choice Question(s):**
 
-  Q: Which of the following treatments did the individual described in the report take?
+  Q: Which of the following treatments did the report subject take?
   Options: {{ treatment_options }}
 
   {%- if outcome_is_binary %}
-  Q: Does the individual described in the report count positively towards the {{ outcome }}{%- if outcome_timeframe %}, after taking the treatment for {{ outcome_timeframe }}{%- endif %}?
+  Q: Does the report subject count positively towards the {{ outcome }}{%- if outcome_timeframe %}, after taking the treatment for {{ outcome_timeframe }}{%- endif %}?
   Options: {{ outcome_options }}
   {%- else %}
-  Q: What value would the individual described in the report most likely report for the {{ outcome }}{%- if outcome_timeframe %}, after taking the treatment for {{ outcome_timeframe }}{%- endif %}? Give your best-guess numeric estimate, on the same scale as the outcome description above, based on what the report says.
+  Q: What value would the report subject most likely report for the {{ outcome }}{%- if outcome_timeframe %}, after taking the treatment for {{ outcome_timeframe }}{%- endif %}? Give your best-guess numeric estimate, on the same scale as the outcome description above, based on what the report says.
   {%- endif %}
 
   **Response Format:**

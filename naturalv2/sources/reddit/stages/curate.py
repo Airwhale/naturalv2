@@ -565,13 +565,13 @@ def _process_chunk(
         Returns None if no matches are found.
 
     """
-    # Prepare text for matching
-    txt_cols = [
-        col for col in ["title", "initial_post", "report_text"] if col in df.columns
-    ]
-    if not txt_cols:
+    # Treatment mentions must belong to the person represented by the row. A
+    # submission's title and body share an author, while a comment's title and
+    # initial post are thread context from another author.
+    if not {"report_text", "report_type"}.issubset(df.columns):
         logger.warning(
-            "No text columns available for matching in subreddit %s", ctx.name
+            "Report text or report type unavailable for matching in subreddit %s",
+            ctx.name,
         )
         return None
 
@@ -595,9 +595,7 @@ def _process_chunk(
             return None
 
     df_prep = (
-        df_prep.with_columns(
-            pl.concat_str(txt_cols, separator=" ", ignore_nulls=True).alias("_raw_text")
-        )
+        df_prep.with_columns(_build_match_text_expr(df_prep.columns).alias("_raw_text"))
         .with_columns(_get_normalization_expr("_raw_text").alias("_normalized_text"))
         .drop("_raw_text")
     )
@@ -781,6 +779,24 @@ def _stream_to_disk(
 # -----------------------------------------------------------------------------
 
 
+def _build_match_text_expr(available_cols: list[str]) -> pl.Expr:
+    """Build subject-bound text for lexical treatment matching."""
+
+    def safe_col(name: str) -> pl.Expr:
+        return pl.col(name).fill_null("") if name in available_cols else pl.lit("")
+
+    submission_text = pl.concat_str(
+        [safe_col("title"), safe_col("report_text")],
+        separator=" ",
+        ignore_nulls=True,
+    )
+    return (
+        pl.when(pl.col("report_type") == "submission")
+        .then(submission_text)
+        .otherwise(safe_col("report_text"))
+    )
+
+
 def _build_report_expr(available_cols: list[str]) -> pl.Expr:
     """Generate markdown report column expression.
 
@@ -797,7 +813,8 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
     pl.Expr
         Polars expression that generates markdown-formatted report text.
         For submissions, includes: subreddit, title, date, post content.
-        For comments, includes: subreddit, initial post, date, comment content.
+        For comments, identifies the commenter as the report subject, presents the
+        comment first, and labels the initial post as thread context.
 
     Raises
     ------
@@ -835,16 +852,21 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
 
     # Comment format
     fmt_comment = pl.format(
+        "**Report subject**\nThe report subject is the author of the comment below. "
+        "Attribute treatment, covariates, and outcomes only to this commenter. "
+        "The initial post is thread context and may have been written by someone "
+        "else.\n\n"
         "**Subreddit**\nThis comment was found on the subreddit r/{}.\n\n"
-        "**Initial Post**\nThis comment was in response to the following post:\n"
-        "Title: {}\nPost content: {}\n\n"
         "**Date created**\nThis comment was created on {}.\n\n"
-        "**Comment**\n{}",
+        "**Comment from the report subject**\n{}\n\n"
+        "**Thread context (not subject evidence)**\nUse this initial post only "
+        "to interpret the comment. Do not attribute its author's experiences to "
+        "the report subject.\nTitle: {}\nPost content: {}",
         safe_col("subreddit"),
-        safe_col("title"),
-        safe_col("initial_post"),
         date_expr,
         safe_col("report_text"),
+        safe_col("title"),
+        safe_col("initial_post"),
     )
 
     return (
