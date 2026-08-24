@@ -1,3 +1,5 @@
+import logging
+from unittest.mock import Mock
 import numpy as np
 import pandas as pd
 import pytest
@@ -159,3 +161,39 @@ def test_use_imputed_nones_drops_rows_with_missing_covariates(
         use_imputed_nones=use_imputed_nones,
     )
     assert estimator.seen_lengths[0] == expected_len
+
+
+def test_stale_persisted_bounds_are_flagged(caplog):
+    """Editing conf after create_study must not look like it took effect."""
+    from omegaconf import OmegaConf
+
+    from naturalv2.cli.estimate_ate import _warn_on_stale_bounds
+    from naturalv2.outcome_metadata import OutcomeBounds
+
+    experiment = Mock()
+    experiment.outcome_bounds = {
+        "Functional Capacity": OutcomeBounds(minimum=0, maximum=55)
+    }
+    cfg = OmegaConf.create(
+        {"outcome_bounds": {"NCT06366724": {"Functional Capacity":
+                                            {"minimum": -55, "maximum": 55}}}}
+    )
+    with caplog.at_level(logging.WARNING, logger="naturalv2.cli.estimate_ate"):
+        _warn_on_stale_bounds(experiment, "NCT06366724", cfg)
+    assert "rebuild the experiment" in caplog.text
+
+
+def test_matching_bounds_are_silent(caplog):
+    from omegaconf import OmegaConf
+
+    from naturalv2.cli.estimate_ate import _warn_on_stale_bounds
+    from naturalv2.outcome_metadata import OutcomeBounds
+
+    experiment = Mock()
+    experiment.outcome_bounds = {"Score": OutcomeBounds(minimum=-55, maximum=55)}
+    cfg = OmegaConf.create(
+        {"outcome_bounds": {"NCT0": {"Score": {"minimum": -55, "maximum": 55}}}}
+    )
+    with caplog.at_level(logging.WARNING, logger="naturalv2.cli.estimate_ate"):
+        _warn_on_stale_bounds(experiment, "NCT0", cfg)
+    assert caplog.text == ""

@@ -1,4 +1,5 @@
-from unittest.mock import Mock
+import logging
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
@@ -88,3 +89,48 @@ def test_all_invalid_records_fail_even_with_override():
 
     with pytest.raises(ValueError, match="No valid sampled outcomes remain"):
         _validate(extractions, policy=ALLOW_HIGH_REJECTION_POLICY, bounds=BOUNDS)
+
+
+def test_rejection_reasons_separate_every_cause():
+    """Four causes, four counts -- they call for different responses."""
+    extractions = pd.DataFrame(
+        {
+            OUTCOME_COL_NAME: [
+                10.0,             # kept
+                "not-a-number",   # unparsed
+                float("nan"),     # unparsed
+                float("inf"),     # infinite
+                -1.0,             # below minimum
+                4_444_000.0,      # above maximum
+            ]
+        }
+    )
+    with patch("naturalv2.pipeline.sample_extraction.logger.error") as log:
+        with pytest.raises(ValueError, match="high-rejection threshold"):
+            _filter_invalid_sampled_outcomes(
+                extractions,
+                nct_id="NCT012",
+                outcome="Outcome A",
+                bounds=BOUNDS,
+                sample_validation=TEN_PERCENT_POLICY,
+            )
+    assert log.call_args.kwargs["extra"]["rejection_reasons"] == {
+        "unparsed": 2,
+        "infinite": 1,
+        "below_minimum": 1,
+        "above_maximum": 1,
+    }
+
+
+def test_change_endpoint_bounds_keep_improvements():
+    """A change endpoint spans the instrument's width signed, not its level range."""
+    # -10 is a real improvement on a 0-55 instrument scored as change.
+    extractions = pd.DataFrame({OUTCOME_COL_NAME: [-10.0, 5.0, 20.0]})
+    kept = _filter_invalid_sampled_outcomes(
+        extractions,
+        nct_id="NCT06366724",
+        outcome="Functional Capacity",
+        bounds=OutcomeBounds(minimum=-55, maximum=55),
+        sample_validation=TEN_PERCENT_POLICY,
+    )
+    assert kept[OUTCOME_COL_NAME].tolist() == [-10.0, 5.0, 20.0]

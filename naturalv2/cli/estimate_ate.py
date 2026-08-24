@@ -316,6 +316,32 @@ def _calculate_treatment_effects(
     return result_dicts
 
 
+
+def _warn_on_stale_bounds(experiment: "Experiment", nct_id: str, cfg: DictConfig) -> None:
+    """Warn when configured bounds differ from the ones the experiment carries.
+
+    Bounds reach an experiment through ``create_study``, which persists them into
+    the experiment YAML; ``from_yaml`` reads only that. Editing config afterwards
+    therefore changes nothing here, and the run would quietly use the stale
+    interval -- a corrected bound would look applied when it is not.
+    """
+    configured = (
+        OmegaConf.to_container(cfg.get("outcome_bounds", {}) or {}, resolve=True) or {}
+    ).get(nct_id, {})
+    for outcome, wanted in configured.items():
+        persisted = experiment.outcome_bounds.get(outcome)
+        in_use = persisted.model_dump(mode="json") if persisted else None
+        if in_use != dict(wanted):
+            logger.warning(
+                "Configured bounds for %s / %r differ from the experiment YAML "
+                "(config %s, in use %s). Bounds are persisted by create_study, so "
+                "rebuild the experiment to apply the change.",
+                nct_id,
+                outcome,
+                dict(wanted),
+                in_use,
+            )
+
 def _save_results(
     results: list[dict], save_path: str, nct_id: str, exp_name: str, eval_type: str
 ) -> None:
@@ -380,6 +406,8 @@ async def _process_trial(  # noqa: PLR0912, PLR0915
             exc_info=True,
         )
         return
+    _warn_on_stale_bounds(experiment, nct_id, cfg)
+
     # If the experiment has no _avg_potential_outcomes or it is an empty list, calculate them from the trial.
     # Note: we can remove this once all our experiment yamls are updated to include APOs.
     if (

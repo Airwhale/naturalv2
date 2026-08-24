@@ -470,9 +470,9 @@ def _filter_invalid_sampled_outcomes(
     numeric_outcomes = pd.to_numeric(extractions[OUTCOME_COL_NAME], errors="coerce")
     minimum = bounds.minimum if bounds is not None else -np.inf
     maximum = bounds.maximum if bounds is not None else np.inf
-    finite_mask = pd.Series(
-        np.isfinite(numeric_outcomes), index=extractions.index
-    ).fillna(False)
+    # to_numeric always yields a numeric dtype, so this mask is plain bool with
+    # no NaN to fill, and np.isfinite on a Series already returns one.
+    finite_mask = np.isfinite(numeric_outcomes)
     below_minimum = finite_mask & numeric_outcomes.lt(minimum)
     above_maximum = finite_mask & numeric_outcomes.gt(maximum)
     valid_mask = finite_mask & ~below_minimum & ~above_maximum
@@ -480,8 +480,13 @@ def _filter_invalid_sampled_outcomes(
     n_sampled = len(extractions)
     n_rejected = int((~valid_mask).sum())
     if n_rejected:
+        # "not a number at all" and "a number, but infinite" are different
+        # failures: the first means the model did not answer with a value, the
+        # second that it produced one no scale can hold.
+        unparsed = numeric_outcomes.isna()
         rejection_reasons = {
-            "nonfinite": int((~finite_mask).sum()),
+            "unparsed": int(unparsed.sum()),
+            "infinite": int((~finite_mask & ~unparsed).sum()),
             "below_minimum": int(below_minimum.sum()),
             "above_maximum": int(above_maximum.sum()),
         }
@@ -506,7 +511,7 @@ def _filter_invalid_sampled_outcomes(
             rejection_rate * 100,
             extra={
                 "phase": "sample_ty_artifact_validation",
-                "schema_id": "sample_ty_outcome_validation.v2",
+                "schema_id": "sample_ty_outcome_validation.v3",
                 "status": "blocked" if blocks_estimation else "rejected",
                 "nct_id": nct_id,
                 "outcome": outcome,

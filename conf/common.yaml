@@ -18,10 +18,19 @@ sample_validation:
 
 # Optional inclusive bounds keyed by trial ID and exact outcome name.
 # Persisted by create_study for validation of sampled outcomes.
+#
+# Bound the quantity the endpoint reports, not the instrument. An endpoint
+# scored as change-from-baseline on a 0-55 instrument ranges over [-55, 55],
+# because a patient can move the full width of the scale in either direction.
+# Giving it the instrument's [0, 55] rejects every improvement -- on our LIFT
+# run that discarded 15 reports between -55 and -5, which are the results the
+# trial exists to detect.
 outcome_bounds:
   NCT06366724:
+    # "Change in the total FUNCAP55 questionnaire score" -- a change, so the
+    # span is the instrument's width signed, not its level range.
     Functional Capacity:
-      minimum: 0
+      minimum: -55
       maximum: 55
 
 # Metadata
