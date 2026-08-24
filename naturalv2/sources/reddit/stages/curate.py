@@ -852,16 +852,16 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
 
     # Comment format
     fmt_comment = pl.format(
-        "**Report subject**\nThe report subject is the author of the comment below. "
+        "**Target patient**\nThe target patient is the author of the comment below. "
         "Attribute treatment, covariates, and outcomes only to this commenter. "
-        "The initial post is thread context and may have been written by someone "
-        "else.\n\n"
+        "The initial post is context, not evidence about the target patient.\n\n"
         "**Subreddit**\nThis comment was found on the subreddit r/{}.\n\n"
         "**Date created**\nThis comment was created on {}.\n\n"
-        "**Comment from the report subject**\n{}\n\n"
-        "**Thread context (not subject evidence)**\nUse this initial post only "
-        "to interpret the comment. Do not attribute its author's experiences to "
-        "the report subject.\nTitle: {}\nPost content: {}",
+        "**Comment from the target patient**\n{}\n\n"
+        "**Thread context (not target-patient evidence)**\nUse this initial post "
+        "only to interpret what the target patient's comment refers to. Do not use "
+        "any experience stated only here as the target patient's treatment, "
+        "covariate, or outcome.\nTitle: {}\nPost content: {}",
         safe_col("subreddit"),
         date_expr,
         safe_col("report_text"),

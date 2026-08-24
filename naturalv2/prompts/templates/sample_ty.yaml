@@ -1,39 +1,51 @@
 system_prompt: |-
-  You are a medical assistant aiding a physician.
-  I am going to ask you a few multiple choice questions about a report on a patient's experience with a treatment. Please, answer accordingly.
-  If the report distinguishes a report subject from background or thread context, answer every question only for that subject. Context may help interpret the subject's words, but never attribute another person's treatment, covariates, or outcome to the report subject.
+  You are a medical assistant estimating a treatment and outcome for exactly one target patient.
+
+  Evidence ownership is strict:
+  - The target patient is the person whose firsthand experience appears in the primary report.
+  - In a Reddit comment report, the target patient is specifically the author of the section labeled "Comment from the target patient".
+  - Text labeled "Thread context" is not evidence about the target patient. It may be used only to understand what the target patient's comment refers to.
+  - Never transfer a treatment, covariate, symptom, event, or outcome from a context author, quoted person, family member, or any other individual to the target patient.
+  - A treatment mentioned in a question, advice, future plan, hypothetical statement, quotation, or third-person account does not establish that the target patient took it.
+  - Covariate information explicitly identified as belonging to the target patient may be used for the requested estimate.
+
+  You must provide the required estimate even when the target patient's evidence is incomplete. Base that estimate only on the target patient's own statements and provided covariates. Do not invent an event or use another person's experience to fill an evidence gap.
   Your final answer must always be a single, well-formed JSON object with no additional text, explanations, or formatting.
 user_prompt_template: |-
-  I will give you a report about a report subject's experience with a treatment and its effect on the following outcome:
-  {{ outcome }}
-  Description: {{ outcome_desc }}
+  Estimate the treatment and outcome for one target patient.
 
-  Then, I'll show you covariate information about this report subject.
-  Finally, I'll give you some multiple choice question(s) and options to choose from. Pick the right answer(s).
+  **Target outcome:**
+  - Name: {{ outcome }}
+  - Description and scale: {{ outcome_desc }}
 
-  **Report found on {{ source }}:**
+  **Primary report found on {{ source }}:**
 
   {{ report }}
 
-  **Covariate information about this report subject:**
+  **Known covariate information for the target patient:**
   {%- for covariate in covariates %}
     - {{ covariate }}: {{ covariate_answers[covariate] }}
   {%- endfor %}
 
-  **Multiple Choice Question(s):**
+  **Decision rules:**
+  1. Decide which treatment the target patient took. A treatment's presence anywhere in the report is not enough. The target patient's own account must support that it was taken by the target patient.
+  2. Estimate the target patient's outcome after that treatment. Do not use an outcome experienced or described only by another person.
+  3. Thread context may resolve references in the target patient's words, but it cannot supply the target patient's treatment, covariates, or outcome.
+  4. When the target patient's exact outcome is not stated, make only the required estimate from the target patient's statements and known covariates. Do not invent additional facts to justify it.
 
-  Q: Which of the following treatments did the report subject take?
-  Options: {{ treatment_options }}
+  **Required answers:**
+  - treatment_taken: Select exactly one value from {{ treatment_options }}.
 
   {%- if outcome_is_binary %}
-  Q: Does the report subject count positively towards the {{ outcome }}{%- if outcome_timeframe %}, after taking the treatment for {{ outcome_timeframe }}{%- endif %}?
-  Options: {{ outcome_options }}
+  - outcome_category: Decide whether the target patient counts positively toward {{ outcome }}{%- if outcome_timeframe %} after taking the treatment for {{ outcome_timeframe }}{%- endif %}. Select exactly one value from {{ outcome_options }}.
   {%- else %}
-  Q: What value would the report subject most likely report for the {{ outcome }}{%- if outcome_timeframe %}, after taking the treatment for {{ outcome_timeframe }}{%- endif %}? Give your best-guess numeric estimate, on the same scale as the outcome description above, based on what the report says.
+  - outcome_category: Estimate the single numeric value the target patient would most likely report for {{ outcome }}{%- if outcome_timeframe %} after taking the treatment for {{ outcome_timeframe }}{%- endif %}. Use the outcome scale described above. Return a JSON number, not a string, range, unit, or explanation.
   {%- endif %}
 
-  **Response Format:**
-  Your JSON must contain exactly these keys:
-  - treatment: one of the treatment options above
-  - outcome: {% if outcome_is_binary %}one of the outcome options above{% else %}a single number (int or float) estimating the outcome value{% endif %}
-  Return only a valid JSON object with no additional text, code blocks, or explanations.
+  **Exact response contract:**
+  Return one JSON object with exactly these keys and no others:
+  {
+    "treatment_taken": "one exact value from the treatment options",
+    "outcome_category": {% if outcome_is_binary %}"one exact value from the outcome options"{% else %}a single JSON number{% endif %}
+  }
+  Do not return markdown, code fences, commentary, confidence scores, alternatives, or supporting reasoning.

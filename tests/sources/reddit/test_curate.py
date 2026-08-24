@@ -44,7 +44,7 @@ def test_process_chunk_matches_treatments_only_in_subject_text():
     assert set(result["permalink"]) == {"own-comment", "own-submission"}
 
 
-def test_comment_report_presents_subject_before_thread_context():
+def test_comment_report_presents_target_patient_before_thread_context():
     data = pl.DataFrame(
         {
             "subreddit": ["testsub"],
@@ -64,12 +64,15 @@ def test_comment_report_presents_subject_before_thread_context():
     assert (
         "Attribute treatment, covariates, and outcomes only to this commenter" in report
     )
-    assert report.index("**Comment from the report subject**") < report.index(
-        "**Thread context (not subject evidence)**"
+    assert report.index("**Comment from the target patient**") < report.index(
+        "**Thread context (not target-patient evidence)**"
+    )
+    assert (
+        "The initial post is context, not evidence about the target patient" in report
     )
 
 
-def test_sample_ty_prompt_binds_answers_to_report_subject():
+def test_sample_ty_prompt_binds_answers_to_target_patient():
     prompts_dir = str(resources.files("naturalv2.prompts.templates"))
     messages = load_prompt(
         prompts_dir,
@@ -88,8 +91,15 @@ def test_sample_ty_prompt_binds_answers_to_report_subject():
     )
 
     assert isinstance(messages, list)
-    assert "answer every question only for that subject" in messages[0]["content"]
+    system_prompt = messages[0]["content"]
+    user_prompt = messages[1]["content"]
     assert (
-        "Which of the following treatments did the report subject take?"
-        in messages[1]["content"]
+        'author of the section labeled "Comment from the target patient"'
+        in system_prompt
     )
+    assert "future plan" in system_prompt
+    assert "Do not invent an event" in system_prompt
+    assert '"treatment_taken"' in user_prompt
+    assert '"outcome_category"' in user_prompt
+    assert "Do not invent additional facts" in user_prompt
+    assert "report subject" not in system_prompt + user_prompt
