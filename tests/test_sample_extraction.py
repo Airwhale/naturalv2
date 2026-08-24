@@ -9,7 +9,7 @@ from naturalv2.pipeline import (
 )
 from naturalv2.pipeline.sample_extraction import (
     _create_sample_ty_response_format,
-    _validate_sample_ty_extractions,
+    _filter_nonfinite_sampled_outcomes,
 )
 
 
@@ -37,9 +37,8 @@ def _validate(
     extractions: pd.DataFrame,
     policy: SampleValidationConfig = TEN_PERCENT_POLICY,
 ) -> pd.DataFrame:
-    return _validate_sample_ty_extractions(
+    return _filter_nonfinite_sampled_outcomes(
         extractions,
-        RESPONSE_FORMAT,
         nct_id=NCT_ID,
         outcome=OUTCOME,
         sample_validation=policy,
@@ -91,5 +90,5 @@ def test_all_invalid_records_fail_even_with_override():
         }
     )
 
-    with pytest.raises(ValueError, match="Every sampled treatment/outcome record"):
+    with pytest.raises(ValueError, match="Every sampled continuous outcome"):
         _validate(extractions, ALLOW_HIGH_REJECTION_POLICY)

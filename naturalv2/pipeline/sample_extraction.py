@@ -4,7 +4,6 @@ import asyncio
 import importlib.resources
 import logging
 import os
-from collections import Counter
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -12,7 +11,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from omegaconf import DictConfig
-from pydantic import BaseModel, FiniteFloat, ValidationError
+from pydantic import BaseModel, FiniteFloat
 from tqdm.asyncio import tqdm
 
 from naturalv2.models.utils import TokenTracker
@@ -21,7 +20,6 @@ from naturalv2.pipeline.constants import (
     OUTCOME_COL_NAME,
     TREATMENT_COL_NAME,
     SampleValidationConfig,
-    rejection_log_level,
 )
 from naturalv2.pipeline.natural import PipelineContext, PipelineStage
 from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
@@ -455,121 +453,76 @@ def _create_sample_ty_response_format(
     )
 
 
-def _validate_sample_ty_extractions(
+def _filter_nonfinite_sampled_outcomes(
     extractions: pd.DataFrame,
-    response_format: type[BaseModel],
     *,
     nct_id: str,
     outcome: str,
     sample_validation: SampleValidationConfig,
 ) -> pd.DataFrame:
-    """Validate combined cached and newly sampled treatment/outcome records."""
-    validation_config = sample_validation
-    required_columns = {TREATMENT_COL_NAME, OUTCOME_COL_NAME}
-    missing_columns = required_columns.difference(extractions.columns)
-    if missing_columns:
-        missing = ", ".join(sorted(missing_columns))
-        raise ValueError(f"Sampled extraction artifact is missing columns: {missing}")
+    """Remove non-finite cached outcomes and enforce the rejection policy."""
+    if OUTCOME_COL_NAME not in extractions.columns:
+        raise ValueError(
+            f"Sampled extraction artifact is missing column: {OUTCOME_COL_NAME}"
+        )
 
-    valid_mask: list[bool] = []
-    validated_payloads: list[dict[str, Any]] = []
-    # Which field a record failed on says what went wrong. A rejected outcome
-    # means the model emitted something unusable; a rejected treatment usually
-    # means `treatment_names` changed and the cached artifact predates it. One
-    # counter cannot distinguish "the model misbehaved" from "rebuild the cache".
-    rejected_by_field: Counter[str] = Counter()
-    for _, row in extractions.iterrows():
-        payload = {
-            TREATMENT_COL_NAME: row[TREATMENT_COL_NAME],
-            OUTCOME_COL_NAME: row[OUTCOME_COL_NAME],
-        }
-        try:
-            validated = response_format.model_validate(payload)
-        except ValidationError as exc:
-            # Count every failing field, not just the first -- a record can fail
-            # on both -- and fall back to a sentinel for model-level errors,
-            # whose `loc` is empty.
-            fields = {str(err["loc"][0]) for err in exc.errors() if err["loc"]}
-            rejected_by_field.update(fields or {"<record>"})
-            valid_mask.append(False)
-            continue
-
-        valid_mask.append(True)
-        validated_payloads.append(validated.model_dump(mode="python"))
+    numeric_outcomes = pd.to_numeric(extractions[OUTCOME_COL_NAME], errors="coerce")
+    valid_mask = np.isfinite(numeric_outcomes).fillna(False)
+    validated_extractions = extractions.loc[valid_mask].copy()
+    validated_extractions[OUTCOME_COL_NAME] = numeric_outcomes.loc[valid_mask]
 
     n_sampled = len(extractions)
-    n_rejected = n_sampled - len(validated_payloads)
-    rejection_rate = n_rejected / n_sampled if n_sampled else 0.0
-    high_rejection_rate = (
-        n_rejected > 0 and rejection_rate >= validation_config.high_rejection_rate
+    n_rejected = int((~valid_mask).sum())
+    if not n_rejected:
+        return validated_extractions
+
+    rejection_rate = n_rejected / n_sampled
+    all_rejected = n_rejected == n_sampled
+    high_rejection_rate = rejection_rate >= sample_validation.high_rejection_rate
+    blocks_estimation = all_rejected or (
+        high_rejection_rate and not sample_validation.allow_high_rejection_rate
     )
-    blocks_estimation = n_sampled > 0 and (
-        n_rejected == n_sampled
-        or (high_rejection_rate and not validation_config.allow_high_rejection_rate)
-    )
-    log = rejection_log_level(
-        logger,
-        n_rejected,
-        rejection_rate,
-        high_rejection_rate=validation_config.high_rejection_rate,
-    )
-    log(
-        "Sampled extraction artifact validation: nct_id=%s outcome=%r "
-        "n_sampled=%d n_rejected=%d rejection_rate=%.6f "
-        "high_rejection_rate_threshold=%.6f allow_high_rejection_rate=%s "
-        "rejected_by_field=%s",
+    logger.log(
+        logging.ERROR if high_rejection_rate else logging.WARNING,
+        "Rejected non-finite sampled outcomes: nct_id=%s outcome=%r "
+        "n_rejected=%d n_sampled=%d rejection_rate=%.6f",
         nct_id,
         outcome,
-        n_sampled,
         n_rejected,
+        n_sampled,
         rejection_rate,
-        validation_config.high_rejection_rate,
-        validation_config.allow_high_rejection_rate,
-        dict(rejected_by_field),
         extra={
             "phase": "sample_ty_artifact_validation",
-            "schema_id": "sample_ty_response.v3",
-            "status": (
-                "blocked"
-                if blocks_estimation
-                else "rejected"
-                if n_rejected
-                else "accepted"
-            ),
+            "schema_id": "sample_ty_outcome_validation.v1",
+            "status": "blocked" if blocks_estimation else "rejected",
             "nct_id": nct_id,
             "outcome": outcome,
             "n_sampled": n_sampled,
             "n_rejected": n_rejected,
             "rejection_rate": rejection_rate,
-            "high_rejection_rate_threshold": (validation_config.high_rejection_rate),
-            "allow_high_rejection_rate": (validation_config.allow_high_rejection_rate),
+            "high_rejection_rate_threshold": sample_validation.high_rejection_rate,
+            "allow_high_rejection_rate": sample_validation.allow_high_rejection_rate,
             "blocks_estimation": blocks_estimation,
-            "rejected_by_field": dict(rejected_by_field),
         },
     )
 
-    if n_sampled and n_rejected == n_sampled:
+    if all_rejected:
         raise ValueError(
-            f"Every sampled treatment/outcome record for {nct_id!r} / "
-            f"{outcome!r} failed artifact validation."
+            f"Every sampled continuous outcome for {nct_id!r} / {outcome!r} "
+            "was non-finite."
         )
 
-    if high_rejection_rate and not validation_config.allow_high_rejection_rate:
+    if high_rejection_rate and not sample_validation.allow_high_rejection_rate:
         raise ValueError(
-            f"Rejected {n_rejected} of {n_sampled} sampled treatment/outcome "
-            f"records for {nct_id!r} / {outcome!r} ({rejection_rate:.2%}), "
+            f"Rejected {n_rejected} of {n_sampled} sampled continuous outcomes "
+            f"for {nct_id!r} / {outcome!r} ({rejection_rate:.2%}), "
             "meeting the configured high-rejection threshold "
-            f"({validation_config.high_rejection_rate:.2%}). Estimation stopped "
+            f"({sample_validation.high_rejection_rate:.2%}). Estimation stopped "
             "to avoid bias from selected survivors. Set "
             "`sample_validation.allow_high_rejection_rate=true` to continue "
             "explicitly."
         )
 
-    validated_extractions = extractions.loc[valid_mask].copy()
-    for column in required_columns:
-        validated_extractions[column] = [
-            payload[column] for payload in validated_payloads
-        ]
     return validated_extractions
 
 
@@ -625,13 +578,13 @@ class SampleTYStage(SampleExtractionStage):
             max_concurrent_requests=self.max_concurrent_workers,
         )
 
-        self.data = _validate_sample_ty_extractions(
-            self.data,
-            response_format,
-            nct_id=context.experiment.nct_id,
-            outcome=context.outcome,
-            sample_validation=context.sample_validation,
-        )
+        if not context.experiment.is_binary_outcome(context.outcome):
+            self.data = _filter_nonfinite_sampled_outcomes(
+                self.data,
+                nct_id=context.experiment.nct_id,
+                outcome=context.outcome,
+                sample_validation=context.sample_validation,
+            )
         self.data = context.experiment.discretize_ty(self.data, context.outcome)
         logger.info(f"Final: {len(self.data)} reports after sampling TY.")
         return self.data
