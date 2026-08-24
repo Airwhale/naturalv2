@@ -468,19 +468,13 @@ def _filter_invalid_sampled_outcomes(
         )
 
     numeric_outcomes = pd.to_numeric(extractions[OUTCOME_COL_NAME], errors="coerce")
+    minimum = bounds.minimum if bounds is not None else -np.inf
+    maximum = bounds.maximum if bounds is not None else np.inf
     finite_mask = pd.Series(
         np.isfinite(numeric_outcomes), index=extractions.index
     ).fillna(False)
-    below_minimum = (
-        finite_mask & numeric_outcomes.lt(bounds.minimum)
-        if bounds is not None
-        else pd.Series(False, index=extractions.index)
-    )
-    above_maximum = (
-        finite_mask & numeric_outcomes.gt(bounds.maximum)
-        if bounds is not None
-        else pd.Series(False, index=extractions.index)
-    )
+    below_minimum = finite_mask & numeric_outcomes.lt(minimum)
+    above_maximum = finite_mask & numeric_outcomes.gt(maximum)
     valid_mask = finite_mask & ~below_minimum & ~above_maximum
 
     n_sampled = len(extractions)

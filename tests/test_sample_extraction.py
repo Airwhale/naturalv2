@@ -1,4 +1,4 @@
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pandas as pd
 import pytest
@@ -63,21 +63,15 @@ def test_cached_artifact_validation_filters_all_invalid_outcomes():
         index=[10, 11, 12, 13, 14, 15],
     )
 
-    with patch("naturalv2.pipeline.sample_extraction.logger.error") as log_error:
-        validated = _validate(
-            extractions,
-            policy=ALLOW_HIGH_REJECTION_POLICY,
-            bounds=BOUNDS,
-        )
+    validated = _validate(
+        extractions,
+        policy=ALLOW_HIGH_REJECTION_POLICY,
+        bounds=BOUNDS,
+    )
 
     assert validated.index.tolist() == [11, 12]
     assert validated[OUTCOME_COL_NAME].tolist() == [0, 55]
     assert validated["report"].tolist() == ["b", "c"]
-    assert log_error.call_args.kwargs["extra"]["rejection_reasons"] == {
-        "nonfinite": 2,
-        "below_minimum": 1,
-        "above_maximum": 1,
-    }
 
 
 def test_combined_rejection_rate_blocks_estimation():

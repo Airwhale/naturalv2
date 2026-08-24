@@ -2,7 +2,7 @@
 
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, FiniteFloat, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, FiniteFloat, TypeAdapter, model_validator
 
 
 class OutcomeBounds(BaseModel):
@@ -21,7 +21,4 @@ class OutcomeBounds(BaseModel):
         return self
 
 
-class OutcomeBoundsMap(RootModel[dict[str, OutcomeBounds]]):
-    """Validated bounds keyed by exact outcome name."""
-
-    model_config = ConfigDict(frozen=True)
+OUTCOME_BOUNDS_ADAPTER = TypeAdapter(dict[str, OutcomeBounds])

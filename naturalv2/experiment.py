@@ -28,7 +28,7 @@ from naturalv2.clinical_trial import (
     OutcomeMeasureType,
     Reference,
 )
-from naturalv2.outcome_metadata import OutcomeBounds, OutcomeBoundsMap
+from naturalv2.outcome_metadata import OUTCOME_BOUNDS_ADAPTER, OutcomeBounds
 from naturalv2.pipeline.constants import (
     INCLUSION_COL_NAME,
     OUTCOME_COL_NAME,
@@ -1030,10 +1030,15 @@ class Experiment:
         configured_bounds: Mapping[str, object] | None = None,
     ) -> None:
         """Validate configured bounds against this experiment's outcomes."""
-        validated_bounds = OutcomeBoundsMap.model_validate(
+        validated_bounds = OUTCOME_BOUNDS_ADAPTER.validate_python(
             dict(configured_bounds or {})
-        ).root
-        self._validate_outcome_bound_names(validated_bounds)
+        )
+        unknown = validated_bounds.keys() - set(self.outcome_names)
+        if unknown:
+            raise ValueError(
+                f"Outcome bounds reference unknown outcomes {sorted(unknown)}. "
+                f"Expected one of {self.outcome_names}."
+            )
 
         binary_outcomes = [
             outcome for outcome in validated_bounds if self.is_binary_outcome(outcome)
@@ -1044,15 +1049,6 @@ class Experiment:
                 f"{binary_outcomes}."
             )
         self._outcome_bounds = validated_bounds
-
-    def _validate_outcome_bound_names(self, bounds: Mapping[str, object]) -> None:
-        """Reject bounds that do not identify an outcome in this experiment."""
-        unknown = bounds.keys() - set(self.outcome_names)
-        if unknown:
-            raise ValueError(
-                f"Outcome bounds reference unknown outcomes {sorted(unknown)}. "
-                f"Expected one of {self.outcome_names}."
-            )
 
     def _get_active_outcomes_treatments(
         self, trial: ClinicalTrial
