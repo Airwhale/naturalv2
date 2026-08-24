@@ -467,62 +467,49 @@ def _filter_nonfinite_sampled_outcomes(
 
     numeric_outcomes = pd.to_numeric(extractions[OUTCOME_COL_NAME], errors="coerce")
     valid_mask = np.isfinite(numeric_outcomes).fillna(False)
-    validated_extractions = extractions.loc[valid_mask].copy()
-    validated_extractions[OUTCOME_COL_NAME] = numeric_outcomes.loc[valid_mask]
-
     n_sampled = len(extractions)
     n_rejected = int((~valid_mask).sum())
-    if not n_rejected:
-        return validated_extractions
-
-    rejection_rate = n_rejected / n_sampled
-    all_rejected = n_rejected == n_sampled
-    high_rejection_rate = rejection_rate >= sample_validation.high_rejection_rate
-    blocks_estimation = all_rejected or (
-        high_rejection_rate and not sample_validation.allow_high_rejection_rate
-    )
-    logger.log(
-        logging.ERROR if high_rejection_rate else logging.WARNING,
-        "Rejected non-finite sampled outcomes: nct_id=%s outcome=%r "
-        "n_rejected=%d n_sampled=%d rejection_rate=%.6f",
-        nct_id,
-        outcome,
-        n_rejected,
-        n_sampled,
-        rejection_rate,
-        extra={
-            "phase": "sample_ty_artifact_validation",
-            "schema_id": "sample_ty_outcome_validation.v1",
-            "status": "blocked" if blocks_estimation else "rejected",
-            "nct_id": nct_id,
-            "outcome": outcome,
-            "n_sampled": n_sampled,
-            "n_rejected": n_rejected,
-            "rejection_rate": rejection_rate,
-            "high_rejection_rate_threshold": sample_validation.high_rejection_rate,
-            "allow_high_rejection_rate": sample_validation.allow_high_rejection_rate,
-            "blocks_estimation": blocks_estimation,
-        },
-    )
-
-    if all_rejected:
-        raise ValueError(
-            f"Every sampled continuous outcome for {nct_id!r} / {outcome!r} "
-            "was non-finite."
+    if n_rejected:
+        rejection_rate = n_rejected / n_sampled
+        all_rejected = n_rejected == n_sampled
+        high_rejection_rate = rejection_rate >= sample_validation.high_rejection_rate
+        blocks_estimation = all_rejected or (
+            high_rejection_rate and not sample_validation.allow_high_rejection_rate
+        )
+        log = logger.error if high_rejection_rate else logger.warning
+        log(
+            "Rejected %d/%d non-finite sampled outcomes for %s / %r (%.2f%%)",
+            n_rejected,
+            n_sampled,
+            nct_id,
+            outcome,
+            rejection_rate * 100,
+            extra={
+                "phase": "sample_ty_artifact_validation",
+                "schema_id": "sample_ty_outcome_validation.v1",
+                "status": "blocked" if blocks_estimation else "rejected",
+                "nct_id": nct_id,
+                "outcome": outcome,
+                "n_rejected": n_rejected,
+                "rejection_rate": rejection_rate,
+            },
         )
 
-    if high_rejection_rate and not sample_validation.allow_high_rejection_rate:
-        raise ValueError(
-            f"Rejected {n_rejected} of {n_sampled} sampled continuous outcomes "
-            f"for {nct_id!r} / {outcome!r} ({rejection_rate:.2%}), "
-            "meeting the configured high-rejection threshold "
-            f"({sample_validation.high_rejection_rate:.2%}). Estimation stopped "
-            "to avoid bias from selected survivors. Set "
-            "`sample_validation.allow_high_rejection_rate=true` to continue "
-            "explicitly."
-        )
+        if all_rejected:
+            raise ValueError(
+                f"No finite sampled outcomes remain for {nct_id!r} / {outcome!r}."
+            )
+        if blocks_estimation:
+            raise ValueError(
+                f"Estimation stopped for {nct_id!r} / {outcome!r}: non-finite "
+                f"outcome rate {rejection_rate:.2%} met the high-rejection threshold "
+                f"of {sample_validation.high_rejection_rate:.2%}. Set "
+                "`sample_validation.allow_high_rejection_rate=true` to continue."
+            )
 
-    return validated_extractions
+    validated = extractions.loc[valid_mask].copy()
+    validated[OUTCOME_COL_NAME] = numeric_outcomes.loc[valid_mask]
+    return validated
 
 
 class SampleTYStage(SampleExtractionStage):

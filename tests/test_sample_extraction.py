@@ -90,5 +90,5 @@ def test_all_invalid_records_fail_even_with_override():
         }
     )
 
-    with pytest.raises(ValueError, match="Every sampled continuous outcome"):
+    with pytest.raises(ValueError, match="No finite sampled outcomes remain"):
         _validate(extractions, ALLOW_HIGH_REJECTION_POLICY)
