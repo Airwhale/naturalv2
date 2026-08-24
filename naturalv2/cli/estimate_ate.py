@@ -368,6 +368,15 @@ async def _process_trial(cfg: DictConfig, nct_id: str) -> None:  # noqa: PLR0912
         experiment._avg_potential_outcomes = []
         experiment._set_outcome_treatment_effects(trial)
         experiment.to_yaml(exp_file)
+    if "sample_validation" not in cfg:
+        raise ValueError(
+            "Config is missing the `sample_validation` section, which sets when "
+            "a high rejection rate stops estimation. Inherit `conf/common.yaml`, "
+            "or add:\n\n"
+            "sample_validation:\n"
+            "  high_rejection_rate: 0.10\n"
+            "  allow_high_rejection_rate: false"
+        )
     sample_validation = SampleValidationConfig.model_validate(
         OmegaConf.to_container(cfg.sample_validation, resolve=True)
     )

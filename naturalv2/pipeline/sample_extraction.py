@@ -20,6 +20,7 @@ from naturalv2.pipeline.constants import (
     OUTCOME_COL_NAME,
     TREATMENT_COL_NAME,
     SampleValidationConfig,
+    rejection_log_level,
 )
 from naturalv2.pipeline.natural import PipelineContext, PipelineStage
 from naturalv2.pipeline.utils import _create_progress_bar, _csv_writer
@@ -467,17 +468,24 @@ def _filter_nonfinite_sampled_outcomes(
         )
 
     numeric_outcomes = pd.to_numeric(extractions[OUTCOME_COL_NAME], errors="coerce")
-    valid_mask = np.isfinite(numeric_outcomes).fillna(False)
+    valid_mask = np.isfinite(numeric_outcomes)
     n_sampled = len(extractions)
     n_rejected = int((~valid_mask).sum())
     if n_rejected:
         rejection_rate = n_rejected / n_sampled
         all_rejected = n_rejected == n_sampled
         high_rejection_rate = rejection_rate >= sample_validation.high_rejection_rate
+        # Both conditions stop the run below. Kept as one flag so the log records
+        # the same verdict the caller is about to act on.
         blocks_estimation = all_rejected or (
             high_rejection_rate and not sample_validation.allow_high_rejection_rate
         )
-        log = logger.error if high_rejection_rate else logger.warning
+        log = rejection_log_level(
+            logger,
+            n_rejected,
+            rejection_rate,
+            high_rejection_rate=sample_validation.high_rejection_rate,
+        )
         log(
             "Rejected %d/%d non-finite sampled outcomes for %s / %r (%.2f%%)",
             n_rejected,
@@ -572,6 +580,10 @@ class SampleTYStage(SampleExtractionStage):
                 outcome=context.outcome,
                 sample_validation=context.sample_validation,
             )
+            logger.info(
+                f"After non-finite outcome filter: {len(self.data)} reports."
+            )
+
         self.data = context.experiment.discretize_ty(self.data, context.outcome)
         logger.info(f"Final: {len(self.data)} reports after sampling TY.")
         return self.data
