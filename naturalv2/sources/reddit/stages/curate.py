@@ -13,7 +13,6 @@ import os
 import shutil
 import uuid
 from collections import defaultdict
-from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -88,41 +87,6 @@ class _SubredditContext:
     global_max_date: datetime
     # Pre-calculated map of NCT_ID -> [List of valid terms]
     experiment_to_terms: dict[str, list[str]]
-
-
-# The outcome model fits one coefficient per covariate plus a treatment term and
-# an intercept. Below that many reports it is underdetermined, so an estimate
-# built on them describes the fit rather than the patients.
-MIN_USABLE_EVIDENCE = 10
-
-
-def _warn_on_thin_evidence(record_counts: Mapping[str, int]) -> None:
-    """Flag trials left with too few reports to estimate from.
-
-    Binding a comment's treatment mention to the commenter (rather than to the
-    thread) removes the reports that never named the treatment themselves. That
-    is the point -- but on a small trial it can take the evidence down to a
-    handful, where the resulting estimate is one confabulation away from
-    anything. Curation is where the count is known, so it is where to say so.
-    """
-    for nct_id, count in sorted(record_counts.items()):
-        if count < MIN_USABLE_EVIDENCE:
-            logger.warning(
-                "Only %d curated report(s) for %s, below the %d needed to fit the "
-                "outcome model. Any estimate from this trial is dominated by "
-                "individual reports.",
-                count,
-                nct_id,
-                MIN_USABLE_EVIDENCE,
-                extra={
-                    "phase": "curation_evidence_volume",
-                    "schema_id": "curation_evidence.v1",
-                    "status": "thin",
-                    "nct_id": nct_id,
-                    "n_curated": count,
-                    "minimum_usable": MIN_USABLE_EVIDENCE,
-                },
-            )
 
 
 class RedditCurateStage(SourceStage):
@@ -274,7 +238,6 @@ class RedditCurateStage(SourceStage):
 
         state.update(curated_paths=curated_paths)
         logger.info(f"Curation complete. Record counts: {dict(total_counts)}")
-        _warn_on_thin_evidence(total_counts)
         self.persist_dataset(
             context,
             per_experiment_paths=curated_paths,
@@ -602,13 +565,13 @@ def _process_chunk(
         Returns None if no matches are found.
 
     """
-    # Treatment mentions must belong to the person represented by the row. A
-    # submission's title and body share an author, while a comment's title and
-    # initial post are thread context from another author.
-    if not {"report_text", "report_type"}.issubset(df.columns):
+    # Prepare text for matching
+    txt_cols = [
+        col for col in ["title", "initial_post", "report_text"] if col in df.columns
+    ]
+    if not txt_cols:
         logger.warning(
-            "Report text or report type unavailable for matching in subreddit %s",
-            ctx.name,
+            "No text columns available for matching in subreddit %s", ctx.name
         )
         return None
 
@@ -632,7 +595,9 @@ def _process_chunk(
             return None
 
     df_prep = (
-        df_prep.with_columns(_build_match_text_expr(df_prep.columns).alias("_raw_text"))
+        df_prep.with_columns(
+            pl.concat_str(txt_cols, separator=" ", ignore_nulls=True).alias("_raw_text")
+        )
         .with_columns(_get_normalization_expr("_raw_text").alias("_normalized_text"))
         .drop("_raw_text")
     )
@@ -816,24 +781,6 @@ def _stream_to_disk(
 # -----------------------------------------------------------------------------
 
 
-def _build_match_text_expr(available_cols: list[str]) -> pl.Expr:
-    """Build subject-bound text for lexical treatment matching."""
-
-    def safe_col(name: str) -> pl.Expr:
-        return pl.col(name).fill_null("") if name in available_cols else pl.lit("")
-
-    submission_text = pl.concat_str(
-        [safe_col("title"), safe_col("report_text")],
-        separator=" ",
-        ignore_nulls=True,
-    )
-    return (
-        pl.when(pl.col("report_type") == "submission")
-        .then(submission_text)
-        .otherwise(safe_col("report_text"))
-    )
-
-
 def _build_report_expr(available_cols: list[str]) -> pl.Expr:
     """Generate markdown report column expression.
 
@@ -850,8 +797,7 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
     pl.Expr
         Polars expression that generates markdown-formatted report text.
         For submissions, includes: subreddit, title, date, post content.
-        For comments, identifies the commenter as the report subject, presents the
-        comment first, and labels the initial post as thread context.
+        For comments, includes: subreddit, initial post, date, comment content.
 
     Raises
     ------
@@ -889,21 +835,16 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
 
     # Comment format
     fmt_comment = pl.format(
-        "**Target patient**\nThe target patient is the author of the comment below. "
-        "Attribute treatment, covariates, and outcomes only to this commenter. "
-        "The initial post is context, not evidence about the target patient.\n\n"
         "**Subreddit**\nThis comment was found on the subreddit r/{}.\n\n"
+        "**Initial Post**\nThis comment was in response to the following post:\n"
+        "Title: {}\nPost content: {}\n\n"
         "**Date created**\nThis comment was created on {}.\n\n"
-        "**Comment from the target patient**\n{}\n\n"
-        "**Thread context (not target-patient evidence)**\nUse this initial post "
-        "only to interpret what the target patient's comment refers to. Do not use "
-        "any experience stated only here as the target patient's treatment, "
-        "covariate, or outcome.\nTitle: {}\nPost content: {}",
+        "**Comment**\n{}",
         safe_col("subreddit"),
-        date_expr,
-        safe_col("report_text"),
         safe_col("title"),
         safe_col("initial_post"),
+        date_expr,
+        safe_col("report_text"),
     )
 
     return (
