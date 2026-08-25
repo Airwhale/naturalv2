@@ -129,3 +129,41 @@ def test_missing_required_column_raises():
     mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
     with pytest.raises(ValueError, match="discretized"):
         mc.get_individual_treatment_effects(data, outcome="dummy")
+
+
+@pytest.mark.xfail(
+    reason=(
+        "The per-arm Hajek normaliser assumes the caller takes an unweighted "
+        "mean. estimate_ate weights by inclusion probability, so the normaliser "
+        "is wrong for every non-uniform inclusion vector. Fixing it needs the "
+        "normalisation moved to the caller, which is the only place that knows "
+        "those probabilities -- a contract change, tracked separately."
+    ),
+    strict=True,
+)
+def test_ipw_arms_survive_non_uniform_inclusion_weights():
+    """Two balanced arms should read 2 and 4 whoever is judged eligible."""
+    n_per_arm = 10
+    treatments = np.array([0] * n_per_arm + [1] * n_per_arm)
+    outcomes = np.array([2.0] * n_per_arm + [4.0] * n_per_arm)
+    propensity = np.ones(2 * n_per_arm)
+    # Arm 0 reads as less trial-eligible than arm 1 -- an ordinary outcome of
+    # the inclusion_prob stage, not a pathological input.
+    inclusion = np.array([0.2] * n_per_arm + [0.9] * n_per_arm)
+
+    scores = pd.Series(propensity)
+    scores = (
+        scores
+        * len(treatments)
+        / scores.groupby(pd.Series(treatments)).transform("sum")
+    )
+    ites = pd.Series(outcomes) * scores
+    responses = np.array(
+        [
+            [ites[i] if treatments[i] == arm else 0.0 for i in range(len(treatments))]
+            for arm in (0, 1)
+        ]
+    )
+
+    estimated = np.average(responses, axis=1, weights=inclusion)
+    np.testing.assert_allclose(estimated, [2.0, 4.0])
