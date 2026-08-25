@@ -322,13 +322,6 @@ def _warn_on_stale_bounds(
     nct_id: str,
     configured_bounds: Mapping[str, Mapping[str, float]],
 ) -> None:
-    """Warn when configured bounds differ from the ones the experiment carries.
-
-    Bounds reach an experiment through ``create_study``, which persists them into
-    the experiment YAML; ``from_yaml`` reads only that. Editing config afterwards
-    therefore changes nothing here, and the run would quietly use the stale
-    interval -- a corrected bound would look applied when it is not.
-    """
     for outcome, wanted in configured_bounds.items():
         persisted = experiment.outcome_bounds.get(outcome)
         in_use = persisted.model_dump(mode="json") if persisted else None
