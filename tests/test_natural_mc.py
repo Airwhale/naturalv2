@@ -49,6 +49,52 @@ def test_ipw_missing_treatment_is_zero_not_nan():
     assert (ites[2, :] == 0).all()
 
 
+def test_ipw_does_not_dilute_treatment_outcomes_with_other_arms():
+    data = pd.DataFrame(
+        {
+            "cov_discretized": [0, 1] * 10,
+            f"{TREATMENT_COL_NAME}_discretized": [0] * 10 + [1] * 10,
+            f"{OUTCOME_COL_NAME}_discretized": [2.0] * 10 + [4.0] * 10,
+        }
+    )
+    mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
+
+    average_outcomes = mc.get_individual_treatment_effects(data, outcome="dummy").mean(
+        axis=1
+    )
+
+    assert average_outcomes[:2] == pytest.approx([2.0, 4.0])
+
+
+def test_ipw_outcome_is_unchanged_when_other_arm_grows():
+    data = pd.DataFrame(
+        {
+            "cov_discretized": [0, 1] * 4,
+            f"{TREATMENT_COL_NAME}_discretized": [0] * 4 + [1] * 4,
+            f"{OUTCOME_COL_NAME}_discretized": [2.0] * 4 + [4.0] * 4,
+        }
+    )
+    additional_other_arm_rows = pd.DataFrame(
+        {
+            "cov_discretized": [0, 1] * 8,
+            f"{TREATMENT_COL_NAME}_discretized": [1] * 16,
+            f"{OUTCOME_COL_NAME}_discretized": [4.0] * 16,
+        }
+    )
+    mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
+
+    original_outcome = mc.get_individual_treatment_effects(data, outcome="dummy")[
+        0
+    ].mean()
+    expanded_outcome = mc.get_individual_treatment_effects(
+        pd.concat([data, additional_other_arm_rows], ignore_index=True),
+        outcome="dummy",
+    )[0].mean()
+
+    assert original_outcome == pytest.approx(2.0)
+    assert expanded_outcome == pytest.approx(original_outcome)
+
+
 def test_oi_missing_treatment_extrapolates_without_crash():
     data = make_data(20, [0, 1] * 10)
     mc = NaturalMC(FakeExperiment(), estimator_type="oi")
