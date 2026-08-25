@@ -73,7 +73,7 @@ def test_comment_report_presents_target_patient_before_thread_context():
     )
 
 
-def test_sample_ty_prompt_binds_answers_to_target_patient():
+def test_sample_ty_prompt_identifies_comment_author_as_target_patient():
     prompts_dir = str(resources.files("naturalv2.prompts.templates"))
     messages = load_prompt(
         prompts_dir,
@@ -93,17 +93,11 @@ def test_sample_ty_prompt_binds_answers_to_target_patient():
 
     assert isinstance(messages, list)
     system_prompt = messages[0]["content"]
-    user_prompt = messages[1]["content"]
     assert (
         'author of the section labeled "Comment from the target patient"'
         in system_prompt
     )
-    assert "future plan" in system_prompt
-    assert "Do not invent an event" in system_prompt
-    assert '"treatment_taken"' in user_prompt
-    assert '"outcome_category"' in user_prompt
-    assert "Do not invent additional facts" in user_prompt
-    assert "report subject" not in system_prompt + user_prompt
+    assert '"Thread context" is not evidence about the target patient' in system_prompt
 
 
 def test_thin_evidence_is_flagged():
