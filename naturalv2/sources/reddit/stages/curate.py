@@ -13,6 +13,7 @@ import os
 import shutil
 import uuid
 from collections import defaultdict
+from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -87,6 +88,41 @@ class _SubredditContext:
     global_max_date: datetime
     # Pre-calculated map of NCT_ID -> [List of valid terms]
     experiment_to_terms: dict[str, list[str]]
+
+
+# The outcome model fits one coefficient per covariate plus a treatment term and
+# an intercept. Below that many reports it is underdetermined, so an estimate
+# built on them describes the fit rather than the patients.
+MIN_USABLE_EVIDENCE = 10
+
+
+def _warn_on_thin_evidence(record_counts: Mapping[str, int]) -> None:
+    """Flag trials left with too few reports to estimate from.
+
+    Binding a comment's treatment mention to the commenter (rather than to the
+    thread) removes the reports that never named the treatment themselves. That
+    is the point -- but on a small trial it can take the evidence down to a
+    handful, where the resulting estimate is one confabulation away from
+    anything. Curation is where the count is known, so it is where to say so.
+    """
+    for nct_id, count in sorted(record_counts.items()):
+        if count < MIN_USABLE_EVIDENCE:
+            logger.warning(
+                "Only %d curated report(s) for %s, below the %d needed to fit the "
+                "outcome model. Any estimate from this trial is dominated by "
+                "individual reports.",
+                count,
+                nct_id,
+                MIN_USABLE_EVIDENCE,
+                extra={
+                    "phase": "curation_evidence_volume",
+                    "schema_id": "curation_evidence.v1",
+                    "status": "thin",
+                    "nct_id": nct_id,
+                    "n_curated": count,
+                    "minimum_usable": MIN_USABLE_EVIDENCE,
+                },
+            )
 
 
 class RedditCurateStage(SourceStage):
@@ -238,6 +274,7 @@ class RedditCurateStage(SourceStage):
 
         state.update(curated_paths=curated_paths)
         logger.info(f"Curation complete. Record counts: {dict(total_counts)}")
+        _warn_on_thin_evidence(total_counts)
         self.persist_dataset(
             context,
             per_experiment_paths=curated_paths,
