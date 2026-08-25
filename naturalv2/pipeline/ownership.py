@@ -21,6 +21,11 @@ class OwnershipExtractType(StrEnum):
     TREATMENT_OWNERSHIP = "treatment_ownership"
 
 
+def gate_treatment_ownership(data: pd.DataFrame) -> pd.DataFrame:
+    """Keep rows where treatment use belongs to the author."""
+    return data.loc[data[OWNERSHIP_COL].eq("Yes")]
+
+
 class TreatmentOwnershipGateStage(SampleExtractionStage):
     """Check ownership, update ownership variable, and gate process based on that."""
 
@@ -63,5 +68,5 @@ class TreatmentOwnershipGateStage(SampleExtractionStage):
         )
         checked = checked.loc[checked.index.isin(gate_input.index)]
         result.loc[checked.index, OWNERSHIP_COL] = checked[OWNERSHIP_COL]
-        self.data = result.loc[result[OWNERSHIP_COL].eq("Yes")]
+        self.data = gate_treatment_ownership(result)
         return self.data
