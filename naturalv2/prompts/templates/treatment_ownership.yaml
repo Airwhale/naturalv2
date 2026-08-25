@@ -6,4 +6,4 @@ user_prompt_template: |-
   Return "Yes" for clear current or past personal use. Return "No" for questions, advice, future plans, hypotheticals, quotations, or another person's use. Return "Unclear" otherwise.
 
   Return exactly:
-  {"treatment_ownership": "Yes | No | Unclear"}
+  {"author_used_selected_treatment": "Yes | No | Unclear"}
