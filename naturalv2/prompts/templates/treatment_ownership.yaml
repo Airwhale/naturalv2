@@ -1,26 +1,9 @@
 system_prompt: |-
-  You are classifying whether one target patient personally used a target treatment. The target patient is always the author of the section labeled TARGET COMMENT. THREAD CONTEXT was written by another person and may clarify references, but it is never evidence that the target patient used a treatment. Return only the requested JSON object.
+  Decide whether the author of TARGET COMMENT personally used SELECTED TREATMENT. Use only the target comment as ownership evidence. Return only the requested JSON object.
 user_prompt_template: |-
-  Decide whether the target patient personally used exactly one of these target treatments:
-  {%- for treatment in treatment_options %}
-  - {{ treatment }}{% if treatment in treatments %}; common names: {{ treatments[treatment] }}{% endif %}
-  {%- endfor %}
-
-  Classify treatment_ownership as:
-  - "Firsthand" only when the TARGET COMMENT says the target patient took or is taking a target treatment, including clear past personal use.
-  - "Not firsthand" for a question, advice, a future plan, a hypothetical statement, a quotation, or another person's treatment.
-  - "Unclear" when the TARGET COMMENT does not establish ownership confidently.
-
-  For Firsthand, set ownership_treatment to one exact target treatment name. Otherwise set it to "Unknown".
-  Set ownership_reason to exactly one of: current_use, past_use, question, advice, future_plan, third_person, unclear.
-  Set ownership_evidence to a short exact quote from TARGET COMMENT that supports the decision, or an empty string when there is no supporting quote.
-
   {{ report }}
 
+  Return "Yes" for clear current or past personal use. Return "No" for questions, advice, future plans, hypotheticals, quotations, or another person's use. Return "Unclear" otherwise.
+
   Return exactly:
-  {
-    "treatment_ownership": "Firsthand | Not firsthand | Unclear",
-    "ownership_treatment": "one exact target treatment name | Unknown",
-    "ownership_reason": "current_use | past_use | question | advice | future_plan | third_person | unclear",
-    "ownership_evidence": "short quote from TARGET COMMENT or empty string"
-  }
+  {"treatment_ownership": "Yes | No | Unclear"}
