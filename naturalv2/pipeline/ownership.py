@@ -22,7 +22,7 @@ class OwnershipExtractType(StrEnum):
 
 
 class TreatmentOwnershipGateStage(SampleExtractionStage):
-    """Check ownership, update one variable, and gate comments."""
+    """Check ownership, update ownership variable, and gate process based on that."""
 
     async def process(
         self, data: pd.DataFrame, context: PipelineContext
