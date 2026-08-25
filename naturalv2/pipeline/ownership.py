@@ -14,7 +14,7 @@ from naturalv2.pipeline.sample_extraction import (
 from naturalv2.utils import create_response_format
 
 
-OWNERSHIP_COL = "author_used_selected_treatment"
+OWNERSHIP_COL = "author_used_treatment"
 
 
 class OwnershipExtractType(StrEnum):

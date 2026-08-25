@@ -18,7 +18,7 @@ async def test_ownership_check_updates_one_field_and_gates(monkeypatch):
         assert input_df.loc[1, "report"].startswith(
             "SELECTED TREATMENT: Lithium\nTARGET COMMENT:\n"
         )
-        assert response_format(author_used_selected_treatment="yes").model_dump() == {
+        assert response_format(author_used_treatment="yes").model_dump() == {
             OWNERSHIP_COL: "Yes"
         }
         result = input_df.copy()
@@ -53,5 +53,5 @@ def test_ownership_prompt_contract():
         report="SELECTED TREATMENT: Lithium\nTARGET COMMENT:\nI take it.",
     )
 
-    assert '"author_used_selected_treatment": "Yes | No | Unclear"' in prompt
+    assert '"author_used_treatment": "Yes | No | Unclear"' in prompt
     assert "Use only the target comment as ownership evidence" in prompt
