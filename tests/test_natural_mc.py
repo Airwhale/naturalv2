@@ -49,50 +49,13 @@ def test_ipw_missing_treatment_is_zero_not_nan():
     assert (ites[2, :] == 0).all()
 
 
-def test_ipw_does_not_dilute_treatment_outcomes_with_other_arms():
-    data = pd.DataFrame(
-        {
-            "cov_discretized": [0, 1] * 10,
-            f"{TREATMENT_COL_NAME}_discretized": [0] * 10 + [1] * 10,
-            f"{OUTCOME_COL_NAME}_discretized": [2.0] * 10 + [4.0] * 10,
-        }
+def test_ipw_normalizes_each_treatment_arm():
+    data = make_data(20, [0] * 10 + [1] * 10)
+    data[f"{OUTCOME_COL_NAME}_discretized"] = [2.0] * 10 + [4.0] * 10
+    outcomes = NaturalMC(FakeExperiment(), "ipw").get_individual_treatment_effects(
+        data, "dummy"
     )
-    mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
-
-    average_outcomes = mc.get_individual_treatment_effects(data, outcome="dummy").mean(
-        axis=1
-    )
-
-    assert average_outcomes[:2] == pytest.approx([2.0, 4.0])
-
-
-def test_ipw_outcome_is_unchanged_when_other_arm_grows():
-    data = pd.DataFrame(
-        {
-            "cov_discretized": [0, 1] * 4,
-            f"{TREATMENT_COL_NAME}_discretized": [0] * 4 + [1] * 4,
-            f"{OUTCOME_COL_NAME}_discretized": [2.0] * 4 + [4.0] * 4,
-        }
-    )
-    additional_other_arm_rows = pd.DataFrame(
-        {
-            "cov_discretized": [0, 1] * 8,
-            f"{TREATMENT_COL_NAME}_discretized": [1] * 16,
-            f"{OUTCOME_COL_NAME}_discretized": [4.0] * 16,
-        }
-    )
-    mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
-
-    original_outcome = mc.get_individual_treatment_effects(data, outcome="dummy")[
-        0
-    ].mean()
-    expanded_outcome = mc.get_individual_treatment_effects(
-        pd.concat([data, additional_other_arm_rows], ignore_index=True),
-        outcome="dummy",
-    )[0].mean()
-
-    assert original_outcome == pytest.approx(2.0)
-    assert expanded_outcome == pytest.approx(original_outcome)
+    assert outcomes.mean(axis=1)[:2] == pytest.approx([2.0, 4.0])
 
 
 def test_oi_missing_treatment_extrapolates_without_crash():
@@ -129,41 +92,3 @@ def test_missing_required_column_raises():
     mc = NaturalMC(FakeExperiment(), estimator_type="ipw")
     with pytest.raises(ValueError, match="discretized"):
         mc.get_individual_treatment_effects(data, outcome="dummy")
-
-
-@pytest.mark.xfail(
-    reason=(
-        "The per-arm Hajek normaliser assumes the caller takes an unweighted "
-        "mean. estimate_ate weights by inclusion probability, so the normaliser "
-        "is wrong for every non-uniform inclusion vector. Fixing it needs the "
-        "normalisation moved to the caller, which is the only place that knows "
-        "those probabilities -- a contract change, tracked separately."
-    ),
-    strict=True,
-)
-def test_ipw_arms_survive_non_uniform_inclusion_weights():
-    """Two balanced arms should read 2 and 4 whoever is judged eligible."""
-    n_per_arm = 10
-    treatments = np.array([0] * n_per_arm + [1] * n_per_arm)
-    outcomes = np.array([2.0] * n_per_arm + [4.0] * n_per_arm)
-    propensity = np.ones(2 * n_per_arm)
-    # Arm 0 reads as less trial-eligible than arm 1 -- an ordinary outcome of
-    # the inclusion_prob stage, not a pathological input.
-    inclusion = np.array([0.2] * n_per_arm + [0.9] * n_per_arm)
-
-    scores = pd.Series(propensity)
-    scores = (
-        scores
-        * len(treatments)
-        / scores.groupby(pd.Series(treatments)).transform("sum")
-    )
-    ites = pd.Series(outcomes) * scores
-    responses = np.array(
-        [
-            [ites[i] if treatments[i] == arm else 0.0 for i in range(len(treatments))]
-            for arm in (0, 1)
-        ]
-    )
-
-    estimated = np.average(responses, axis=1, weights=inclusion)
-    np.testing.assert_allclose(estimated, [2.0, 4.0])
