@@ -72,6 +72,7 @@ _AUTHOR_REPORT_HEADER = (
     "by someone else and must be used only as context."
 )
 _REPORT_SEPARATOR = "\n\n---\n\n"
+_SOURCE_FORMAT = "**Source**\nr/{}, {}, {}\n\n"
 
 
 @dataclass
@@ -834,14 +835,7 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
     date_col = "date_created"
     if not all(
         col in available_cols
-        for col in [
-            date_col,
-            "subreddit",
-            "title",
-            "report_text",
-            "report_type",
-            "permalink",
-        ]
+        for col in [date_col, "subreddit", "title", "report_text", "report_type"]
     ):
         raise ValueError("Required columns for report generation are not available.")
 
@@ -850,11 +844,7 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
 
     # Submission format
     fmt_submission = pl.format(
-        "**Record type**\nSubmission\n\n"
-        "**Subreddit**\nr/{}\n\n"
-        "**Date created**\n{}\n\n"
-        "**Permalink**\n{}\n\n"
-        "**Author's own text**\nTitle: {}\n\nPost content:\n{}",
+        _SOURCE_FORMAT + "**Author's own text**\nTitle: {}\n\nPost content:\n{}",
         safe_col("subreddit"),
         date_expr,
         safe_col("permalink"),
@@ -864,11 +854,8 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
 
     # Comment format
     fmt_comment = pl.format(
-        "**Record type**\nComment\n\n"
-        "**Subreddit**\nr/{}\n\n"
-        "**Date created**\n{}\n\n"
-        "**Permalink**\n{}\n\n"
-        "**Context written by another Reddit user**\nOriginal post title: {}\n\n"
+        _SOURCE_FORMAT
+        + "**Context written by another Reddit user**\nOriginal post title: {}\n\n"
         "Original post content:\n{}\n\n"
         "**Author's own text**\nComment:\n{}",
         safe_col("subreddit"),
@@ -890,121 +877,56 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
 
 def _aggregate_reports_by_author(data: pl.DataFrame) -> pl.DataFrame:
     """Combine curated Reddit records into one report per known author."""
-    required_columns = {
-        "author_key",
-        "date_created",
-        "permalink",
-        "report",
-        "subreddit",
-    }
-    missing_columns = required_columns.difference(data.columns)
-    if missing_columns:
-        missing = ", ".join(sorted(missing_columns))
+    missing = {"author_key", "date_created", "permalink", "report", "subreddit"} - set(
+        data.columns
+    )
+    if missing:
+        missing = ", ".join(sorted(missing))
         raise ValueError(f"Missing columns required for author aggregation: {missing}")
     if data.is_empty():
         return data
 
     original_columns = data.columns
-    working = data.with_row_index("_source_row")
-    working = _parse_date_column(working, "date_created")
-    working = working.with_columns(
-        pl.when(
-            pl.col("permalink").is_not_null()
-            & (pl.col("permalink").str.len_chars() > 0)
+    temporary_columns = ["_row", "_dt", "_record", "_author", "_section"]
+    rows = _parse_date_column(data.with_row_index("_row"), "date_created")
+    rows = (
+        rows.with_columns(
+            pl.when(pl.col("permalink").fill_null("").str.len_chars() > 0)
+            .then(pl.col("permalink"))
+            .otherwise(pl.format("row:{}", pl.col("_row")))
+            .alias("_record")
         )
-        .then(pl.lit("permalink:") + pl.col("permalink"))
-        .otherwise(pl.lit("row:") + pl.col("_source_row").cast(pl.String))
-        .alias("_dedup_key")
-    )
-    working = working.sort(["_dt", "permalink", "_source_row"], nulls_last=True).unique(
-        subset="_dedup_key", keep="first", maintain_order=True
-    )
-    working = working.with_columns(
-        pl.when(pl.col("author_key").is_not_null())
-        .then(pl.lit("author:") + pl.col("author_key"))
-        .otherwise(pl.lit("unkeyed:") + pl.col("_source_row").cast(pl.String))
-        .alias("_analysis_key")
-    ).sort(["_analysis_key", "_dt", "permalink", "_source_row"], nulls_last=True)
-    working = working.with_columns(
-        pl.col("_analysis_key")
-        .cum_count()
-        .over("_analysis_key")
-        .alias("_record_number")
-    ).with_columns(
-        pl.format(
-            "## Authored record {}\n\n{}",
-            pl.col("_record_number"),
-            pl.col("report"),
-        ).alias("_report_section")
-    )
-
-    special_columns = {
-        "author_key",
-        "author_replies",
-        "date_created",
-        "permalink",
-        "report",
-        "subreddit",
-        "treatments_mentioned",
-    }
-    aggregations: list[pl.Expr] = [
-        pl.col(column).first().alias(column)
-        for column in original_columns
-        if column not in special_columns
-    ]
-    aggregations.extend(
-        [
-            pl.col("author_key").first().alias("author_key"),
-            pl.col("date_created").first().alias("date_created"),
-            pl.col("permalink").first().alias("permalink"),
-            pl.col("subreddit").first().alias("subreddit"),
-            pl.col("_report_section")
-            .str.join(_REPORT_SEPARATOR)
-            .alias("_combined_report"),
-            pl.col("permalink").drop_nulls().alias("source_permalinks"),
-            pl.col("date_created").drop_nulls().alias("source_dates"),
-            pl.col("subreddit")
-            .drop_nulls()
-            .unique(maintain_order=True)
-            .alias("source_subreddits"),
-            pl.len().cast(pl.UInt32).alias("source_record_count"),
-        ]
-    )
-    if "author_replies" in original_columns:
-        aggregations.append(
-            pl.col("author_replies")
-            .list.explode(empty_as_null=False, keep_nulls=False)
-            .alias("author_replies")
+        .sort(["_dt", "permalink", "_row"], nulls_last=True)
+        .unique("_record", maintain_order=True)
+        .with_columns(
+            pl.when(pl.col("author_key").is_not_null())
+            .then(pl.col("author_key"))
+            .otherwise(pl.format("unkeyed:{}", pl.col("_row")))
+            .alias("_author")
         )
-    if "treatments_mentioned" in original_columns:
-        aggregations.append(
-            pl.col("treatments_mentioned")
-            .list.explode(empty_as_null=False, keep_nulls=False)
-            .unique()
-            .sort()
-            .alias("treatments_mentioned")
+        .sort(["_author", "_dt", "permalink", "_row"], nulls_last=True)
+        .with_columns(
+            pl.format(
+                "## Authored record {}\n\n{}",
+                pl.col("_author").cum_count().over("_author"),
+                pl.col("report"),
+            ).alias("_section")
         )
-
-    aggregated = working.group_by("_analysis_key", maintain_order=True).agg(
-        aggregations
     )
-    aggregated = aggregated.with_columns(
-        pl.when(pl.col("author_key").is_not_null())
-        .then(
-            pl.lit(_AUTHOR_REPORT_HEADER) + pl.lit("\n\n") + pl.col("_combined_report")
+    aggregated = rows.group_by("_author", maintain_order=True).agg(
+        pl.exclude(["report", *temporary_columns]).first(),
+        pl.col("_section").str.join(_REPORT_SEPARATOR).alias("report"),
+        pl.len().cast(pl.UInt32).alias("source_record_count"),
+    )
+    return (
+        aggregated.with_columns(
+            pl.when(pl.col("author_key").is_not_null())
+            .then(pl.lit(_AUTHOR_REPORT_HEADER) + "\n\n" + pl.col("report"))
+            .otherwise(pl.col("report"))
+            .alias("report")
         )
-        .otherwise(pl.col("_combined_report"))
-        .alias("report")
-    ).drop(["_analysis_key", "_combined_report"])
-
-    return aggregated.select(
-        [
-            *original_columns,
-            "source_record_count",
-            "source_permalinks",
-            "source_dates",
-            "source_subreddits",
-        ]
+        .drop("_author")
+        .select(original_columns + ["source_record_count"])
     )
 
 
