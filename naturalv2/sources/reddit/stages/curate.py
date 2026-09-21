@@ -877,8 +877,14 @@ def _build_report_expr(available_cols: list[str]) -> pl.Expr:
 
 def _aggregate_reports_by_author(data: pl.DataFrame) -> pl.DataFrame:
     """Combine curated Reddit records into one report per known author."""
-    missing = {"author_key", "date_created", "permalink", "report", "subreddit"} - set(
-        data.columns
+    missing = {
+        "author_key",
+        "date_created",
+        "permalink",
+        "report",
+        "subreddit",
+        "treatments_mentioned",
+    } - set(data.columns)
     )
     if missing:
         missing = ", ".join(sorted(missing))
