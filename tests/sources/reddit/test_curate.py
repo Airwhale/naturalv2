@@ -53,9 +53,9 @@ def test_report_distinguishes_author_text_from_context():
 def test_aggregate_reports_by_author_orders_deduplicates_and_keeps_unkeyed():
     records = pl.DataFrame(
         [
-            _record("author-a", "January 02, 2024", "/later", "later"),
-            _record("author-a", "January 01, 2024", "/earlier", "earlier"),
-            _record("author-a", "January 01, 2024", "/earlier", "duplicate"),
+            _record("author-a", "January 02, 2024", "/later", "later", ("X", "Y")),
+            _record("author-a", "January 01, 2024", "/earlier", "earlier", ("X",)),
+            _record("author-a", "January 01, 2024", "/earlier", "duplicate", ("Z",)),
             _record(None, "January 03, 2024", "/one", "unkeyed one"),
             _record(None, "January 04, 2024", "/two", "unkeyed two"),
         ]
