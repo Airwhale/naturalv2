@@ -65,6 +65,7 @@ def test_aggregate_reports_by_author_orders_deduplicates_and_keeps_unkeyed():
 
     assert len(aggregated) == 3
     assert author["source_record_count"] == 2
+    assert author["treatments_mentioned"] == ["X", "Y"]
     assert "Combined Reddit records from one pseudonymous author" in author["report"]
     assert author["report"].index("earlier") < author["report"].index("later")
     assert "duplicate" not in author["report"]
