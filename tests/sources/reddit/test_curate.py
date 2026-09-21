@@ -9,13 +9,14 @@ from naturalv2.sources.reddit.stages.curate import (
 )
 
 
-def _record(author, date, permalink, report):
+def _record(author, date, permalink, report, treatments=("X",)):
     return {
         "author_key": author,
         "date_created": date,
         "permalink": permalink,
         "subreddit": "health",
         "report": report,
+        "treatments_mentioned": list(treatments),
     }
 
 
