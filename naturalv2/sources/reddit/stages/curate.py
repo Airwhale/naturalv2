@@ -885,7 +885,6 @@ def _aggregate_reports_by_author(data: pl.DataFrame) -> pl.DataFrame:
         "subreddit",
         "treatments_mentioned",
     } - set(data.columns)
-    )
     if missing:
         missing = ", ".join(sorted(missing))
         raise ValueError(f"Missing columns required for author aggregation: {missing}")
@@ -921,11 +920,7 @@ def _aggregate_reports_by_author(data: pl.DataFrame) -> pl.DataFrame:
     )
     aggregated = rows.group_by("_author", maintain_order=True).agg(
         pl.exclude(["report", "treatments_mentioned", *temporary_columns]).first(),
-        pl.col("treatments_mentioned")
-        .list.explode(empty_as_null=False)
-        .drop_nulls()
-        .unique()
-        .sort(),
+        pl.col("treatments_mentioned").list.explode().drop_nulls().unique().sort(),
         pl.col("_section").str.join(_REPORT_SEPARATOR).alias("report"),
         pl.len().cast(pl.UInt32).alias("source_record_count"),
     )
