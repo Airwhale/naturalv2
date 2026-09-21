@@ -914,7 +914,12 @@ def _aggregate_reports_by_author(data: pl.DataFrame) -> pl.DataFrame:
         )
     )
     aggregated = rows.group_by("_author", maintain_order=True).agg(
-        pl.exclude(["report", *temporary_columns]).first(),
+        pl.exclude(["report", "treatments_mentioned", *temporary_columns]).first(),
+        pl.col("treatments_mentioned")
+        .list.explode(empty_as_null=False)
+        .drop_nulls()
+        .unique()
+        .sort(),
         pl.col("_section").str.join(_REPORT_SEPARATOR).alias("report"),
         pl.len().cast(pl.UInt32).alias("source_record_count"),
     )
