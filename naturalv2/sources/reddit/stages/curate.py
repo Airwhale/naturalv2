@@ -72,7 +72,7 @@ _AUTHOR_REPORT_HEADER = (
     "by someone else and must be used only as context."
 )
 _REPORT_SEPARATOR = "\n\n---\n\n"
-_SOURCE_FORMAT = "**Source**\nr/{}, {}, {}\n\n"
+_SOURCE_FORMAT = "**Source**\nSubreddit: r/{}, Date created: {}, Permalink: {}\n\n"
 
 
 @dataclass
